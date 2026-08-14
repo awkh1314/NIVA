@@ -1,222 +1,202 @@
-import * as THREE from 'three'
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import './style.css'
-import { AvatarRuntime } from './avatar/AvatarRuntime'
-import { StaticModelRuntime } from './avatar/StaticModelRuntime'
-import { MotionController } from './avatar/MotionController'
-import { NivaController } from './core/NivaController'
 import type { MotionName, NivaAction, SemanticExpression } from './core/types'
+
+const asset = (name: string) => `${import.meta.env.BASE_URL}assets/${name}`
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
-  <div class="shell">
-    <div id="stage"></div>
-    <div class="reference-avatar" id="referenceAvatar" aria-label="NIVA 2D visual reference">
-      <div class="reference-glow"></div>
-      <img src="https://raw.githubusercontent.com/awkh1314/niva-digital-spirit/main/recomposite.png" alt="NIVA 2D visual DNA" />
-      <div class="reference-caption">
-        <span>VISUAL DNA</span>
-        <b>等待 3D 身体接入</b>
+  <main class="shell" data-emotion="neutral">
+    <div class="ambient ambient-a"></div>
+    <div class="ambient ambient-b"></div>
+    <header class="topbar glass">
+      <div class="brand">
+        <strong>NIVA</strong>
+        <span>DIGITAL LIFE · 2D COMPANION</span>
       </div>
-    </div>
-    <div class="topbar">
-      <div class="brand"><b>NIVA / DIGITAL LIFE</b><small>3D STAGE · VRM 1.0</small></div>
-      <div class="status" id="status">INITIALIZING</div>
-    </div>
-    <div class="fps" id="fps">FPS: --</div>
-    <aside class="panel">
-      <h2>NIVA</h2>
-      <p class="muted" id="modeNote">当前冻结功能扩张，只打磨角色、动作、表情与生命感。</p>
+      <div class="live"><i></i><span>ONLINE</span></div>
+    </header>
 
-      <div class="asset-box">
-        <div class="label">3D Asset</div>
-        <button class="asset-button" id="loadGlb">载入你的 NIVA GLB</button>
-        <input id="glbInput" type="file" accept=".glb,model/gltf-binary" hidden />
-        <small id="assetNote">可直接预览 Tripo / Meshy 导出的静态 GLB。</small>
+    <section class="stage" id="stage" aria-label="NIVA 2D stage">
+      <div class="orbit orbit-a"></div>
+      <div class="orbit orbit-b"></div>
+      <div class="avatar" id="avatar">
+        <div class="aura"></div>
+        <div class="shadow"></div>
+        <div class="part body"><img src="${asset('body.png')}" alt="" /></div>
+        <div class="part hair"><img src="${asset('hair_left.png')}" alt="" /></div>
+        <div class="part arm-left"><img src="${asset('arm_left.png')}" alt="" /></div>
+        <div class="part skirt"><img src="${asset('skirt_right.png')}" alt="" /></div>
+        <div class="part head">
+          <img src="${asset('head.png')}" alt="NIVA" />
+          <svg class="face" viewBox="0 0 540 1370" aria-hidden="true">
+            <g class="blink-mask">
+              <ellipse cx="283" cy="158" rx="19" ry="12" fill="#f4d8d1" />
+              <ellipse cx="359" cy="154" rx="19" ry="12" fill="#f4d8d1" />
+              <path d="M267 159 Q283 169 299 157" fill="none" stroke="#6f586b" stroke-width="2.6" stroke-linecap="round" />
+              <path d="M343 155 Q359 165 375 153" fill="none" stroke="#6f586b" stroke-width="2.6" stroke-linecap="round" />
+            </g>
+            <g class="blush">
+              <ellipse cx="273" cy="184" rx="21" ry="9" fill="#ff8db1" opacity=".22" />
+              <ellipse cx="373" cy="179" rx="21" ry="9" fill="#ff8db1" opacity=".22" />
+            </g>
+          </svg>
+        </div>
+        <div class="spark spark-1"></div><div class="spark spark-2"></div><div class="spark spark-3"></div>
       </div>
+      <div class="stage-label"><span id="emotionLabel">NEUTRAL</span><small>生命感渲染已启用</small></div>
+    </section>
 
-      <div class="label">Expression</div>
-      <div class="buttons" id="expressions"></div>
-      <div class="label">Motion</div>
-      <div class="buttons" id="motions"></div>
-      <div class="label">Scenario</div>
-      <div class="scenario" id="scenarios"></div>
+    <aside class="controls glass">
+      <div class="panel-title"><div><strong>行为控制</strong><small>统一动作协议 · NIVA.act()</small></div><button id="quiet" class="icon-btn" title="切换语音">VOICE</button></div>
+      <p class="hint">2D 正式主线：完整立绘 + 微动作 + 表情状态，不再依赖 3D 建模。</p>
+      <label>表情</label><div class="grid" id="expressions"></div>
+      <label>动作</label><div class="grid" id="motions"></div>
+      <label>场景</label><div class="scenarios" id="scenarios"></div>
     </aside>
-    <div class="speech" id="speech">正在唤醒 NIVA…</div>
-  </div>`
 
-const stage = document.querySelector<HTMLDivElement>('#stage')!
-const speech = document.querySelector<HTMLDivElement>('#speech')!
-const status = document.querySelector<HTMLDivElement>('#status')!
-const fpsEl = document.querySelector<HTMLDivElement>('#fps')!
-const referenceAvatar = document.querySelector<HTMLDivElement>('#referenceAvatar')!
-const modeNote = document.querySelector<HTMLParagraphElement>('#modeNote')!
-const loadGlbButton = document.querySelector<HTMLButtonElement>('#loadGlb')!
-const glbInput = document.querySelector<HTMLInputElement>('#glbInput')!
-const assetNote = document.querySelector<HTMLElement>('#assetNote')!
+    <section class="speech glass">
+      <div class="portrait">N</div>
+      <div class="speech-body"><strong>NIVA</strong><p id="speechText">我在这里。现在开始，以更轻、更稳定的方式陪你一起进化。</p></div>
+    </section>
+  </main>`
 
-const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x070a15)
-scene.fog = new THREE.FogExp2(0x070a15, .035)
+type Expression = SemanticExpression
+const shell = document.querySelector<HTMLElement>('.shell')!
+const avatar = document.querySelector<HTMLElement>('#avatar')!
+const stage = document.querySelector<HTMLElement>('#stage')!
+const speech = document.querySelector<HTMLParagraphElement>('#speechText')!
+const emotionLabel = document.querySelector<HTMLElement>('#emotionLabel')!
+const voiceButton = document.querySelector<HTMLButtonElement>('#quiet')!
 
-const camera = new THREE.PerspectiveCamera(28, innerWidth / innerHeight, .05, 100)
-camera.position.set(0, 1.42, 4.7)
-
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' })
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
-renderer.setSize(innerWidth, innerHeight)
-renderer.outputColorSpace = THREE.SRGBColorSpace
-renderer.shadowMap.enabled = true
-renderer.shadowMap.type = THREE.PCFSoftShadowMap
-stage.appendChild(renderer.domElement)
-
-const controls = new OrbitControls(camera, renderer.domElement)
-controls.target.set(0, 1.18, 0)
-controls.enableDamping = true
-controls.enablePan = false
-controls.minDistance = 2.6
-controls.maxDistance = 6.2
-controls.minPolarAngle = Math.PI * .26
-controls.maxPolarAngle = Math.PI * .62
-
-scene.add(new THREE.HemisphereLight(0xe8f9ff, 0x151525, 2.1))
-const key = new THREE.DirectionalLight(0xf3fbff, 3.0)
-key.position.set(2.8, 4.2, 3.5)
-key.castShadow = true
-scene.add(key)
-const rim = new THREE.PointLight(0x8f6cff, 10, 7, 2)
-rim.position.set(-2.2, 2.4, -1.5)
-scene.add(rim)
-const fill = new THREE.PointLight(0x50e8ff, 7, 6, 2)
-fill.position.set(2.2, 1.3, 2.0)
-scene.add(fill)
-
-const floor = new THREE.Mesh(
-  new THREE.CircleGeometry(1.8, 96),
-  new THREE.MeshStandardMaterial({ color: 0x111728, roughness: .72, metalness: .08 }),
-)
-floor.rotation.x = -Math.PI / 2
-floor.receiveShadow = true
-scene.add(floor)
-
-const avatar = new AvatarRuntime(scene)
-const staticModel = new StaticModelRuntime(scene)
-const motions = new MotionController()
-const niva = new NivaController(avatar, motions, (text) => { speech.textContent = text })
-
-const expressionNames: SemanticExpression[] = ['neutral', 'happy', 'shy', 'sad', 'angry', 'surprised', 'thinking']
-const motionNames: MotionName[] = ['wave', 'greet', 'thinking', 'happy', 'sad', 'lookAround']
+const expressions: Array<[Expression, string]> = [
+  ['neutral', '平静'], ['happy', '开心'], ['shy', '害羞'], ['thinking', '思考'],
+  ['surprised', '惊讶'], ['sad', '低落'], ['angry', '生气'],
+]
+const motions: Array<[MotionName, string]> = [
+  ['wave', '挥手'], ['greet', '问候'], ['thinking', '思考'], ['happy', '雀跃'],
+  ['sad', '安慰'], ['lookAround', '张望'],
+]
 const scenarios: Array<[string, NivaAction]> = [
-  ['你好', { text: '你好呀，我一直在这里。', emotion: 'happy', motion: 'wave' }],
-  ['你在想什么', { text: '我在想，下次还能学会什么。', emotion: 'thinking', motion: 'thinking' }],
-  ['我成功了', { text: '太棒了！这个值得庆祝。', emotion: 'happy', motion: 'happy' }],
-  ['我今天有点累', { text: '那今天就慢一点，我陪着你。', emotion: 'sad', motion: 'sad' }],
+  ['见面', { text: '你好呀。今天也一起把事情一点点做好。', emotion: 'happy', motion: 'wave' }],
+  ['思考', { text: '让我想一想……我会先抓住真正重要的部分。', emotion: 'thinking', motion: 'thinking' }],
+  ['庆祝', { text: '完成了。这个结果值得好好记住。', emotion: 'happy', motion: 'happy' }],
+  ['陪伴', { text: '今天可以慢一点，我会一直在这里。', emotion: 'sad', motion: 'sad' }],
 ]
 
-function addButtons<T extends string>(id: string, values: T[], onClick: (value: T) => void) {
-  const host = document.querySelector<HTMLDivElement>(`#${id}`)!
-  for (const value of values) {
+let voiceEnabled = false
+let typeTimer = 0
+let motionTimer = 0
+
+function typeText(text: string) {
+  window.clearInterval(typeTimer)
+  speech.textContent = ''
+  let i = 0
+  typeTimer = window.setInterval(() => {
+    speech.textContent = text.slice(0, ++i)
+    if (i >= text.length) window.clearInterval(typeTimer)
+  }, 28)
+  if (voiceEnabled && 'speechSynthesis' in window) {
+    speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = 'zh-CN'
+    utterance.rate = 1.03
+    utterance.pitch = 1.12
+    speechSynthesis.speak(utterance)
+  }
+}
+
+function setEmotion(emotion: Expression, intensity = .8) {
+  shell.dataset.emotion = emotion
+  shell.style.setProperty('--emotion-intensity', String(Math.max(0, Math.min(1, intensity))))
+  emotionLabel.textContent = emotion.toUpperCase()
+  document.querySelectorAll<HTMLButtonElement>('[data-emotion]').forEach((b) => b.classList.toggle('active', b.dataset.emotion === emotion))
+}
+
+function playMotion(motion?: MotionName) {
+  if (!motion) return
+  window.clearTimeout(motionTimer)
+  avatar.classList.remove(...Array.from(avatar.classList).filter((c) => c.startsWith('motion-')))
+  void avatar.offsetWidth
+  avatar.classList.add(`motion-${motion}`)
+  document.querySelectorAll<HTMLButtonElement>('[data-motion]').forEach((b) => b.classList.toggle('active', b.dataset.motion === motion))
+  motionTimer = window.setTimeout(() => {
+    avatar.classList.remove(`motion-${motion}`)
+    document.querySelectorAll<HTMLButtonElement>('[data-motion]').forEach((b) => b.classList.remove('active'))
+  }, 1500)
+}
+
+function act(action: NivaAction) {
+  if (action.emotion) setEmotion(action.emotion, action.expressionIntensity ?? .8)
+  if (action.motion) playMotion(action.motion)
+  if (action.text) typeText(action.text)
+  if (action.lookTarget) {
+    avatar.style.setProperty('--look-x', `${Math.max(-1, Math.min(1, action.lookTarget.x)) * 5}px`)
+    avatar.style.setProperty('--look-y', `${Math.max(-1, Math.min(1, action.lookTarget.y)) * 3}px`)
+  }
+}
+
+function addButtons<T extends string>(hostId: string, values: Array<[T, string]>, attr: string, handler: (value: T) => void) {
+  const host = document.querySelector<HTMLElement>(`#${hostId}`)!
+  for (const [value, label] of values) {
     const button = document.createElement('button')
-    button.textContent = value
-    button.addEventListener('click', () => onClick(value))
+    button.textContent = label
+    button.dataset[attr] = value
+    button.addEventListener('click', () => handler(value))
     host.appendChild(button)
   }
 }
-addButtons('expressions', expressionNames, (emotion) => niva.act({ emotion }))
-addButtons('motions', motionNames, (motion) => niva.act({ motion }))
-const scenarioHost = document.querySelector<HTMLDivElement>('#scenarios')!
+addButtons('expressions', expressions, 'emotion', (emotion) => setEmotion(emotion))
+addButtons('motions', motions, 'motion', (motion) => playMotion(motion))
+
+const scenarioHost = document.querySelector<HTMLElement>('#scenarios')!
 for (const [label, action] of scenarios) {
   const button = document.createElement('button')
-  button.textContent = label
-  button.addEventListener('click', () => niva.act(action))
+  button.innerHTML = `<span>${label}</span><small>${action.text}</small>`
+  button.addEventListener('click', () => act(action))
   scenarioHost.appendChild(button)
 }
 
-loadGlbButton.addEventListener('click', () => glbInput.click())
-glbInput.addEventListener('change', async () => {
-  const file = glbInput.files?.[0]
-  if (!file) return
-
-  try {
-    status.textContent = 'LOADING GLB'
-    status.classList.remove('error', 'fallback')
-    assetNote.textContent = `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB`
-    await staticModel.loadFile(file)
-
-    avatar.root.visible = false
-    staticModel.root.visible = true
-    referenceAvatar.classList.add('is-hidden')
-    status.textContent = 'NIVA · GLB PREVIEW'
-    modeNote.textContent = '当前显示你刚上传的 NIVA 静态 GLB。外观已经进入正式候选；下一步需要骨骼与表情绑定，才能接管动作系统。'
-    speech.textContent = 'NIVA 的新 3D 外观已经载入。现在先验收脸、头发、身材比例、服装和整体轮廓。'
-  } catch (error) {
-    console.error(error)
-    status.textContent = 'GLB LOAD FAILED'
-    status.classList.add('error')
-    speech.textContent = '这个 GLB 没有成功载入。请保留原文件，我会继续按文件结构处理。'
-  }
-})
-
-renderer.domElement.addEventListener('pointermove', (event) => {
-  const rect = renderer.domElement.getBoundingClientRect()
-  const x = ((event.clientX - rect.left) / rect.width) * 2 - 1
-  const y = -(((event.clientY - rect.top) / rect.height) * 2 - 1)
-  avatar.setLookTarget(x, y)
-})
-renderer.domElement.addEventListener('pointerleave', () => avatar.setLookTarget(0, 0))
-
-async function boot() {
-  try {
-    status.textContent = 'LOADING AVATAR'
-    await avatar.load('/avatar/NIVA.vrm')
-    if (!avatar.vrm) throw new Error('VRM failed to initialize')
-    referenceAvatar.classList.add('is-hidden')
-    motions.attach(avatar.vrm)
-
-    const files: Partial<Record<MotionName, string>> = {
-      idle: '/motions/idle.vrma',
-      wave: '/motions/wave.vrma',
-      greet: '/motions/greet.vrma',
-      thinking: '/motions/thinking.vrma',
-      happy: '/motions/happy.vrma',
-      sad: '/motions/sad.vrma',
-      surprised: '/motions/surprised.vrma',
-      angry: '/motions/angry.vrma',
-      lookAround: '/motions/lookAround.vrma',
-    }
-    await Promise.all(Object.entries(files).map(async ([name, url]) => {
-      try { await motions.load(name as MotionName, url, avatar.vrm!) }
-      catch (error) { console.warn(`Motion skipped: ${name}`, error) }
-    }))
-    motions.play('idle', .1)
-
-    if (avatar.usingFallback) {
-      status.textContent = 'TECH BODY · CC0'
-      status.classList.add('fallback')
-      modeNote.textContent = '当前是许可证干净的临时 3D 技术身体。你现在也可以用上面的“载入 NIVA GLB”直接验收新生成的角色外观。'
-      speech.textContent = '技术身体已接通。生成好的 NIVA GLB 可以直接拖进当前舞台进行对比验收。'
-    } else {
-      status.textContent = 'READY'
-      status.classList.remove('error', 'fallback')
-      modeNote.textContent = '正式 NIVA 身体已接管舞台；继续只打磨角色、动作、表情与生命感。'
-      speech.textContent = 'NIVA 已就绪。接下来只把这个“人”做漂亮、做自然。'
-    }
-  } catch (error) {
-    console.error(error)
-    status.textContent = '3D BODY PENDING'
-    status.classList.add('error')
-    modeNote.textContent = '正式与临时 VRM 都未能加载。仍可用“载入 NIVA GLB”直接预览你生成的新模型。'
-    speech.textContent = '3D 身体暂时没有成功加载，但新的 GLB 仍然可以直接在这个舞台里验收。'
-  }
+function blink() {
+  avatar.classList.add('blinking')
+  window.setTimeout(() => avatar.classList.remove('blinking'), 130)
 }
-boot()
+function scheduleBlink() {
+  window.setTimeout(() => { blink(); scheduleBlink() }, 2300 + Math.random() * 3100)
+}
+scheduleBlink()
+
+stage.addEventListener('pointermove', (event) => {
+  const rect = stage.getBoundingClientRect()
+  const x = ((event.clientX - rect.left) / rect.width - .5) * 2
+  const y = ((event.clientY - rect.top) / rect.height - .5) * 2
+  avatar.style.setProperty('--look-x', `${x * 4}px`)
+  avatar.style.setProperty('--look-y', `${y * 2.5}px`)
+  avatar.style.setProperty('--parallax-x', `${x * 5}px`)
+})
+stage.addEventListener('pointerleave', () => {
+  avatar.style.setProperty('--look-x', '0px')
+  avatar.style.setProperty('--look-y', '0px')
+  avatar.style.setProperty('--parallax-x', '0px')
+})
+stage.addEventListener('pointerdown', () => {
+  blink()
+  act({ text: '嗯？我在听。', emotion: 'happy', motion: 'greet' })
+})
+
+voiceButton.addEventListener('click', () => {
+  voiceEnabled = !voiceEnabled
+  voiceButton.classList.toggle('active', voiceEnabled)
+  voiceButton.textContent = voiceEnabled ? 'VOICE ON' : 'VOICE'
+})
 
 Object.assign(window, {
   NIVA: {
-    act: (action: NivaAction) => niva.act(action),
-    get ready() { return !!avatar.vrm },
-    get usingFallback() { return avatar.usingFallback },
-    get staticPreview() { return !!staticModel.model },
+    act,
+    setEmotion,
+    motion: playMotion,
+    blink,
+    get ready() { return true },
+    get mode() { return '2d-official' as const },
   },
 })
 
@@ -224,35 +204,14 @@ declare global {
   interface Window {
     NIVA: {
       act(action: NivaAction): void
+      setEmotion(emotion: Expression, intensity?: number): void
+      motion(motion?: MotionName): void
+      blink(): void
       readonly ready: boolean
-      readonly usingFallback: boolean
-      readonly staticPreview: boolean
+      readonly mode: '2d-official'
     }
   }
 }
 
-const clock = new THREE.Clock()
-let frames = 0
-let fpsClock = performance.now()
-function render() {
-  requestAnimationFrame(render)
-  const dt = Math.min(clock.getDelta(), .033)
-  controls.update()
-  niva.update(dt)
-  renderer.render(scene, camera)
-
-  frames++
-  const now = performance.now()
-  if (now - fpsClock >= 1000) {
-    fpsEl.textContent = `FPS: ${frames}`
-    frames = 0
-    fpsClock = now
-  }
-}
-render()
-
-addEventListener('resize', () => {
-  camera.aspect = innerWidth / innerHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(innerWidth, innerHeight)
-})
+setEmotion('neutral')
+window.setTimeout(() => act({ text: 'NIVA 2D 正式舞台已就绪。', emotion: 'happy', motion: 'greet' }), 650)
