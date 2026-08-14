@@ -113,6 +113,10 @@ export function installTextModeToggle(): void {
   })
 }
 
+function speechOutputActive(): boolean {
+  return 'speechSynthesis' in window && (window.speechSynthesis.speaking || window.speechSynthesis.pending)
+}
+
 export function startDefaultVoiceInput(
   onText: (text: string) => void,
   onStatus?: (status: DesktopStatus) => void,
@@ -132,40 +136,84 @@ export function startDefaultVoiceInput(
   recognition.continuous = false
   recognition.interimResults = false
   recognition.maxAlternatives = 1
-  let stopped = false
-  let restartTimer = 0
 
-  const restart = () => {
+  let stopped = false
+  let listening = false
+  let restartTimer = 0
+  let guardTimer = 0
+  let resumeAfter = 0
+  let lastTranscript = ''
+  let lastTranscriptAt = 0
+
+  const scheduleRestart = (delay = 420) => {
     if (stopped) return
     clearTimeout(restartTimer)
     restartTimer = window.setTimeout(() => {
-      if (stopped) return
+      if (stopped || listening) return
+      const now = performance.now()
+      if (speechOutputActive() || now < resumeAfter) {
+        scheduleRestart(Math.max(220, Math.ceil(resumeAfter - now) + 80))
+        return
+      }
       try {
         recognition.start()
+        listening = true
         onStatus?.('voice')
       } catch {
-        restart()
+        listening = false
+        scheduleRestart(500)
       }
-    }, 450)
+    }, delay)
   }
 
   recognition.onresult = (event: any) => {
+    listening = false
+    if (speechOutputActive() || performance.now() < resumeAfter) return
+
     const result = event.results?.[event.results.length - 1]
     const text = result?.[0]?.transcript?.trim()
-    if (text) onText(text)
+    if (!text) return
+
+    const now = performance.now()
+    if (text === lastTranscript && now - lastTranscriptAt < 1800) return
+    lastTranscript = text
+    lastTranscriptAt = now
+    onText(text)
   }
+
   recognition.onerror = (event: any) => {
+    listening = false
     const fatal = event?.error === 'not-allowed' || event?.error === 'service-not-allowed'
     onStatus?.(fatal ? 'text' : 'offline')
-    if (!fatal) restart()
+    if (!fatal) scheduleRestart(520)
   }
-  recognition.onend = restart
 
-  restart()
+  recognition.onend = () => {
+    listening = false
+    scheduleRestart()
+  }
+
+  // WebView speech recognition can hear NIVA's own TTS. While NIVA is speaking,
+  // actively stop recognition and wait briefly after playback before listening again.
+  guardTimer = window.setInterval(() => {
+    if (stopped) return
+    if (speechOutputActive()) {
+      resumeAfter = performance.now() + 650
+      if (listening) {
+        try { recognition.stop() } catch { /* noop */ }
+        listening = false
+      }
+    }
+  }, 120)
+
+  scheduleRestart(80)
   return () => {
     stopped = true
     clearTimeout(restartTimer)
+    clearInterval(guardTimer)
     recognition.onend = null
+    recognition.onresult = null
+    recognition.onerror = null
     try { recognition.stop() } catch { /* noop */ }
   }
 }
