@@ -1,6 +1,19 @@
-# NIVA 3D Stage Web
+# NIVA 2D Official Stage
 
-独立于历史 2D 原型的新 3D 舞台。当前只实现数字生命前端闭环，不接 LLM / TTS / Memory。
+NIVA 当前正式前端路线。项目已从 3D/VRM 实验切回高质量 2D 数字生命舞台，以更低复杂度完成可展示、可交互、可继续接 AI 的 MVP。
+
+## 当前能力
+
+- 完整 NIVA 2D 分层角色渲染
+- 自动呼吸、漂浮、发丝/裙摆微动
+- 自动眨眼与指针轻微视线/视差反馈
+- `neutral / happy / shy / sad / angry / surprised / thinking` 情绪状态
+- `wave / greet / thinking / happy / sad / lookAround` 动作状态
+- 对话打字机效果
+- 可选浏览器本地 TTS
+- 预设交互场景
+- 响应式桌面/移动端界面
+- 保留统一 `window.NIVA.act()` 行为协议，后续可直接接 DeepSeek / OpenAI / 本地模型
 
 ## 启动
 
@@ -10,30 +23,13 @@ npm install
 npm run dev
 ```
 
-## 必需资产
+## 构建
 
-把 VRM 模型放到：
-
-```text
-apps/stage-web/public/avatar/NIVA.vrm
+```bash
+npm run build
 ```
 
-把 VRMA 动作放到：
-
-```text
-apps/stage-web/public/motions/
-├── idle.vrma
-├── wave.vrma
-├── greet.vrma
-├── thinking.vrma
-├── happy.vrma
-├── sad.vrma
-├── surprised.vrma
-├── angry.vrma
-└── lookAround.vrma
-```
-
-动作文件缺失时会跳过，不阻塞 Avatar 启动；VRM 缺失时页面会进入 `ASSET NEEDED` 状态。
+GitHub Pages 工作流会把仓库根目录 `assets/` 中的 NIVA 2D 分层素材一起打入部署产物。
 
 ## 对外控制接口
 
@@ -43,15 +39,20 @@ window.NIVA.act({
   emotion: 'happy',
   expressionIntensity: 0.8,
   motion: 'wave',
+  lookTarget: { x: 0.2, y: -0.1 }
 })
 ```
 
-渲染层不关心调用来源。以后 DeepSeek / OpenAI / 本地模型只需要输出同一份 action JSON。
+也可以单独调用：
 
-## 当前原则
+```js
+NIVA.setEmotion('thinking')
+NIVA.motion('greet')
+NIVA.blink()
+```
 
-- 历史 2D 版本不改。
-- 3D Stage 与具体 VRM 角色资产解耦。
-- 优先视觉质量，不继续堆功能。
-- 角色换模不允许改 `NivaController` / Behavior Contract。
-- 第三方二进制资产必须单独记录许可证。
+## 架构原则
+
+角色身份、记忆、人格与行为协议不绑定具体渲染方式。当前 Renderer 固定为 2D；未来接入 LLM 时，模型只输出受约束的 action JSON，不直接控制 DOM 或动画代码。
+
+3D 相关代码保留在历史提交中，不再作为当前产品依赖。
