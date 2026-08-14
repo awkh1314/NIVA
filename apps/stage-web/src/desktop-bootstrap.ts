@@ -27,6 +27,8 @@ type NivaRuntime = {
   readonly voiceOutput: boolean
 }
 
+type ModelEntry = { id: string; name: string }
+
 const BASE = import.meta.env.BASE_URL
 const LEARNED_KEY = 'niva.learned-reactions.v1'
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -100,14 +102,10 @@ function learnedCount(): number {
 function resolveReaction(action: NivaAction): NivaAction {
   const key = normalizeKey(action.reactionKey)
   const preset = presetReactions[key]
-  if (preset) {
-    return { ...action, motion: preset, customReaction: undefined }
-  }
+  if (preset) return { ...action, motion: preset, customReaction: undefined }
 
   const learned = loadLearned()
-  if (key && learned[key]) {
-    return { ...action, motion: 'custom', customReaction: learned[key] }
-  }
+  if (key && learned[key]) return { ...action, motion: 'custom', customReaction: learned[key] }
 
   if (action.motion === 'custom') {
     const safe = sanitizeCustom(action.customReaction)
@@ -143,6 +141,18 @@ async function waitForNiva(): Promise<NivaRuntime | null> {
   return null
 }
 
+async function loadModelCatalog(): Promise<ModelEntry[]> {
+  try {
+    const response = await fetch(`${BASE}models.json`, { cache: 'no-store' })
+    if (!response.ok) throw new Error(String(response.status))
+    const list = await response.json() as ModelEntry[]
+    const valid = list.filter((item) => item?.id?.toLowerCase().endsWith('.vrm'))
+    return valid.length ? valid : [{ id: 'NIVA.vrm', name: 'NIVA · 主模型' }]
+  } catch {
+    return [{ id: 'NIVA.vrm', name: 'NIVA · 主模型' }]
+  }
+}
+
 function createBackstage(settings: DesktopSettings) {
   const shell = document.querySelector<HTMLElement>('.shell')!
   const panel = document.createElement('aside')
@@ -174,9 +184,7 @@ function createBackstage(settings: DesktopSettings) {
       </label>
       <label>
         <span>人物模型</span>
-        <select id="activeModel">
-          <option value="NIVA.vrm">NIVA · 主模型</option>
-        </select>
+        <select id="activeModel"><option value="NIVA.vrm">NIVA · 主模型</option></select>
       </label>
       <label class="toggle-row">
         <span>语音输出</span>
@@ -201,10 +209,20 @@ function createBackstage(settings: DesktopSettings) {
 
   interaction.value = settings.interactionMode
   model.value = settings.deepseekModel
-  activeModel.value = settings.activeModel === 'NIVA.vrm' ? settings.activeModel : 'NIVA.vrm'
   voiceOutput.checked = settings.voiceOutput
 
   return { panel, interaction, model, apiKey, activeModel, voiceOutput, status }
+}
+
+function fillModelSelect(select: HTMLSelectElement, models: ModelEntry[], active: string) {
+  select.replaceChildren()
+  for (const entry of models) {
+    const option = document.createElement('option')
+    option.value = entry.id
+    option.textContent = entry.name
+    select.appendChild(option)
+  }
+  select.value = models.some((entry) => entry.id === active) ? active : models[0]?.id ?? 'NIVA.vrm'
 }
 
 async function bootDesktop() {
@@ -230,6 +248,8 @@ async function bootDesktop() {
   const statusText = document.querySelector<HTMLElement>('#statusText')!
   const modelFile = document.querySelector<HTMLInputElement>('#modelFile')!
   const backstage = createBackstage(settings)
+  const models = await loadModelCatalog()
+  fillModelSelect(backstage.activeModel, models, settings.activeModel)
 
   let currentMode: InteractionMode = settings.interactionMode
   let stopVoice: (() => void) | null = null
@@ -349,6 +369,12 @@ async function bootDesktop() {
     window.setTimeout(() => URL.revokeObjectURL(url), 5000)
   }, true)
 
+  backstage.activeModel.addEventListener('change', async () => {
+    backstage.status.textContent = '正在切换人物模型…'
+    const ok = await niva.loadModel(`${BASE}${backstage.activeModel.value}`)
+    backstage.status.textContent = ok ? `已切换：${backstage.activeModel.selectedOptions[0]?.textContent ?? backstage.activeModel.value}` : '模型切换失败。'
+  })
+
   backstage.panel.querySelector<HTMLButtonElement>('#saveBackstage')!.onclick = async () => {
     backstage.status.textContent = '正在保存…'
     try {
@@ -364,7 +390,7 @@ async function bootDesktop() {
       niva.setVoiceOutput(settings.voiceOutput)
       currentMode = settings.interactionMode
       backstage.status.textContent = `已保存 · ${settings.deepseekModel} · 已学习 ${learnedCount()} 个动作`
-      if (settings.activeModel === 'NIVA.vrm') await niva.loadModel(`${BASE}NIVA.vrm`)
+      await niva.loadModel(`${BASE}${settings.activeModel}`)
       setTimeout(closeBackstage, 350)
     } catch (error) {
       console.error(error)
@@ -373,6 +399,9 @@ async function bootDesktop() {
   }
 
   niva.setVoiceOutput(settings.voiceOutput)
+  if (settings.activeModel !== 'NIVA.vrm' && models.some((entry) => entry.id === settings.activeModel)) {
+    await niva.loadModel(`${BASE}${settings.activeModel}`)
+  }
   if (!settings.hasApiKey) setStatus('LOCAL · 双击配置 AI')
   applyMode(settings.interactionMode)
 }
