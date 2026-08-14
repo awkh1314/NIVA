@@ -16,7 +16,7 @@ type SpeechRecognitionCtor = new () => {
 
 type DesktopStatus = 'voice' | 'text' | 'offline'
 
-const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+export const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 export async function setupDesktopWindow(): Promise<void> {
   if (!isTauri()) return
@@ -39,15 +39,9 @@ export async function setupDesktopWindow(): Promise<void> {
   }
 }
 
-export async function saveDeepSeekKey(apiKey: string): Promise<void> {
-  if (!isTauri()) throw new Error('DeepSeek key storage is only available in the desktop app')
-  await invoke('save_deepseek_key', { apiKey })
-}
-
 export async function askDeepSeek(message: string): Promise<NivaAction> {
   if (!isTauri()) throw new Error('DeepSeek desktop bridge is unavailable')
-  const reply = await invoke<NivaAction>('deepseek_chat', { message })
-  return reply
+  return invoke<NivaAction>('deepseek_chat', { message })
 }
 
 export function installTextModeToggle(): void {
