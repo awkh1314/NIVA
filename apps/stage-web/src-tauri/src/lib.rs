@@ -276,8 +276,16 @@ emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。回复用自�
         custom_reaction: None,
     });
 
+    let assistant_text = action
+        .text
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| !text.is_empty())
+        .unwrap_or(cleaned)
+        .to_string();
+
     history.push(HistoryMessage { role: "user".to_string(), content: user_text });
-    history.push(HistoryMessage { role: "assistant".to_string(), content: cleaned.to_string() });
+    history.push(HistoryMessage { role: "assistant".to_string(), content: assistant_text });
     if history.len() > MAX_HISTORY_MESSAGES {
         history.drain(0..history.len() - MAX_HISTORY_MESSAGES);
     }
