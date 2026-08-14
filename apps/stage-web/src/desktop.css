@@ -19,6 +19,7 @@ html.niva-desktop .topbar {
   right: 12px;
   top: 10px;
   opacity: .72;
+  user-select: none;
 }
 
 html.niva-desktop .brand span {
@@ -27,24 +28,31 @@ html.niva-desktop .brand span {
 
 html.niva-desktop .status {
   margin-left: auto;
-  margin-right: 40px;
+  margin-right: 76px;
   font-size: 9px;
   color: rgba(222,247,255,.74);
 }
 
-html.niva-desktop .desktop-text-toggle {
+html.niva-desktop .desktop-control {
   position: absolute;
-  right: 0;
   top: 0;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   border-radius: 50%;
   border: 1px solid rgba(115,234,255,.2);
   background: rgba(7,13,27,.46);
   color: rgba(236,249,255,.9);
   cursor: pointer;
   backdrop-filter: blur(12px);
+  display: grid;
+  place-items: center;
+  padding: 0;
+  z-index: 60;
 }
+
+html.niva-desktop .desktop-text-toggle { right: 36px; }
+html.niva-desktop .desktop-close { right: 0; font-size: 20px; line-height: 1; }
+html.niva-desktop .desktop-close:hover { border-color: rgba(255,120,150,.5); color: #ffd8e2; }
 
 html.niva-desktop .stage {
   inset: 36px 0 92px;
