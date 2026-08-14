@@ -1,4 +1,4 @@
-name: Deploy NIVA Stage Web Preview
+name: Deploy NIVA 2D Stage
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - feat/stage-web-vrm
     paths:
       - 'apps/stage-web/**'
+      - 'assets/**'
       - '.github/workflows/deploy-stage-web.yml'
   workflow_dispatch:
 
@@ -28,7 +29,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
           cache-dependency-path: apps/stage-web/package.json
 
@@ -36,16 +37,15 @@ jobs:
         working-directory: apps/stage-web
         run: npm install
 
-      - name: Build stage-web
+      - name: Build NIVA 2D stage
         working-directory: apps/stage-web
         run: npm run build
 
-      - name: Rewrite runtime asset URLs for project Pages path
+      - name: Bundle NIVA 2D assets
         working-directory: apps/stage-web
         run: |
-          find dist -type f \( -name '*.js' -o -name '*.html' \) -print0 | xargs -0 sed -i \
-            -e 's|/avatar/|/niva-digital-spirit/avatar/|g' \
-            -e 's|/motions/|/niva-digital-spirit/motions/|g'
+          mkdir -p dist/assets
+          cp -R ../../assets/. dist/assets/
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
