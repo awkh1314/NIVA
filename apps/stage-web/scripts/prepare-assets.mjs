@@ -6,16 +6,23 @@ const here = dirname(fileURLToPath(import.meta.url))
 const appRoot = resolve(here, '..')
 const repoRoot = resolve(appRoot, '..', '..')
 const publicDir = resolve(appRoot, 'public')
-const primary = resolve(repoRoot, 'NIVA.vrm')
+const fallback = resolve(repoRoot, 'NIVA.vrm')
+const preferredName = 'AvatarSample_A.vrm'
 
-if (!existsSync(primary)) {
-  throw new Error(`NIVA.vrm not found at ${primary}`)
+if (!existsSync(fallback)) {
+  throw new Error(`NIVA.vrm not found at ${fallback}`)
 }
 
 mkdirSync(publicDir, { recursive: true })
 const models = readdirSync(repoRoot)
-  .filter((name) => /^NIVA.*\.vrm$/i.test(name))
-  .sort((a, b) => a === 'NIVA.vrm' ? -1 : b === 'NIVA.vrm' ? 1 : a.localeCompare(b))
+  .filter((name) => /\.vrm$/i.test(name))
+  .sort((a, b) => {
+    if (a === preferredName) return -1
+    if (b === preferredName) return 1
+    if (a === 'NIVA.vrm') return -1
+    if (b === 'NIVA.vrm') return 1
+    return a.localeCompare(b)
+  })
 
 for (const name of models) {
   const source = resolve(repoRoot, name)
@@ -26,8 +33,12 @@ for (const name of models) {
 
 writeFileSync(
   resolve(publicDir, 'models.json'),
-  JSON.stringify(models.map((file, index) => ({
+  JSON.stringify(models.map((file) => ({
     id: file,
-    name: index === 0 ? 'NIVA · 主模型' : file.replace(/\.vrm$/i, ''),
+    name: file === preferredName
+      ? 'AvatarSample_A · 默认模型'
+      : file === 'NIVA.vrm'
+        ? 'NIVA · 备用模型'
+        : file.replace(/\.vrm$/i, ''),
   })), null, 2),
 )
