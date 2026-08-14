@@ -37,64 +37,9 @@ jobs:
         working-directory: apps/stage-web
         run: npm install
 
-      - name: Patch responsive VRM camera
-        working-directory: apps/stage-web
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          p = Path('src/main.ts')
-          s = p.read_text()
-          old = '''function fitCamera() {
-            if (!modelRoot) return
-            const box = new THREE.Box3().setFromObject(modelRoot), size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3())
-            const h = Math.max(size.y, 1)
-            camera.position.set(center.x, center.y + h * .02, center.z + h * 1.15)
-            camera.lookAt(center.x, center.y + h * .02, center.z)
-            camera.near = Math.max(.01, h / 100); camera.far = h * 20; camera.updateProjectionMatrix()
-          }
-          function resize() {
-            const r = stage.getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / Math.max(r.height, 1); camera.updateProjectionMatrix()
-          }'''
-          new = '''function fitCamera() {
-            if (!modelRoot) return
-            modelRoot.updateWorldMatrix(true, true)
-            const box = new THREE.Box3().setFromObject(modelRoot)
-            const size = box.getSize(new THREE.Vector3())
-            const center = box.getCenter(new THREE.Vector3())
-            const h = Math.max(size.y, .01)
-            const w = Math.max(size.x, .01)
-            const vFov = THREE.MathUtils.degToRad(camera.fov)
-            const aspect = Math.max(camera.aspect, .01)
-            const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect)
-            const distanceForHeight = h / (2 * Math.tan(vFov / 2))
-            const distanceForWidth = w / (2 * Math.tan(hFov / 2))
-            const distance = Math.max(distanceForHeight, distanceForWidth) * 1.18
-            const targetY = center.y
-            camera.position.set(center.x, targetY, box.max.z + distance)
-            camera.lookAt(center.x, targetY, center.z)
-            camera.near = Math.max(.01, distance / 100)
-            camera.far = Math.max(100, distance + h * 20)
-            camera.updateProjectionMatrix()
-          }
-          function resize() {
-            const r = stage.getBoundingClientRect()
-            renderer.setSize(Math.max(1, r.width), Math.max(1, r.height), false)
-            camera.aspect = Math.max(1, r.width) / Math.max(1, r.height)
-            camera.updateProjectionMatrix()
-            if (modelRoot) fitCamera()
-          }'''
-          if old not in s:
-              raise SystemExit('camera block not found')
-          p.write_text(s.replace(old, new))
-          PY
-
-      - name: Build NIVA VRM stage
+      - name: Build NIVA
         working-directory: apps/stage-web
         run: npm run build
-
-      - name: Bundle NIVA VRM
-        working-directory: apps/stage-web
-        run: cp ../../NIVA.vrm dist/NIVA.vrm
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
