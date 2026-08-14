@@ -1,6 +1,7 @@
 import './desktop.css'
 import {
   askDeepSeek,
+  clearConversation,
   getSettings,
   installTextModeToggle,
   isTauri,
@@ -283,6 +284,7 @@ function createBackstage(settings: DesktopSettings) {
     </div>
     <div class="backstage-actions">
       <button type="button" id="chooseLocalModel">导入本地 VRM</button>
+      <button type="button" id="clearConversation">清除对话记忆</button>
       <button type="button" id="resetLearned">清空已学习动作</button>
       <button type="button" class="primary" id="saveBackstage">保存</button>
     </div>
@@ -344,27 +346,68 @@ async function bootDesktop() {
   let currentMode: InteractionMode = settings.interactionMode
   let stopVoice: (() => void) | null = null
   let backstageOpen = false
+  let brainBusy = false
+  let activeInput = ''
+  let interactionEpoch = 0
+  const pendingInputs: string[] = []
 
   const setStatus = (text: string) => { statusText.textContent = text }
+  const idleStatus = () => currentMode === 'voice'
+    ? (settings.hasApiKey ? 'ALIVE · VOICE' : 'VOICE · LOCAL')
+    : (settings.hasApiKey ? 'ALIVE · TEXT' : 'TEXT · LOCAL')
 
-  const sendWithBrain = async (raw: string) => {
+  const runBrainQueue = async () => {
+    if (brainBusy || backstageOpen) return
+    brainBusy = true
+    try {
+      while (pendingInputs.length && !backstageOpen) {
+        const text = pendingInputs.shift()!
+        activeInput = text
+        const epoch = interactionEpoch
+
+        input.value = ''
+        userLine.hidden = false
+        userLine.textContent = text
+        shell.classList.remove('text-open')
+        niva.act({ emotion: 'thinking', motion: 'thinking' })
+        setStatus(pendingInputs.length ? `THINKING · +${pendingInputs.length}` : 'THINKING')
+
+        try {
+          const reply = safeAction(await askDeepSeek(text))
+          if (epoch !== interactionEpoch) continue
+          if (!backstageOpen) {
+            niva.act(reply)
+            setStatus(reply.motion === 'custom' ? 'ALIVE · LEARNING' : 'ALIVE · AI')
+            backstage.status.textContent = `预设动作优先 · 已学习 ${learnedCount()} 个自定义反应`
+            const speakingMs = Math.min(14000, Math.max(1000, (reply.text?.length ?? 0) * 82 + 500))
+            await sleep(speakingMs)
+          }
+        } catch (error) {
+          if (epoch !== interactionEpoch) continue
+          console.warn('[NIVA] DeepSeek unavailable, using local behavior', error)
+          if (!backstageOpen) {
+            niva.send(text)
+            setStatus(settings.hasApiKey ? 'ALIVE · LOCAL' : 'LOCAL · 双击配置 AI')
+            await sleep(1500)
+          }
+        } finally {
+          activeInput = ''
+        }
+      }
+    } finally {
+      brainBusy = false
+      if (!backstageOpen) setStatus(idleStatus())
+      if (pendingInputs.length && !backstageOpen) void runBrainQueue()
+    }
+  }
+
+  const enqueueBrain = (raw: string) => {
     const text = raw.trim()
     if (!text || backstageOpen) return
-    input.value = ''
-    userLine.hidden = false
-    userLine.textContent = text
-    shell.classList.remove('text-open')
-    niva.act({ text: '让我想一下…', emotion: 'thinking', motion: 'thinking' })
-    try {
-      const reply = safeAction(await askDeepSeek(text))
-      niva.act(reply)
-      setStatus(reply.motion === 'custom' ? 'ALIVE · LEARNING' : 'ALIVE · AI')
-      backstage.status.textContent = `预设动作优先 · 已学习 ${learnedCount()} 个自定义反应`
-    } catch (error) {
-      console.warn('[NIVA] DeepSeek unavailable, using local behavior', error)
-      niva.send(text)
-      setStatus(settings.hasApiKey ? 'ALIVE · LOCAL' : 'LOCAL · 双击配置 AI')
-    }
+    if (text === activeInput || pendingInputs[pendingInputs.length - 1] === text) return
+    pendingInputs.push(text)
+    if (brainBusy) setStatus(`THINKING · +${pendingInputs.length}`)
+    void runBrainQueue()
   }
 
   const startVoice = () => {
@@ -372,8 +415,9 @@ async function bootDesktop() {
     stopVoice = null
     if (currentMode !== 'voice' || backstageOpen) return
     stopVoice = startDefaultVoiceInput(
-      (text) => void sendWithBrain(text),
+      enqueueBrain,
       (status) => {
+        if (brainBusy) return
         if (status === 'voice') setStatus(settings.hasApiKey ? 'ALIVE · VOICE' : 'VOICE · LOCAL')
         else if (status === 'text') {
           currentMode = 'text'
@@ -391,7 +435,7 @@ async function bootDesktop() {
       stopVoice = null
       shell.classList.add('text-open')
       setTimeout(() => input.focus(), 80)
-      setStatus(settings.hasApiKey ? 'ALIVE · TEXT' : 'TEXT · LOCAL')
+      setStatus(idleStatus())
     } else {
       shell.classList.remove('text-open')
       startVoice()
@@ -400,6 +444,8 @@ async function bootDesktop() {
 
   const openBackstage = () => {
     backstageOpen = true
+    interactionEpoch += 1
+    pendingInputs.length = 0
     stopVoice?.()
     stopVoice = null
     backstage.panel.classList.add('open')
@@ -417,7 +463,7 @@ async function bootDesktop() {
   composer.addEventListener('submit', (event) => {
     event.preventDefault()
     event.stopImmediatePropagation()
-    void sendWithBrain(input.value)
+    enqueueBrain(input.value)
   }, true)
 
   document.addEventListener('click', (event) => {
@@ -426,7 +472,7 @@ async function bootDesktop() {
     if (!button) return
     event.preventDefault()
     event.stopImmediatePropagation()
-    void sendWithBrain(button.dataset.text ?? '')
+    enqueueBrain(button.dataset.text ?? '')
   }, true)
 
   stage.addEventListener('dblclick', (event) => {
@@ -444,6 +490,20 @@ async function bootDesktop() {
 
   backstage.panel.querySelector<HTMLButtonElement>('#backstageClose')!.onclick = closeBackstage
   backstage.panel.querySelector<HTMLButtonElement>('#chooseLocalModel')!.onclick = () => modelFile.click()
+  backstage.panel.querySelector<HTMLButtonElement>('#clearConversation')!.onclick = async () => {
+    interactionEpoch += 1
+    pendingInputs.length = 0
+    backstage.status.textContent = '正在清除对话记忆…'
+    try {
+      await clearConversation()
+      userLine.hidden = true
+      userLine.textContent = ''
+      backstage.status.textContent = '对话记忆已清除。人物设置和已学习动作保持不变。'
+    } catch (error) {
+      console.error(error)
+      backstage.status.textContent = '清除对话记忆失败。'
+    }
+  }
   backstage.panel.querySelector<HTMLButtonElement>('#resetLearned')!.onclick = () => {
     localStorage.removeItem(LEARNED_KEY)
     backstage.status.textContent = '已清空学习动作；下一次遇到新反应会重新学习。'
