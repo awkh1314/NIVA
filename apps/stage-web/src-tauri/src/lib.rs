@@ -109,6 +109,10 @@ fn history_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app_config_dir(app)?.join("niva-conversation.json"))
 }
 
+fn history_epoch_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app_config_dir(app)?.join("niva-conversation.epoch"))
+}
+
 fn load_config(app: &tauri::AppHandle) -> Result<AppConfig, String> {
     let path = config_path(app)?;
     if !path.exists() { return Ok(AppConfig::default()); }
@@ -142,6 +146,18 @@ fn save_history(app: &tauri::AppHandle, history: &[HistoryMessage]) -> Result<()
     }
     let raw = serde_json::to_string_pretty(&trimmed).map_err(|e| e.to_string())?;
     fs::write(history_path(app)?, raw).map_err(|e| e.to_string())
+}
+
+fn load_history_epoch(app: &tauri::AppHandle) -> u64 {
+    let Ok(path) = history_epoch_path(app) else { return 0; };
+    let Ok(raw) = fs::read_to_string(path) else { return 0; };
+    raw.trim().parse::<u64>().unwrap_or(0)
+}
+
+fn bump_history_epoch(app: &tauri::AppHandle) -> Result<u64, String> {
+    let next = load_history_epoch(app).saturating_add(1);
+    fs::write(history_epoch_path(app)?, next.to_string()).map_err(|e| e.to_string())?;
+    Ok(next)
 }
 
 fn normalize_model(model: &str) -> String {
@@ -180,6 +196,7 @@ fn save_settings(app: tauri::AppHandle, settings: SettingsInput) -> Result<Setti
 
 #[tauri::command]
 fn clear_conversation(app: tauri::AppHandle) -> Result<(), String> {
+    bump_history_epoch(&app)?;
     let path = history_path(&app)?;
     if path.exists() { fs::remove_file(path).map_err(|e| e.to_string())?; }
     Ok(())
@@ -194,6 +211,7 @@ async fn deepseek_chat(app: tauri::AppHandle, message: String) -> Result<NivaAct
 
     let user_text = message.trim().to_string();
     if user_text.is_empty() { return Err("输入内容为空。".to_string()); }
+    let request_history_epoch = load_history_epoch(&app);
 
     let system_prompt = r#"你是 NIVA，一个活跃、聪明、自然的数字生命陪伴精灵。你的输出会直接驱动桌面 3D 身体。你会收到最近的对话记录，要保持人物身份、上下文和语气连续，不要把每一句都当成第一次见面。
 你必须只输出一个合法 json 对象，不要 markdown，不要额外解释。
@@ -289,8 +307,12 @@ emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。回复用自�
     if history.len() > MAX_HISTORY_MESSAGES {
         history.drain(0..history.len() - MAX_HISTORY_MESSAGES);
     }
-    if let Err(error) = save_history(&app, &history) {
-        eprintln!("[NIVA] unable to persist conversation history: {error}");
+    if load_history_epoch(&app) == request_history_epoch {
+        if let Err(error) = save_history(&app, &history) {
+            eprintln!("[NIVA] unable to persist conversation history: {error}");
+        }
+    } else {
+        eprintln!("[NIVA] conversation memory changed while request was in flight; stale history was not restored");
     }
 
     Ok(action)
