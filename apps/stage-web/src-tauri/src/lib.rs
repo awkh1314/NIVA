@@ -21,7 +21,7 @@ struct AppConfig {
 
 fn default_model() -> String { "deepseek-v4-flash".to_string() }
 fn default_interaction_mode() -> String { "voice".to_string() }
-fn default_active_model() -> String { "AvatarSample_A.vrm".to_string() }
+fn default_active_model() -> String { "local:AvatarSample_A.vrm".to_string() }
 fn default_voice_output() -> bool { true }
 
 impl Default for AppConfig {
