@@ -1,0 +1,121 @@
+html.niva-desktop,
+html.niva-desktop body,
+html.niva-desktop #app {
+  background: transparent !important;
+}
+
+html.niva-desktop .shell {
+  background: transparent !important;
+}
+
+html.niva-desktop .shell::before,
+html.niva-desktop .ambient,
+html.niva-desktop .floor {
+  display: none !important;
+}
+
+html.niva-desktop .topbar {
+  left: 12px;
+  right: 12px;
+  top: 10px;
+  opacity: .72;
+}
+
+html.niva-desktop .brand span {
+  display: none;
+}
+
+html.niva-desktop .status {
+  margin-left: auto;
+  margin-right: 40px;
+  font-size: 9px;
+  color: rgba(222,247,255,.74);
+}
+
+html.niva-desktop .desktop-text-toggle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid rgba(115,234,255,.2);
+  background: rgba(7,13,27,.46);
+  color: rgba(236,249,255,.9);
+  cursor: pointer;
+  backdrop-filter: blur(12px);
+}
+
+html.niva-desktop .stage {
+  inset: 36px 0 92px;
+  transition: bottom .2s ease;
+}
+
+html.niva-desktop .conversation {
+  bottom: 12px;
+  width: calc(100% - 24px);
+  pointer-events: none;
+}
+
+html.niva-desktop .conversation .dialog {
+  margin: 0 auto;
+  max-width: 430px;
+  padding: 9px 12px;
+  border: 1px solid rgba(115,234,255,.15);
+  border-radius: 14px;
+  background: rgba(5,10,22,.52);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 12px 36px rgba(0,0,0,.16);
+}
+
+html.niva-desktop .conversation .user-line {
+  margin-bottom: 5px;
+  font-size: 10px;
+  color: rgba(207,225,242,.7);
+}
+
+html.niva-desktop .conversation .niva-line {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #eef9ff;
+}
+
+html.niva-desktop .conversation .niva-line b {
+  color: #8eeeff;
+  font-size: 9px;
+  letter-spacing: .12em;
+}
+
+html.niva-desktop #composer,
+html.niva-desktop .quick {
+  display: none;
+}
+
+html.niva-desktop .shell.text-open .stage {
+  bottom: 184px;
+}
+
+html.niva-desktop .shell.text-open .conversation {
+  pointer-events: auto;
+}
+
+html.niva-desktop .shell.text-open #composer {
+  display: flex;
+  margin-top: 8px;
+}
+
+html.niva-desktop .shell.text-open .quick {
+  display: flex;
+}
+
+html.niva-desktop .shell.text-open .pose-quick {
+  display: none;
+}
+
+@media (max-height: 640px) {
+  html.niva-desktop .stage { inset: 32px 0 76px; }
+  html.niva-desktop .conversation .dialog { max-height: 64px; overflow: hidden; }
+}
