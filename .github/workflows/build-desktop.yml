@@ -1,0 +1,48 @@
+name: Build NIVA Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feat/stage-web-vrm
+    paths:
+      - 'apps/stage-web/**'
+      - 'NIVA.vrm'
+      - '.github/workflows/build-desktop.yml'
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: apps/stage-web/src-tauri -> target
+
+      - name: Install frontend dependencies
+        working-directory: apps/stage-web
+        run: npm install
+
+      - name: Build Windows installer
+        working-directory: apps/stage-web
+        run: npm run tauri build -- --bundles nsis
+
+      - name: Upload Windows EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: NIVA-Windows-x64
+          path: apps/stage-web/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error
