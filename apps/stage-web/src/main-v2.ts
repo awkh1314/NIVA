@@ -3,7 +3,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm'
 import { RawMotionController } from './avatar/RawMotionController'
-import type { MotionName, NivaAction, SemanticExpression } from './core/types'
+import type { CustomReaction, MotionName, NivaAction, SemanticExpression } from './core/types'
 
 type Expression = SemanticExpression
 const base = import.meta.env.BASE_URL
@@ -63,6 +63,7 @@ let modelRoot: THREE.Object3D | null = null
 let activeEmotion: Expression = 'thinking'
 let emotionIntensity = .8
 let motion: { name: MotionName; start: number; duration: number } = { name: 'thinking', start: performance.now(), duration: 6500 }
+let activeCustomReaction: CustomReaction | null = null
 let lookX = 0, lookY = 0, targetLookX = 0, targetLookY = 0
 let nextBlink = performance.now() + 2800
 let blinkStart = -1
@@ -115,6 +116,7 @@ function setExpression(emotion: Expression, intensity = .8) {
 function playMotion(name?: MotionName) {
   if (!name) return
   lastInteraction = performance.now()
+  if (name !== 'custom') activeCustomReaction = null
   const duration: Partial<Record<MotionName, number>> = {
     idle: Infinity,
     wave: 2200,
@@ -125,8 +127,14 @@ function playMotion(name?: MotionName) {
     lookAround: 2600,
     surprised: 1200,
     angry: 1200,
+    custom: 2300,
   }
   motion = { name, start: performance.now(), duration: duration[name] ?? 1800 }
+}
+
+function setVoiceOutput(enabled: boolean) {
+  voiceEnabled = enabled
+  if (!enabled && 'speechSynthesis' in window) speechSynthesis.cancel()
 }
 
 function speakText(text: string) {
@@ -152,6 +160,7 @@ function speakText(text: string) {
 function act(action: NivaAction) {
   lastInteraction = performance.now()
   if (action.emotion) setExpression(action.emotion, action.expressionIntensity ?? .8)
+  if (action.customReaction) activeCustomReaction = action.customReaction
   if (action.motion) playMotion(action.motion)
   if (action.lookTarget) {
     targetLookX = THREE.MathUtils.clamp(action.lookTarget.x, -1, 1)
@@ -211,6 +220,7 @@ function updateLife(now: number) {
   lookY += (targetLookY - lookY) * .075
 
   if (Number.isFinite(motion.duration) && now - motion.start >= motion.duration) {
+    activeCustomReaction = null
     motion = { name: 'idle', start: now, duration: Infinity }
     nextAutonomy = now + 5500 + Math.random() * 5000
   }
@@ -224,7 +234,7 @@ function updateLife(now: number) {
     playMotion(chosen)
   }
 
-  rawMotion.update(now, motion, lookX, lookY)
+  rawMotion.update(now, motion, lookX, lookY, activeCustomReaction)
 }
 
 function animate() {
@@ -262,6 +272,7 @@ async function loadVrm(url: string) {
     })
 
     rawMotion.attach(vrm)
+    activeCustomReaction = null
     setExpression('thinking', .76)
     motion = { name: 'thinking', start: performance.now(), duration: 6500 }
     updateLife(performance.now())
@@ -271,11 +282,13 @@ async function loadVrm(url: string) {
     statusText.textContent = 'ALIVE'
     nextAutonomy = performance.now() + 8500
     speakText('我在。')
+    return true
   } catch (error) {
     console.error(error)
     statusText.textContent = 'MODEL NEEDED'
     loadHint.textContent = '没有找到 NIVA.vrm。你也可以直接载入本地模型。'
     localModel.hidden = false
+    return false
   }
 }
 void loadVrm(modelUrl)
@@ -306,9 +319,12 @@ Object.assign(window, {
   NIVA: {
     act,
     send,
+    loadModel: loadVrm,
     setEmotion: setExpression,
+    setVoiceOutput,
     motion: playMotion,
     get ready() { return !!vrm },
+    get voiceOutput() { return voiceEnabled },
     get mode() { return 'vrm-raw-motion' as const },
   },
 })
