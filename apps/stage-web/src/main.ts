@@ -10,6 +10,14 @@ const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
   <div class="shell">
     <div id="stage"></div>
+    <div class="reference-avatar" id="referenceAvatar" aria-label="NIVA 2D visual reference">
+      <div class="reference-glow"></div>
+      <img src="https://raw.githubusercontent.com/awkh1314/niva-digital-spirit/main/recomposite.png" alt="NIVA 2D visual DNA" />
+      <div class="reference-caption">
+        <span>VISUAL DNA</span>
+        <b>等待 3D 身体接入</b>
+      </div>
+    </div>
     <div class="topbar">
       <div class="brand"><b>NIVA / DIGITAL LIFE</b><small>3D STAGE · VRM 1.0</small></div>
       <div class="status" id="status">INITIALIZING</div>
@@ -17,7 +25,7 @@ app.innerHTML = `
     <div class="fps" id="fps">FPS: --</div>
     <aside class="panel">
       <h2>NIVA</h2>
-      <p class="muted">功能冻结版：只保留表情、动作、生命感和统一控制契约。</p>
+      <p class="muted">当前冻结功能扩张，只打磨角色、动作、表情与生命感。</p>
       <div class="label">Expression</div>
       <div class="buttons" id="expressions"></div>
       <div class="label">Motion</div>
@@ -32,6 +40,7 @@ const stage = document.querySelector<HTMLDivElement>('#stage')!
 const speech = document.querySelector<HTMLDivElement>('#speech')!
 const status = document.querySelector<HTMLDivElement>('#status')!
 const fpsEl = document.querySelector<HTMLDivElement>('#fps')!
+const referenceAvatar = document.querySelector<HTMLDivElement>('#referenceAvatar')!
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x070a15)
@@ -122,6 +131,7 @@ async function boot() {
     status.textContent = 'LOADING AVATAR'
     await avatar.load('/avatar/NIVA.vrm')
     if (!avatar.vrm) throw new Error('VRM failed to initialize')
+    referenceAvatar.classList.add('is-hidden')
     motions.attach(avatar.vrm)
 
     const files: Partial<Record<MotionName, string>> = {
@@ -141,12 +151,13 @@ async function boot() {
     }))
     motions.play('idle', .1)
     status.textContent = 'READY'
-    speech.textContent = 'NIVA 已就绪。现在只专注把这个“人”做漂亮、做自然。'
+    status.classList.remove('error')
+    speech.textContent = 'NIVA 已就绪。接下来只把这个“人”做漂亮、做自然。'
   } catch (error) {
     console.error(error)
-    status.textContent = 'ASSET NEEDED'
+    status.textContent = '3D BODY PENDING'
     status.classList.add('error')
-    speech.innerHTML = '缺少 <code>public/avatar/NIVA.vrm</code>。代码骨架已经就绪，把正式 VRM 放进去即可接管身体。'
+    speech.textContent = '3D 身体插槽还空着。当前先保留 NIVA 的 2D 视觉 DNA，等正式 VRM 接管身体。'
   }
 }
 boot()
