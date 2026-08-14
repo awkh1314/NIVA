@@ -6,6 +6,7 @@ html.niva-desktop #app {
 
 html.niva-desktop .shell {
   background: transparent !important;
+  overflow: hidden;
 }
 
 html.niva-desktop .shell::before,
@@ -14,21 +15,20 @@ html.niva-desktop .floor {
   display: none !important;
 }
 
+/* Desktop mode should read as a living character, not as an app window. */
 html.niva-desktop .topbar {
-  left: 12px;
-  right: 12px;
-  top: 10px;
-  opacity: .72;
+  left: 10px;
+  right: 10px;
+  top: 8px;
+  opacity: 1;
+  pointer-events: none;
   user-select: none;
+  z-index: 70;
 }
 
-html.niva-desktop .brand span { display: none; }
-
+html.niva-desktop .brand,
 html.niva-desktop .status {
-  margin-left: auto;
-  margin-right: 76px;
-  font-size: 9px;
-  color: rgba(222,247,255,.74);
+  display: none !important;
 }
 
 html.niva-desktop .desktop-control {
@@ -37,15 +37,26 @@ html.niva-desktop .desktop-control {
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  border: 1px solid rgba(115,234,255,.2);
-  background: rgba(7,13,27,.46);
+  border: 1px solid rgba(115,234,255,.18);
+  background: rgba(7,13,27,.40);
   color: rgba(236,249,255,.9);
   cursor: pointer;
   backdrop-filter: blur(12px);
   display: grid;
   place-items: center;
   padding: 0;
-  z-index: 60;
+  z-index: 80;
+  opacity: 0;
+  pointer-events: auto;
+  transform: translateY(-4px);
+  transition: opacity .16s ease, transform .16s ease, border-color .16s ease;
+}
+
+html.niva-desktop .shell:hover .desktop-control,
+html.niva-desktop .shell.text-open .desktop-control,
+html.niva-desktop .shell.backstage-open .desktop-control {
+  opacity: .78;
+  transform: translateY(0);
 }
 
 html.niva-desktop .desktop-text-toggle { right: 36px; }
@@ -53,26 +64,34 @@ html.niva-desktop .desktop-close { right: 0; font-size: 20px; line-height: 1; }
 html.niva-desktop .desktop-close:hover { border-color: rgba(255,120,150,.5); color: #ffd8e2; }
 
 html.niva-desktop .stage {
-  inset: 36px 0 92px;
-  transition: bottom .2s ease, opacity .2s ease, filter .2s ease;
+  inset: 0;
+  transition: inset .2s ease, opacity .2s ease, filter .2s ease;
 }
 
 html.niva-desktop .conversation {
   bottom: 12px;
   width: calc(100% - 24px);
   pointer-events: none;
-  transition: opacity .2s ease;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity .18s ease, transform .18s ease;
+}
+
+html.niva-desktop .shell:hover .conversation,
+html.niva-desktop .shell.text-open .conversation {
+  opacity: .88;
+  transform: translateY(0);
 }
 
 html.niva-desktop .conversation .dialog {
   margin: 0 auto;
-  max-width: 430px;
-  padding: 9px 12px;
-  border: 1px solid rgba(115,234,255,.15);
+  max-width: 410px;
+  padding: 8px 11px;
+  border: 1px solid rgba(115,234,255,.13);
   border-radius: 14px;
-  background: rgba(5,10,22,.52);
+  background: rgba(5,10,22,.46);
   backdrop-filter: blur(18px);
-  box-shadow: 0 12px 36px rgba(0,0,0,.16);
+  box-shadow: 0 12px 36px rgba(0,0,0,.14);
 }
 
 html.niva-desktop .conversation .user-line {
@@ -99,26 +118,26 @@ html.niva-desktop .conversation .niva-line b {
 html.niva-desktop #composer,
 html.niva-desktop .quick { display: none; }
 
-html.niva-desktop .shell.text-open .stage { bottom: 184px; }
-html.niva-desktop .shell.text-open .conversation { pointer-events: auto; }
+html.niva-desktop .shell.text-open .stage { inset: 0 0 184px; }
+html.niva-desktop .shell.text-open .conversation { pointer-events: auto; opacity: 1; }
 html.niva-desktop .shell.text-open #composer { display: flex; margin-top: 8px; }
 html.niva-desktop .shell.text-open .quick { display: flex; }
 html.niva-desktop .shell.text-open .pose-quick { display: none; }
 
 html.niva-desktop .niva-backstage {
   position: absolute;
-  inset: 56px 18px 22px;
+  inset: 14px;
   z-index: 100;
   display: flex;
   flex-direction: column;
-  gap: 16px;
-  padding: 18px;
+  gap: 14px;
+  padding: 17px;
   border: 1px solid rgba(125,235,255,.22);
   border-radius: 22px;
   background:
-    linear-gradient(180deg, rgba(8,16,32,.94), rgba(5,10,21,.91)),
+    linear-gradient(180deg, rgba(8,16,32,.96), rgba(5,10,21,.93)),
     radial-gradient(circle at 80% 10%, rgba(144,96,255,.18), transparent 44%);
-  backdrop-filter: blur(28px) saturate(120%);
+  backdrop-filter: blur(30px) saturate(120%);
   box-shadow: 0 28px 80px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05);
   opacity: 0;
   transform: translateY(12px) scale(.985);
@@ -134,11 +153,11 @@ html.niva-desktop .niva-backstage.open {
 }
 
 html.niva-desktop .shell.backstage-open .stage {
-  opacity: .22;
-  filter: blur(4px) saturate(.7);
+  opacity: .16;
+  filter: blur(5px) saturate(.65);
 }
 
-html.niva-desktop .shell.backstage-open .conversation { opacity: .15; }
+html.niva-desktop .shell.backstage-open .conversation { opacity: 0; }
 
 html.niva-desktop .backstage-head {
   display: flex;
@@ -179,7 +198,7 @@ html.niva-desktop .backstage-head button {
 html.niva-desktop .backstage-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 11px;
 }
 
 html.niva-desktop .backstage-grid label {
@@ -256,8 +275,12 @@ html.niva-desktop .backstage-foot {
   border-top: 1px solid rgba(255,255,255,.07);
 }
 
+@media (max-width: 430px) {
+  html.niva-desktop .backstage-grid { grid-template-columns: 1fr; }
+  html.niva-desktop .backstage-grid .backstage-wide { grid-column: auto; }
+}
+
 @media (max-height: 640px) {
-  html.niva-desktop .stage { inset: 32px 0 76px; }
   html.niva-desktop .conversation .dialog { max-height: 64px; overflow: hidden; }
-  html.niva-desktop .niva-backstage { inset: 46px 14px 14px; gap: 10px; padding: 14px; overflow: auto; }
+  html.niva-desktop .niva-backstage { inset: 10px; gap: 9px; padding: 13px; overflow: auto; }
 }
