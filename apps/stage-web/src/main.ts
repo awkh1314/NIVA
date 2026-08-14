@@ -11,12 +11,12 @@ const modelUrl = `${base}NIVA.vrm`
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
-<main class="shell" data-emotion="neutral">
+<main class="shell" data-emotion="thinking">
   <div class="ambient a"></div><div class="ambient b"></div>
   <header class="topbar"><div class="brand"><strong>NIVA</strong><span>DIGITAL LIFE · VRM</span></div><div class="status"><i></i><span id="statusText">LOADING</span></div></header>
   <section class="stage" id="stage"><canvas id="scene"></canvas><div class="floor"></div><div class="load-card" id="loadCard"><strong>正在唤醒 NIVA</strong><span id="loadHint">加载 3D 身体、表情与物理系统…</span><button id="localModel" hidden>载入本地 NIVA.vrm</button><input id="modelFile" type="file" accept=".vrm" hidden></div></section>
   <section class="conversation">
-    <div class="dialog"><div id="userLine" class="user-line" hidden></div><div class="niva-line"><b>NIVA</b><span id="speechText">我正在醒来…</span></div></div>
+    <div class="dialog"><div id="userLine" class="user-line" hidden></div><div class="niva-line"><b>NIVA</b><span id="speechText">我在想一件事情…</span></div></div>
     <form id="composer"><input id="messageInput" maxlength="180" autocomplete="off" placeholder="和 NIVA 说点什么…"><button>发送</button></form>
     <div class="quick"><button data-text="你好">你好</button><button data-text="挥挥手">挥挥手</button><button data-text="我今天有点累">我有点累</button><button data-text="我成功了">我成功了</button></div>
     <div class="quick pose-quick"><button data-cute="wave">招手</button><button data-cute="shyCute">害羞</button><button data-cute="heart">比心</button><button data-cute="peek">歪头</button><button data-cute="happy">开心</button></div>
@@ -53,16 +53,16 @@ const cyan = new THREE.PointLight(0x60eaff, 16, 5); cyan.position.set(1.5, 1.4, 
 let vrm: any = null
 let modelRoot: THREE.Object3D | null = null
 let voiceEnabled = true
-let activeEmotion: Expression = 'neutral'
+let activeEmotion: Expression = 'thinking'
 let emotionIntensity = .8
-let motion: { name: CuteMotion | 'idle'; start: number; duration: number } = { name: 'idle', start: 0, duration: Infinity }
+let motion: { name: CuteMotion | 'idle'; start: number; duration: number } = { name: 'thinking', start: performance.now(), duration: Infinity }
 let targetLookX = 0, targetLookY = 0, lookX = 0, lookY = 0
-let nextBlink = performance.now() + 2200
+let nextBlink = performance.now() + 3200
 let blinkStart = -1
 let speakingUntil = 0
 let typeTimer = 0
 let lastInteraction = performance.now()
-let nextAutoCute = performance.now() + 7000
+let nextAutoCute = performance.now() + 9000
 
 const emotionNames: Record<Expression, string | null> = { neutral: null, happy: 'happy', shy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised', thinking: null }
 
@@ -141,11 +141,12 @@ function updateFace(now: number) {
   const m = vrm?.expressionManager; if (!m) return
   for (const n of ['happy','sad','angry','surprised']) m.setValue(n, 0)
   const mapped = emotionNames[activeEmotion]; if (mapped) m.setValue(mapped, emotionIntensity * (activeEmotion === 'shy' ? .48 : 1))
+  if (activeEmotion === 'thinking') m.setValue('surprised', .24)
   if (motion.name === 'shyCute') m.setValue('happy', .5)
   if (motion.name === 'heart') m.setValue('happy', .75)
-  if (now >= nextBlink && blinkStart < 0) { blinkStart = now; nextBlink = now + 2600 + Math.random() * 3600 }
+  if (now >= nextBlink && blinkStart < 0) { blinkStart = now; nextBlink = now + 3200 + Math.random() * 4200 }
   if (blinkStart >= 0) {
-    const t = (now - blinkStart) / 150, v = t < .5 ? t * 2 : Math.max(0, 2 - t * 2)
+    const t = (now - blinkStart) / 140, v = t < .5 ? t * 2 : Math.max(0, 2 - t * 2)
     m.setValue('blink', v); if (t >= 1) { m.setValue('blink', 0); blinkStart = -1 }
   } else m.setValue('blink', 0)
   const speaking = now < speakingUntil
@@ -158,28 +159,28 @@ function updateBody(now: number) {
   const t = now / 1000, breath = Math.sin(t * 2.0), sway = Math.sin(t * .72), micro = Math.sin(t * .31)
   lookX += (targetLookX - lookX) * .075; lookY += (targetLookY - lookY) * .075
 
-  // 直接用 VRM 的 normalized pose 写完整姿态；它是相对 T-Pose 的标准化姿势。
   let hips = [0, sway * .012, -.025 + micro * .007] as [number,number,number]
   let spine = [breath * .008, -sway * .008, .018 + micro * .004] as [number,number,number]
   let chest = [breath * .015, sway * .014, .022 + micro * .006] as [number,number,number]
   let head = [-lookY * .11 + breath * .006, lookX * .16 + sway * .012, -.035 + sway * .014] as [number,number,number]
 
-  // A-Pose / relaxed idle: arms sit clearly below the shoulders instead of staying horizontal.
-  let lua = [.08, -.12, 1.32 + sway * .016] as [number,number,number]
-  let lla = [.04, .03, .24 + breath * .012] as [number,number,number]
-  let rua = [.08, .12, -1.32 - sway * .016] as [number,number,number]
-  let rla = [.04, -.03, -.24 - breath * .012] as [number,number,number]
+  // 自然基础站姿：双臂明显落下，避免任何“架着”的感觉。
+  let lua = [.04, -.10, 1.46 + sway * .012] as [number,number,number]
+  let lla = [.03, .02, .18 + breath * .01] as [number,number,number]
+  let rua = [.04, .10, -1.46 - sway * .012] as [number,number,number]
+  let rla = [.03, -.02, -.18 - breath * .01] as [number,number,number]
   let lul = [0, 0, .035] as [number,number,number]
   let rul = [0, 0, -.035] as [number,number,number]
   let lll = [0, 0, 0] as [number,number,number]
   let rll = [0, 0, 0] as [number,number,number]
 
-  const p = Number.isFinite(motion.duration) ? THREE.MathUtils.clamp((now - motion.start) / motion.duration, 0, 1) : 0
-  if (p >= 1 && motion.name !== 'idle') {
+  const persistentThinking = motion.name === 'thinking' && !Number.isFinite(motion.duration)
+  const p = persistentThinking ? .72 : (Number.isFinite(motion.duration) ? THREE.MathUtils.clamp((now - motion.start) / motion.duration, 0, 1) : 0)
+  if (!persistentThinking && p >= 1 && motion.name !== 'idle') {
     motion = { name: 'idle', start: now, duration: Infinity }
     nextAutoCute = now + 6500 + Math.random() * 4500
   }
-  const e = Math.sin(Math.PI * p)
+  const e = persistentThinking ? .9 : Math.sin(Math.PI * p)
 
   if (motion.name === 'wave') {
     const w = Math.sin(p * Math.PI * 7) * e
@@ -189,8 +190,11 @@ function updateBody(now: number) {
   } else if (motion.name === 'greet') {
     head[0] += .16 * e; head[2] += .06 * e; chest[0] += .035 * e
   } else if (motion.name === 'thinking') {
-    head[2] -= .13 * e; head[1] -= .1 * e
-    rua = [.18, .04, -1.62]; rla = [.12, -.08, -1.12 * e - .3]
+    // 初始思考：一只手靠近脸颊/下巴，另一只手自然垂下，眼睛保持睁大。
+    head[0] += .035; head[1] -= .08; head[2] -= .12
+    chest[1] += .025; chest[2] -= .035
+    lua = [.04, -.10, 1.50]; lla = [.03, .02, .15]
+    rua = [.12, .02, -1.72]; rla = [.10, -.08, -1.08]
   } else if (motion.name === 'happy') {
     const bounce = Math.sin(p * Math.PI * 4) * e
     chest[0] -= .04 * e; chest[2] += bounce * .05
@@ -230,7 +234,6 @@ function updateBody(now: number) {
   }
   vrm.humanoid.setNormalizedPose(pose)
 
-  // 没有操作时也会偶尔自己做一个小动作，避免像静态模型。
   if (motion.name === 'idle' && now > nextAutoCute && now - lastInteraction > 4500) {
     const pool: CuteMotion[] = ['peek', 'shyCute', 'wave', 'happy']
     playMotion(pool[Math.floor(Math.random() * pool.length)])
@@ -254,10 +257,12 @@ async function loadVrm(url: string) {
     VRMUtils.removeUnnecessaryVertices(vrm.scene); VRMUtils.combineSkeletons(vrm.scene)
     modelRoot = vrm.scene; scene.add(modelRoot)
     modelRoot.traverse((o: any) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true } })
-    updateBody(performance.now()); vrm.update(0); fitCamera()
+    activeEmotion = 'thinking'; shell.dataset.emotion = 'thinking'
+    motion = { name: 'thinking', start: performance.now(), duration: Infinity }
+    updateBody(performance.now()); updateFace(performance.now()); vrm.update(0); fitCamera()
     loadCard.classList.add('hidden'); statusText.textContent = 'ALIVE'
-    nextAutoCute = performance.now() + 6000
-    act({ text: '你好，我在这里。', emotion: 'happy', motion: 'greet' })
+    nextAutoCute = performance.now() + 9000
+    typeText('我在想一件事情…')
   } catch (e) {
     console.error(e); statusText.textContent = 'MODEL NEEDED'; loadHint.textContent = '在线模型尚未放入部署目录。可以先直接载入你本地的 NIVA.vrm 体验。'; localModel.hidden = false
   }
