@@ -62,35 +62,43 @@ let typeTimer = 0
 const rest = new Map<string, THREE.Quaternion>()
 
 const emotionNames: Record<Expression, string | null> = { neutral: null, happy: 'happy', shy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised', thinking: null }
+const trackedBones = ['hips','spine','chest','upperChest','neck','head','leftUpperArm','leftLowerArm','rightUpperArm','rightLowerArm','leftUpperLeg','rightUpperLeg','leftLowerLeg','rightLowerLeg']
 const bone = (name: string) => vrm?.humanoid?.getNormalizedBoneNode(name) as THREE.Object3D | null
 
 function rememberBones() {
   rest.clear()
-  for (const n of ['hips','spine','chest','upperChest','neck','head','leftUpperArm','leftLowerArm','rightUpperArm','rightLowerArm']) {
-    const b = bone(n); if (b) rest.set(n, b.quaternion.clone())
-  }
+  for (const n of trackedBones) { const b = bone(n); if (b) rest.set(n, b.quaternion.clone()) }
 }
 function applyBone(name: string, x = 0, y = 0, z = 0) {
   const b = bone(name), q0 = rest.get(name); if (!b || !q0) return
-  const dq = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ'))
-  b.quaternion.copy(q0).multiply(dq)
+  b.quaternion.copy(q0).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ')))
 }
 function fitCamera() {
   if (!modelRoot) return
-  const box = new THREE.Box3().setFromObject(modelRoot), size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3())
-  const h = Math.max(size.y, 1)
-  camera.position.set(center.x, center.y + h * .02, center.z + h * 1.15)
-  camera.lookAt(center.x, center.y + h * .02, center.z)
-  camera.near = Math.max(.01, h / 100); camera.far = h * 20; camera.updateProjectionMatrix()
+  const box = new THREE.Box3().setFromObject(modelRoot)
+  const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3())
+  const r = stage.getBoundingClientRect(), aspect = Math.max(r.width / Math.max(r.height, 1), .25)
+  camera.aspect = aspect
+  const vFov = THREE.MathUtils.degToRad(camera.fov)
+  const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect)
+  const distanceY = (size.y * .5) / Math.tan(vFov / 2)
+  const distanceX = (size.x * .5) / Math.tan(hFov / 2)
+  const distance = Math.max(distanceX, distanceY, .5) * 1.22
+  camera.position.set(center.x, center.y + size.y * .015, center.z + distance)
+  camera.lookAt(center.x, center.y + size.y * .015, center.z)
+  camera.near = Math.max(.01, distance / 100)
+  camera.far = distance + Math.max(size.z, size.y) * 8
+  camera.updateProjectionMatrix()
 }
 function resize() {
-  const r = stage.getBoundingClientRect(); renderer.setSize(r.width, r.height, false); camera.aspect = r.width / Math.max(r.height, 1); camera.updateProjectionMatrix()
+  const r = stage.getBoundingClientRect()
+  renderer.setSize(Math.max(1, r.width), Math.max(1, r.height), false)
+  camera.aspect = r.width / Math.max(r.height, 1)
+  if (modelRoot) fitCamera(); else camera.updateProjectionMatrix()
 }
 new ResizeObserver(resize).observe(stage); resize()
 
-function setExpression(emotion: Expression, intensity = .8) {
-  activeEmotion = emotion; emotionIntensity = intensity; shell.dataset.emotion = emotion
-}
+function setExpression(emotion: Expression, intensity = .8) { activeEmotion = emotion; emotionIntensity = intensity; shell.dataset.emotion = emotion }
 function playMotion(name?: MotionName) {
   if (!name) return
   const duration: Partial<Record<MotionName, number>> = { wave: 1800, greet: 1350, thinking: 2200, happy: 1350, sad: 1900, lookAround: 2200, surprised: 1000, angry: 1000 }
@@ -112,8 +120,8 @@ function act(action: NivaAction) {
 }
 
 function replyFor(text: string): NivaAction {
-  if (/你好|嗨|hello|hi/i.test(text)) return { text: '你好呀，我在这里。现在我终于不是一张卡片了。', emotion: 'happy', motion: 'wave' }
-  if (/挥|招手|wave/i.test(text)) return { text: '看到我真的动起来了吗？', emotion: 'happy', motion: 'wave' }
+  if (/你好|嗨|hello|hi/i.test(text)) return { text: '你好呀，我在这里。', emotion: 'happy', motion: 'wave' }
+  if (/挥|招手|wave/i.test(text)) return { text: '当然可以。', emotion: 'happy', motion: 'wave' }
   if (/累|难受|疲惫|困/.test(text)) return { text: '那今天就慢一点。把最麻烦的事情交给我，我们一件件处理。', emotion: 'sad', motion: 'sad' }
   if (/成功|完成|搞定|赢|通过/.test(text)) return { text: '做到了。这个时候应该好好庆祝一下。', emotion: 'happy', motion: 'happy' }
   if (/想|为什么|怎么办|怎么做/.test(text)) return { text: '让我想一下。先找最关键的问题，再走最短的解决路径。', emotion: 'thinking', motion: 'thinking' }
@@ -133,33 +141,53 @@ function updateFace(now: number) {
   const mapped = emotionNames[activeEmotion]; if (mapped) m.setValue(mapped, emotionIntensity * (activeEmotion === 'shy' ? .48 : 1))
   if (now >= nextBlink && blinkStart < 0) { blinkStart = now; nextBlink = now + 2600 + Math.random() * 3600 }
   if (blinkStart >= 0) {
-    const t = (now - blinkStart) / 150; const v = t < .5 ? t * 2 : Math.max(0, 2 - t * 2); m.setValue('blink', v); if (t >= 1) { m.setValue('blink', 0); blinkStart = -1 }
+    const t = (now - blinkStart) / 150, v = t < .5 ? t * 2 : Math.max(0, 2 - t * 2)
+    m.setValue('blink', v); if (t >= 1) { m.setValue('blink', 0); blinkStart = -1 }
   } else m.setValue('blink', 0)
   const speaking = now < speakingUntil
-  const mouth = speaking ? .18 + Math.abs(Math.sin(now * .022)) * .58 : 0
-  m.setValue('aa', mouth); m.setValue('ih', speaking ? Math.abs(Math.sin(now * .016 + 1.4)) * .18 : 0)
+  m.setValue('aa', speaking ? .18 + Math.abs(Math.sin(now * .022)) * .58 : 0)
+  m.setValue('ih', speaking ? Math.abs(Math.sin(now * .016 + 1.4)) * .18 : 0)
 }
 
 function updateBody(now: number) {
   if (!vrm) return
-  const t = now / 1000, breath = Math.sin(t * 2.1), sway = Math.sin(t * .85)
-  lookX += (targetLookX - lookX) * .08; lookY += (targetLookY - lookY) * .08
-  let headX = -lookY * .11 + breath * .008, headY = lookX * .16 + sway * .015, headZ = sway * .01
-  let chestX = breath * .015, chestY = sway * .018, chestZ = 0
-  let rua = [0,0,0] as [number,number,number], rla = [0,0,0] as [number,number,number]
-  let lua = [0,0,0] as [number,number,number], lla = [0,0,0] as [number,number,number]
+  const t = now / 1000, breath = Math.sin(t * 2.0), sway = Math.sin(t * .72), micro = Math.sin(t * .31)
+  lookX += (targetLookX - lookX) * .075; lookY += (targetLookY - lookY) * .075
+
+  // 基础自然站姿：从 T-Pose 收臂、微屈肘、轻微重心偏移。
+  let hips = [0, sway * .012, -.018 + micro * .006] as [number,number,number]
+  let spine = [breath * .006, -sway * .008, .012 + micro * .004] as [number,number,number]
+  let headX = -lookY * .11 + breath * .006, headY = lookX * .16 + sway * .012, headZ = -.025 + sway * .012
+  let chestX = breath * .012, chestY = sway * .014, chestZ = .018 + micro * .006
+  let lua = [0.05, -0.04, 1.03 + sway * .018] as [number,number,number]
+  let lla = [0.02, 0.03, .16 + breath * .012] as [number,number,number]
+  let rua = [0.05, 0.04, -1.03 - sway * .018] as [number,number,number]
+  let rla = [0.02, -0.03, -.16 - breath * .012] as [number,number,number]
+  let lul = [0, 0, .025] as [number,number,number]
+  let rul = [0, 0, -.025] as [number,number,number]
+
   const p = Number.isFinite(motion.duration) ? THREE.MathUtils.clamp((now - motion.start) / motion.duration, 0, 1) : 0
   if (p >= 1 && motion.name !== 'idle') motion = { name: 'idle', start: now, duration: Infinity }
-  if (motion.name === 'wave') { const e = Math.sin(Math.PI * p), w = Math.sin(p * Math.PI * 6); rua = [-.15, 0, -1.18 * e]; rla = [0, -.15, -.75 * e + w * .28 * e]; headZ -= .08 * e }
-  if (motion.name === 'greet') { const e = Math.sin(Math.PI * p); headX += .15 * e; headZ += .05 * e }
-  if (motion.name === 'thinking') { const e = Math.sin(Math.PI * p); headZ -= .12 * e; headY -= .11 * e; chestZ -= .04 * e; rua = [0,0,-.18*e]; rla = [0,0,-.52*e] }
-  if (motion.name === 'happy') { const e = Math.sin(Math.PI * p), w = Math.sin(p*Math.PI*4)*e; chestZ += w*.045; lua = [0,0,.3*e]; rua=[0,0,-.3*e]; headX -= .08*e }
-  if (motion.name === 'sad') { const e = Math.sin(Math.PI * p); headX += .18*e; chestX += .08*e; lua=[0,0,.08*e]; rua=[0,0,-.08*e] }
-  if (motion.name === 'lookAround') { const e = Math.sin(Math.PI * p); headY += Math.sin(p*Math.PI*3)*.28*e }
-  if (motion.name === 'surprised') headX -= Math.sin(Math.PI*p)*.12
-  if (motion.name === 'angry') headY += Math.sin(p*Math.PI*10)*(1-p)*.08
-  applyBone('chest', chestX, chestY, chestZ); applyBone('upperChest', chestX*.5, chestY*.5, chestZ*.5); applyBone('head', headX, headY, headZ)
-  applyBone('rightUpperArm', ...rua); applyBone('rightLowerArm', ...rla); applyBone('leftUpperArm', ...lua); applyBone('leftLowerArm', ...lla)
+  if (motion.name === 'wave') {
+    const e = Math.sin(Math.PI * p), w = Math.sin(p * Math.PI * 6) * e
+    rua = [-.12, -.08, -1.72 + .35 * (1-e)]; rla = [0, -.28, -1.05 + w * .34]; headZ -= .06 * e
+  } else if (motion.name === 'greet') {
+    const e = Math.sin(Math.PI * p); headX += .13 * e; headZ += .04 * e; chestX += .025 * e
+  } else if (motion.name === 'thinking') {
+    const e = Math.sin(Math.PI * p); headZ -= .11 * e; headY -= .1 * e; rua = [.1,.02,-1.18]; rla = [.08,-.1,-.82*e-.16]
+  } else if (motion.name === 'happy') {
+    const e = Math.sin(Math.PI * p), w = Math.sin(p*Math.PI*4)*e; chestZ += w*.04; lua[2] += .22*e; rua[2] -= .22*e; headX -= .07*e
+  } else if (motion.name === 'sad') {
+    const e = Math.sin(Math.PI * p); headX += .16*e; chestX += .07*e; lua[2] -= .06*e; rua[2] += .06*e
+  } else if (motion.name === 'lookAround') {
+    const e = Math.sin(Math.PI * p); headY += Math.sin(p*Math.PI*3)*.26*e
+  } else if (motion.name === 'surprised') headX -= Math.sin(Math.PI*p)*.11
+  else if (motion.name === 'angry') headY += Math.sin(p*Math.PI*10)*(1-p)*.075
+
+  applyBone('hips', ...hips); applyBone('spine', ...spine)
+  applyBone('chest', chestX, chestY, chestZ); applyBone('upperChest', chestX*.45, chestY*.45, chestZ*.45); applyBone('head', headX, headY, headZ)
+  applyBone('leftUpperArm', ...lua); applyBone('leftLowerArm', ...lla); applyBone('rightUpperArm', ...rua); applyBone('rightLowerArm', ...rla)
+  applyBone('leftUpperLeg', ...lul); applyBone('rightUpperLeg', ...rul)
 }
 
 function animate() {
@@ -180,7 +208,7 @@ async function loadVrm(url: string) {
     modelRoot = vrm.scene; scene.add(modelRoot)
     modelRoot.traverse((o: any) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true } })
     rememberBones(); fitCamera(); loadCard.classList.add('hidden'); statusText.textContent = 'ALIVE'
-    act({ text: '你好，我已经醒了。', emotion: 'happy', motion: 'wave' })
+    act({ text: '你好，我在这里。', emotion: 'happy', motion: 'greet' })
   } catch (e) {
     console.error(e); statusText.textContent = 'MODEL NEEDED'; loadHint.textContent = '在线模型尚未放入部署目录。可以先直接载入你本地的 NIVA.vrm 体验。'; localModel.hidden = false
   }
