@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow, currentMonitor, PhysicalPosition } from '@tauri-apps/api/window'
-import type { NivaAction } from './core/types'
+import type { DesktopSettings, InteractionMode, NivaAction } from './core/types'
 
 type SpeechRecognitionCtor = new () => {
   lang: string
@@ -15,6 +15,14 @@ type SpeechRecognitionCtor = new () => {
 }
 
 type DesktopStatus = 'voice' | 'text' | 'offline'
+
+export interface SettingsSaveInput {
+  interactionMode: InteractionMode
+  deepseekModel: 'deepseek-v4-flash' | 'deepseek-v4-pro'
+  activeModel: string
+  voiceOutput: boolean
+  apiKey?: string
+}
 
 export const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
@@ -42,6 +50,24 @@ export async function setupDesktopWindow(): Promise<void> {
 export async function askDeepSeek(message: string): Promise<NivaAction> {
   if (!isTauri()) throw new Error('DeepSeek desktop bridge is unavailable')
   return invoke<NivaAction>('deepseek_chat', { message })
+}
+
+export async function getSettings(): Promise<DesktopSettings> {
+  if (!isTauri()) {
+    return {
+      interactionMode: 'text',
+      deepseekModel: 'deepseek-v4-flash',
+      activeModel: 'NIVA.vrm',
+      voiceOutput: false,
+      hasApiKey: false,
+    }
+  }
+  return invoke<DesktopSettings>('get_settings')
+}
+
+export async function saveSettings(settings: SettingsSaveInput): Promise<DesktopSettings> {
+  if (!isTauri()) throw new Error('Desktop settings are unavailable')
+  return invoke<DesktopSettings>('save_settings', { settings })
 }
 
 export function installTextModeToggle(): void {
@@ -113,6 +139,7 @@ export function startDefaultVoiceInput(
     if (stopped) return
     clearTimeout(restartTimer)
     restartTimer = window.setTimeout(() => {
+      if (stopped) return
       try {
         recognition.start()
         onStatus?.('voice')
@@ -138,6 +165,7 @@ export function startDefaultVoiceInput(
   return () => {
     stopped = true
     clearTimeout(restartTimer)
+    recognition.onend = null
     try { recognition.stop() } catch { /* noop */ }
   }
 }
