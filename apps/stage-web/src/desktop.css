@@ -22,9 +22,7 @@ html.niva-desktop .topbar {
   user-select: none;
 }
 
-html.niva-desktop .brand span {
-  display: none;
-}
+html.niva-desktop .brand span { display: none; }
 
 html.niva-desktop .status {
   margin-left: auto;
@@ -56,13 +54,14 @@ html.niva-desktop .desktop-close:hover { border-color: rgba(255,120,150,.5); col
 
 html.niva-desktop .stage {
   inset: 36px 0 92px;
-  transition: bottom .2s ease;
+  transition: bottom .2s ease, opacity .2s ease, filter .2s ease;
 }
 
 html.niva-desktop .conversation {
   bottom: 12px;
   width: calc(100% - 24px);
   pointer-events: none;
+  transition: opacity .2s ease;
 }
 
 html.niva-desktop .conversation .dialog {
@@ -98,32 +97,167 @@ html.niva-desktop .conversation .niva-line b {
 }
 
 html.niva-desktop #composer,
-html.niva-desktop .quick {
-  display: none;
+html.niva-desktop .quick { display: none; }
+
+html.niva-desktop .shell.text-open .stage { bottom: 184px; }
+html.niva-desktop .shell.text-open .conversation { pointer-events: auto; }
+html.niva-desktop .shell.text-open #composer { display: flex; margin-top: 8px; }
+html.niva-desktop .shell.text-open .quick { display: flex; }
+html.niva-desktop .shell.text-open .pose-quick { display: none; }
+
+html.niva-desktop .niva-backstage {
+  position: absolute;
+  inset: 56px 18px 22px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(125,235,255,.22);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(8,16,32,.94), rgba(5,10,21,.91)),
+    radial-gradient(circle at 80% 10%, rgba(144,96,255,.18), transparent 44%);
+  backdrop-filter: blur(28px) saturate(120%);
+  box-shadow: 0 28px 80px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05);
+  opacity: 0;
+  transform: translateY(12px) scale(.985);
+  pointer-events: none;
+  transition: opacity .18s ease, transform .18s ease;
+  color: #ecf8ff;
 }
 
-html.niva-desktop .shell.text-open .stage {
-  bottom: 184px;
-}
-
-html.niva-desktop .shell.text-open .conversation {
+html.niva-desktop .niva-backstage.open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
   pointer-events: auto;
 }
 
-html.niva-desktop .shell.text-open #composer {
-  display: flex;
-  margin-top: 8px;
+html.niva-desktop .shell.backstage-open .stage {
+  opacity: .22;
+  filter: blur(4px) saturate(.7);
 }
 
-html.niva-desktop .shell.text-open .quick {
+html.niva-desktop .shell.backstage-open .conversation { opacity: .15; }
+
+html.niva-desktop .backstage-head {
   display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
 }
 
-html.niva-desktop .shell.text-open .pose-quick {
-  display: none;
+html.niva-desktop .backstage-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+html.niva-desktop .backstage-head b {
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: .04em;
+}
+
+html.niva-desktop .backstage-head span,
+html.niva-desktop .backstage-foot {
+  font-size: 10px;
+  color: rgba(210,232,245,.58);
+}
+
+html.niva-desktop .backstage-head button {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,.12);
+  background: rgba(255,255,255,.04);
+  color: rgba(240,249,255,.84);
+  cursor: pointer;
+  font-size: 20px;
+}
+
+html.niva-desktop .backstage-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+html.niva-desktop .backstage-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 10px;
+  color: rgba(216,236,248,.68);
+}
+
+html.niva-desktop .backstage-grid .backstage-wide { grid-column: 1 / -1; }
+
+html.niva-desktop .backstage-grid select,
+html.niva-desktop .backstage-grid input[type="password"] {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid rgba(126,230,255,.18);
+  border-radius: 11px;
+  background: rgba(6,12,24,.72);
+  color: #eefaff;
+  outline: none;
+  padding: 0 11px;
+}
+
+html.niva-desktop .backstage-grid select:focus,
+html.niva-desktop .backstage-grid input[type="password"]:focus {
+  border-color: rgba(126,230,255,.48);
+  box-shadow: 0 0 0 3px rgba(91,220,255,.07);
+}
+
+html.niva-desktop .toggle-row {
+  justify-content: space-between;
+  flex-direction: row !important;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 11px;
+  border: 1px solid rgba(126,230,255,.12);
+  border-radius: 11px;
+  background: rgba(6,12,24,.46);
+}
+
+html.niva-desktop .toggle-row input {
+  width: 16px;
+  height: 16px;
+  accent-color: currentColor;
+}
+
+html.niva-desktop .backstage-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+html.niva-desktop .backstage-actions button {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(120,225,250,.16);
+  background: rgba(255,255,255,.035);
+  color: rgba(235,249,255,.88);
+  cursor: pointer;
+  font-size: 10px;
+}
+
+html.niva-desktop .backstage-actions button.primary {
+  margin-left: auto;
+  background: linear-gradient(135deg, rgba(88,220,255,.20), rgba(148,100,255,.18));
+  border-color: rgba(119,232,255,.38);
+}
+
+html.niva-desktop .backstage-foot {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255,255,255,.07);
 }
 
 @media (max-height: 640px) {
   html.niva-desktop .stage { inset: 32px 0 76px; }
   html.niva-desktop .conversation .dialog { max-height: 64px; overflow: hidden; }
+  html.niva-desktop .niva-backstage { inset: 46px 14px 14px; gap: 10px; padding: 14px; overflow: auto; }
 }
