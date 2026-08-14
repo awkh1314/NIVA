@@ -8,15 +8,13 @@ type NivaRuntime = {
   readonly ready: boolean
 }
 
-declare global {
-  interface Window { NIVA?: NivaRuntime }
-}
-
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+const runtime = () => (window as unknown as { NIVA?: NivaRuntime }).NIVA
 
 async function waitForNiva(): Promise<NivaRuntime | null> {
   for (let i = 0; i < 100; i++) {
-    if (window.NIVA) return window.NIVA
+    const niva = runtime()
+    if (niva) return niva
     await sleep(50)
   }
   return null
