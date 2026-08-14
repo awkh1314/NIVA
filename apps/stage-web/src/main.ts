@@ -5,6 +5,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm'
 import type { MotionName, NivaAction, SemanticExpression } from './core/types'
 
 type Expression = SemanticExpression
+type CuteMotion = MotionName | 'shyCute' | 'heart' | 'peek'
 const base = import.meta.env.BASE_URL
 const modelUrl = `${base}NIVA.vrm`
 
@@ -18,6 +19,7 @@ app.innerHTML = `
     <div class="dialog"><div id="userLine" class="user-line" hidden></div><div class="niva-line"><b>NIVA</b><span id="speechText">我正在醒来…</span></div></div>
     <form id="composer"><input id="messageInput" maxlength="180" autocomplete="off" placeholder="和 NIVA 说点什么…"><button>发送</button></form>
     <div class="quick"><button data-text="你好">你好</button><button data-text="挥挥手">挥挥手</button><button data-text="我今天有点累">我有点累</button><button data-text="我成功了">我成功了</button></div>
+    <div class="quick pose-quick"><button data-cute="wave">招手</button><button data-cute="shyCute">害羞</button><button data-cute="heart">比心</button><button data-cute="peek">歪头</button><button data-cute="happy">开心</button></div>
   </section>
 </main>`
 
@@ -53,25 +55,20 @@ let modelRoot: THREE.Object3D | null = null
 let voiceEnabled = true
 let activeEmotion: Expression = 'neutral'
 let emotionIntensity = .8
-let motion: { name: MotionName | 'idle'; start: number; duration: number } = { name: 'idle', start: 0, duration: Infinity }
+let motion: { name: CuteMotion | 'idle'; start: number; duration: number } = { name: 'idle', start: 0, duration: Infinity }
 let targetLookX = 0, targetLookY = 0, lookX = 0, lookY = 0
 let nextBlink = performance.now() + 2200
 let blinkStart = -1
 let speakingUntil = 0
 let typeTimer = 0
-const rest = new Map<string, THREE.Quaternion>()
+let lastInteraction = performance.now()
+let nextAutoCute = performance.now() + 7000
 
 const emotionNames: Record<Expression, string | null> = { neutral: null, happy: 'happy', shy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised', thinking: null }
-const trackedBones = ['hips','spine','chest','upperChest','neck','head','leftUpperArm','leftLowerArm','rightUpperArm','rightLowerArm','leftUpperLeg','rightUpperLeg','leftLowerLeg','rightLowerLeg']
-const bone = (name: string) => vrm?.humanoid?.getNormalizedBoneNode(name) as THREE.Object3D | null
 
-function rememberBones() {
-  rest.clear()
-  for (const n of trackedBones) { const b = bone(n); if (b) rest.set(n, b.quaternion.clone()) }
-}
-function applyBone(name: string, x = 0, y = 0, z = 0) {
-  const b = bone(name), q0 = rest.get(name); if (!b || !q0) return
-  b.quaternion.copy(q0).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ')))
+function quat(x = 0, y = 0, z = 0): [number, number, number, number] {
+  const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ'))
+  return [q.x, q.y, q.z, q.w]
 }
 function fitCamera() {
   if (!modelRoot) return
@@ -83,7 +80,7 @@ function fitCamera() {
   const hFov = 2 * Math.atan(Math.tan(vFov / 2) * aspect)
   const distanceY = (size.y * .5) / Math.tan(vFov / 2)
   const distanceX = (size.x * .5) / Math.tan(hFov / 2)
-  const distance = Math.max(distanceX, distanceY, .5) * 1.22
+  const distance = Math.max(distanceX, distanceY, .5) * 1.18
   camera.position.set(center.x, center.y + size.y * .015, center.z + distance)
   camera.lookAt(center.x, center.y + size.y * .015, center.z)
   camera.near = Math.max(.01, distance / 100)
@@ -99,10 +96,14 @@ function resize() {
 new ResizeObserver(resize).observe(stage); resize()
 
 function setExpression(emotion: Expression, intensity = .8) { activeEmotion = emotion; emotionIntensity = intensity; shell.dataset.emotion = emotion }
-function playMotion(name?: MotionName) {
+function playMotion(name?: CuteMotion) {
   if (!name) return
-  const duration: Partial<Record<MotionName, number>> = { wave: 1800, greet: 1350, thinking: 2200, happy: 1350, sad: 1900, lookAround: 2200, surprised: 1000, angry: 1000 }
-  motion = { name, start: performance.now(), duration: duration[name] ?? 1500 }
+  lastInteraction = performance.now()
+  const duration: Partial<Record<CuteMotion, number>> = {
+    wave: 2100, greet: 1500, thinking: 2300, happy: 1500, sad: 1900, lookAround: 2200,
+    surprised: 1000, angry: 1000, shyCute: 2400, heart: 2600, peek: 1900,
+  }
+  motion = { name, start: performance.now(), duration: duration[name] ?? 1600 }
 }
 function typeText(text: string) {
   clearInterval(typeTimer); speech.textContent = ''; let i = 0
@@ -113,6 +114,7 @@ function typeText(text: string) {
   }
 }
 function act(action: NivaAction) {
+  lastInteraction = performance.now()
   if (action.emotion) setExpression(action.emotion, action.expressionIntensity ?? .8)
   if (action.motion) playMotion(action.motion)
   if (action.lookTarget) { targetLookX = THREE.MathUtils.clamp(action.lookTarget.x, -1, 1); targetLookY = THREE.MathUtils.clamp(action.lookTarget.y, -1, 1) }
@@ -139,6 +141,8 @@ function updateFace(now: number) {
   const m = vrm?.expressionManager; if (!m) return
   for (const n of ['happy','sad','angry','surprised']) m.setValue(n, 0)
   const mapped = emotionNames[activeEmotion]; if (mapped) m.setValue(mapped, emotionIntensity * (activeEmotion === 'shy' ? .48 : 1))
+  if (motion.name === 'shyCute') m.setValue('happy', .5)
+  if (motion.name === 'heart') m.setValue('happy', .75)
   if (now >= nextBlink && blinkStart < 0) { blinkStart = now; nextBlink = now + 2600 + Math.random() * 3600 }
   if (blinkStart >= 0) {
     const t = (now - blinkStart) / 150, v = t < .5 ? t * 2 : Math.max(0, 2 - t * 2)
@@ -150,44 +154,87 @@ function updateFace(now: number) {
 }
 
 function updateBody(now: number) {
-  if (!vrm) return
+  if (!vrm?.humanoid) return
   const t = now / 1000, breath = Math.sin(t * 2.0), sway = Math.sin(t * .72), micro = Math.sin(t * .31)
   lookX += (targetLookX - lookX) * .075; lookY += (targetLookY - lookY) * .075
 
-  // 基础自然站姿：从 T-Pose 收臂、微屈肘、轻微重心偏移。
-  let hips = [0, sway * .012, -.018 + micro * .006] as [number,number,number]
-  let spine = [breath * .006, -sway * .008, .012 + micro * .004] as [number,number,number]
-  let headX = -lookY * .11 + breath * .006, headY = lookX * .16 + sway * .012, headZ = -.025 + sway * .012
-  let chestX = breath * .012, chestY = sway * .014, chestZ = .018 + micro * .006
-  let lua = [0.05, -0.04, 1.03 + sway * .018] as [number,number,number]
-  let lla = [0.02, 0.03, .16 + breath * .012] as [number,number,number]
-  let rua = [0.05, 0.04, -1.03 - sway * .018] as [number,number,number]
-  let rla = [0.02, -0.03, -.16 - breath * .012] as [number,number,number]
-  let lul = [0, 0, .025] as [number,number,number]
-  let rul = [0, 0, -.025] as [number,number,number]
+  // 直接用 VRM 的 normalized pose 写完整姿态；它是相对 T-Pose 的标准化姿势。
+  let hips = [0, sway * .012, -.025 + micro * .007] as [number,number,number]
+  let spine = [breath * .008, -sway * .008, .018 + micro * .004] as [number,number,number]
+  let chest = [breath * .015, sway * .014, .022 + micro * .006] as [number,number,number]
+  let head = [-lookY * .11 + breath * .006, lookX * .16 + sway * .012, -.035 + sway * .014] as [number,number,number]
+
+  // A-Pose / relaxed idle: arms sit clearly below the shoulders instead of staying horizontal.
+  let lua = [.08, -.12, 1.32 + sway * .016] as [number,number,number]
+  let lla = [.04, .03, .24 + breath * .012] as [number,number,number]
+  let rua = [.08, .12, -1.32 - sway * .016] as [number,number,number]
+  let rla = [.04, -.03, -.24 - breath * .012] as [number,number,number]
+  let lul = [0, 0, .035] as [number,number,number]
+  let rul = [0, 0, -.035] as [number,number,number]
+  let lll = [0, 0, 0] as [number,number,number]
+  let rll = [0, 0, 0] as [number,number,number]
 
   const p = Number.isFinite(motion.duration) ? THREE.MathUtils.clamp((now - motion.start) / motion.duration, 0, 1) : 0
-  if (p >= 1 && motion.name !== 'idle') motion = { name: 'idle', start: now, duration: Infinity }
-  if (motion.name === 'wave') {
-    const e = Math.sin(Math.PI * p), w = Math.sin(p * Math.PI * 6) * e
-    rua = [-.12, -.08, -1.72 + .35 * (1-e)]; rla = [0, -.28, -1.05 + w * .34]; headZ -= .06 * e
-  } else if (motion.name === 'greet') {
-    const e = Math.sin(Math.PI * p); headX += .13 * e; headZ += .04 * e; chestX += .025 * e
-  } else if (motion.name === 'thinking') {
-    const e = Math.sin(Math.PI * p); headZ -= .11 * e; headY -= .1 * e; rua = [.1,.02,-1.18]; rla = [.08,-.1,-.82*e-.16]
-  } else if (motion.name === 'happy') {
-    const e = Math.sin(Math.PI * p), w = Math.sin(p*Math.PI*4)*e; chestZ += w*.04; lua[2] += .22*e; rua[2] -= .22*e; headX -= .07*e
-  } else if (motion.name === 'sad') {
-    const e = Math.sin(Math.PI * p); headX += .16*e; chestX += .07*e; lua[2] -= .06*e; rua[2] += .06*e
-  } else if (motion.name === 'lookAround') {
-    const e = Math.sin(Math.PI * p); headY += Math.sin(p*Math.PI*3)*.26*e
-  } else if (motion.name === 'surprised') headX -= Math.sin(Math.PI*p)*.11
-  else if (motion.name === 'angry') headY += Math.sin(p*Math.PI*10)*(1-p)*.075
+  if (p >= 1 && motion.name !== 'idle') {
+    motion = { name: 'idle', start: now, duration: Infinity }
+    nextAutoCute = now + 6500 + Math.random() * 4500
+  }
+  const e = Math.sin(Math.PI * p)
 
-  applyBone('hips', ...hips); applyBone('spine', ...spine)
-  applyBone('chest', chestX, chestY, chestZ); applyBone('upperChest', chestX*.45, chestY*.45, chestZ*.45); applyBone('head', headX, headY, headZ)
-  applyBone('leftUpperArm', ...lua); applyBone('leftLowerArm', ...lla); applyBone('rightUpperArm', ...rua); applyBone('rightLowerArm', ...rla)
-  applyBone('leftUpperLeg', ...lul); applyBone('rightUpperLeg', ...rul)
+  if (motion.name === 'wave') {
+    const w = Math.sin(p * Math.PI * 7) * e
+    rua = [-.1, .02, -2.35 + .45 * (1-e)]
+    rla = [.12, -.05, -1.05 + w * .38]
+    head[2] -= .08 * e; chest[2] += .04 * e
+  } else if (motion.name === 'greet') {
+    head[0] += .16 * e; head[2] += .06 * e; chest[0] += .035 * e
+  } else if (motion.name === 'thinking') {
+    head[2] -= .13 * e; head[1] -= .1 * e
+    rua = [.18, .04, -1.62]; rla = [.12, -.08, -1.12 * e - .3]
+  } else if (motion.name === 'happy') {
+    const bounce = Math.sin(p * Math.PI * 4) * e
+    chest[0] -= .04 * e; chest[2] += bounce * .05
+    lua = [.02,-.08,1.78]; rua = [.02,.08,-1.78]
+    lla = [-.12,.03,.48]; rla = [-.12,-.03,-.48]
+    head[0] -= .09 * e
+  } else if (motion.name === 'sad') {
+    head[0] += .2 * e; chest[0] += .09 * e; chest[2] -= .035 * e
+    lua[2] -= .1 * e; rua[2] += .1 * e
+  } else if (motion.name === 'lookAround') {
+    head[1] += Math.sin(p * Math.PI * 3) * .3 * e
+  } else if (motion.name === 'surprised') {
+    head[0] -= .12 * e; lua[2] += .18 * e; rua[2] -= .18 * e
+  } else if (motion.name === 'angry') {
+    head[1] += Math.sin(p * Math.PI * 10) * (1-p) * .08
+  } else if (motion.name === 'shyCute') {
+    head[0] += .08 * e; head[2] -= .15 * e; chest[2] -= .06 * e
+    lua = [.15,-.08,1.72]; lla = [-.05,.02,.95]
+    rua = [.15,.08,-1.72]; rla = [-.05,-.02,-.95]
+  } else if (motion.name === 'heart') {
+    head[0] -= .045 * e; chest[0] -= .025 * e
+    lua = [.08,-.15,1.72]; rua = [.08,.15,-1.72]
+    lla = [-.08,-.2,.92]; rla = [-.08,.2,-.92]
+  } else if (motion.name === 'peek') {
+    head[2] -= .22 * e; chest[2] -= .08 * e; hips[2] += .045 * e
+    lua[2] += .08 * e; rua[2] += .08 * e
+  }
+
+  const pose: any = {
+    hips: { rotation: quat(...hips) }, spine: { rotation: quat(...spine) },
+    chest: { rotation: quat(...chest) }, upperChest: { rotation: quat(chest[0]*.45, chest[1]*.45, chest[2]*.45) },
+    head: { rotation: quat(...head) },
+    leftUpperArm: { rotation: quat(...lua) }, leftLowerArm: { rotation: quat(...lla) },
+    rightUpperArm: { rotation: quat(...rua) }, rightLowerArm: { rotation: quat(...rla) },
+    leftUpperLeg: { rotation: quat(...lul) }, rightUpperLeg: { rotation: quat(...rul) },
+    leftLowerLeg: { rotation: quat(...lll) }, rightLowerLeg: { rotation: quat(...rll) },
+  }
+  vrm.humanoid.setNormalizedPose(pose)
+
+  // 没有操作时也会偶尔自己做一个小动作，避免像静态模型。
+  if (motion.name === 'idle' && now > nextAutoCute && now - lastInteraction > 4500) {
+    const pool: CuteMotion[] = ['peek', 'shyCute', 'wave', 'happy']
+    playMotion(pool[Math.floor(Math.random() * pool.length)])
+  }
 }
 
 function animate() {
@@ -207,7 +254,9 @@ async function loadVrm(url: string) {
     VRMUtils.removeUnnecessaryVertices(vrm.scene); VRMUtils.combineSkeletons(vrm.scene)
     modelRoot = vrm.scene; scene.add(modelRoot)
     modelRoot.traverse((o: any) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true } })
-    rememberBones(); fitCamera(); loadCard.classList.add('hidden'); statusText.textContent = 'ALIVE'
+    updateBody(performance.now()); vrm.update(0); fitCamera()
+    loadCard.classList.add('hidden'); statusText.textContent = 'ALIVE'
+    nextAutoCute = performance.now() + 6000
     act({ text: '你好，我在这里。', emotion: 'happy', motion: 'greet' })
   } catch (e) {
     console.error(e); statusText.textContent = 'MODEL NEEDED'; loadHint.textContent = '在线模型尚未放入部署目录。可以先直接载入你本地的 NIVA.vrm 体验。'; localModel.hidden = false
@@ -217,11 +266,17 @@ loadVrm(modelUrl)
 
 stage.addEventListener('pointermove', (e) => { const r = stage.getBoundingClientRect(); targetLookX = ((e.clientX-r.left)/r.width-.5)*2; targetLookY = ((e.clientY-r.top)/r.height-.5)*2 })
 stage.addEventListener('pointerleave', () => { targetLookX = 0; targetLookY = 0 })
-stage.addEventListener('pointerdown', () => { if (vrm) act({ text: '嗯？我在听。', emotion: 'happy', motion: 'greet' }); input.focus() })
+stage.addEventListener('pointerdown', () => { lastInteraction = performance.now(); if (vrm) act({ text: '嗯？我在听。', emotion: 'happy', motion: 'greet' }); input.focus() })
 composer.addEventListener('submit', (e) => { e.preventDefault(); send(input.value) })
 document.querySelectorAll<HTMLButtonElement>('[data-text]').forEach((b) => b.onclick = () => send(b.dataset.text ?? ''))
+document.querySelectorAll<HTMLButtonElement>('[data-cute]').forEach((b) => b.onclick = () => {
+  const name = b.dataset.cute as CuteMotion
+  if (name === 'shyCute') setExpression('shy', .75)
+  else if (name === 'heart' || name === 'happy' || name === 'wave') setExpression('happy', .85)
+  playMotion(name)
+})
 localModel.onclick = () => modelFile.click()
 modelFile.onchange = () => { const f = modelFile.files?.[0]; if (!f) return; const u = URL.createObjectURL(f); loadVrm(u).finally(() => setTimeout(() => URL.revokeObjectURL(u), 5000)) }
 
-Object.assign(window, { NIVA: { act, send, setEmotion: setExpression, motion: playMotion, get ready(){ return !!vrm }, get mode(){ return 'vrm-3d' as const } } })
-declare global { interface Window { NIVA: { act(a:NivaAction):void; send(t:string):void; setEmotion(e:Expression,i?:number):void; motion(m?:MotionName):void; readonly ready:boolean; readonly mode:'vrm-3d' } } }
+Object.assign(window, { NIVA: { act, send, setEmotion: setExpression, motion: playMotion, playCute: playMotion, get ready(){ return !!vrm }, get mode(){ return 'vrm-3d' as const } } })
+declare global { interface Window { NIVA: { act(a:NivaAction):void; send(t:string):void; setEmotion(e:Expression,i?:number):void; motion(m?:MotionName):void; playCute(m:CuteMotion):void; readonly ready:boolean; readonly mode:'vrm-3d' } } }
