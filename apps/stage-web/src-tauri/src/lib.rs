@@ -17,6 +17,8 @@ struct AppConfig {
     active_model: String,
     #[serde(default = "default_voice_output")]
     voice_output: bool,
+    #[serde(default)]
+    avatar_default_version: u8,
 }
 
 fn default_model() -> String { "deepseek-v4-flash".to_string() }
@@ -32,6 +34,7 @@ impl Default for AppConfig {
             interaction_mode: default_interaction_mode(),
             active_model: default_active_model(),
             voice_output: default_voice_output(),
+            avatar_default_version: 1,
         }
     }
 }
@@ -169,7 +172,14 @@ fn normalize_model(model: &str) -> String {
 
 #[tauri::command]
 fn get_settings(app: tauri::AppHandle) -> Result<SettingsView, String> {
-    let config = load_config(&app)?;
+    let mut config = load_config(&app)?;
+    if config.avatar_default_version == 0 {
+        if config.active_model == "NIVA.vrm" {
+            config.active_model = default_active_model();
+        }
+        config.avatar_default_version = 1;
+        save_config(&app, &config)?;
+    }
     Ok(SettingsView {
         interaction_mode: if config.interaction_mode == "text" { "text".into() } else { "voice".into() },
         deepseek_model: normalize_model(&config.deepseek_model),
@@ -186,6 +196,7 @@ fn save_settings(app: tauri::AppHandle, settings: SettingsInput) -> Result<Setti
     config.deepseek_model = normalize_model(&settings.deepseek_model);
     config.active_model = if settings.active_model.trim().is_empty() { default_active_model() } else { settings.active_model.trim().to_string() };
     config.voice_output = settings.voice_output;
+    config.avatar_default_version = 1;
     if let Some(key) = settings.api_key {
         let key = key.trim();
         if !key.is_empty() { config.deepseek_api_key = key.to_string(); }
