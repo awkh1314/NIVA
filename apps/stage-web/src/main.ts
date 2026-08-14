@@ -25,7 +25,7 @@ app.innerHTML = `
     <div class="fps" id="fps">FPS: --</div>
     <aside class="panel">
       <h2>NIVA</h2>
-      <p class="muted">当前冻结功能扩张，只打磨角色、动作、表情与生命感。</p>
+      <p class="muted" id="modeNote">当前冻结功能扩张，只打磨角色、动作、表情与生命感。</p>
       <div class="label">Expression</div>
       <div class="buttons" id="expressions"></div>
       <div class="label">Motion</div>
@@ -41,6 +41,7 @@ const speech = document.querySelector<HTMLDivElement>('#speech')!
 const status = document.querySelector<HTMLDivElement>('#status')!
 const fpsEl = document.querySelector<HTMLDivElement>('#fps')!
 const referenceAvatar = document.querySelector<HTMLDivElement>('#referenceAvatar')!
+const modeNote = document.querySelector<HTMLParagraphElement>('#modeNote')!
 
 const scene = new THREE.Scene()
 scene.background = new THREE.Color(0x070a15)
@@ -150,23 +151,33 @@ async function boot() {
       catch (error) { console.warn(`Motion skipped: ${name}`, error) }
     }))
     motions.play('idle', .1)
-    status.textContent = 'READY'
-    status.classList.remove('error')
-    speech.textContent = 'NIVA 已就绪。接下来只把这个“人”做漂亮、做自然。'
+
+    if (avatar.usingFallback) {
+      status.textContent = 'TECH BODY · CC0'
+      status.classList.add('fallback')
+      modeNote.textContent = '当前是许可证干净的临时 3D 技术身体，只用于验证渲染、表情、动作和生命感；不是正式 NIVA 外观。'
+      speech.textContent = '3D 身体链路已接通。现在可以直接测试眨眼、视线和表情；下一步只做 NIVA 正式外观。'
+    } else {
+      status.textContent = 'READY'
+      status.classList.remove('error', 'fallback')
+      modeNote.textContent = '正式 NIVA 身体已接管舞台；继续只打磨角色、动作、表情与生命感。'
+      speech.textContent = 'NIVA 已就绪。接下来只把这个“人”做漂亮、做自然。'
+    }
   } catch (error) {
     console.error(error)
     status.textContent = '3D BODY PENDING'
     status.classList.add('error')
-    speech.textContent = '3D 身体插槽还空着。当前先保留 NIVA 的 2D 视觉 DNA，等正式 VRM 接管身体。'
+    modeNote.textContent = '正式与临时 VRM 都未能加载，当前仅保留 2D 视觉基准。'
+    speech.textContent = '3D 身体暂时没有成功加载，当前保留 NIVA 的 2D 视觉 DNA 作为审美基准。'
   }
 }
 boot()
 
-Object.assign(window, { NIVA: { act: (action: NivaAction) => niva.act(action), get ready() { return !!avatar.vrm } } })
+Object.assign(window, { NIVA: { act: (action: NivaAction) => niva.act(action), get ready() { return !!avatar.vrm }, get usingFallback() { return avatar.usingFallback } } })
 
 declare global {
   interface Window {
-    NIVA: { act(action: NivaAction): void; readonly ready: boolean }
+    NIVA: { act(action: NivaAction): void; readonly ready: boolean; readonly usingFallback: boolean }
   }
 }
 
