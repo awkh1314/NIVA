@@ -2,6 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::{fs, path::PathBuf};
 use tauri::Manager;
 
+const MAX_HISTORY_MESSAGES: usize = 24;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AppConfig {
@@ -55,6 +57,12 @@ struct SettingsInput {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct HistoryMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomReaction {
     pub head_yaw: Option<f32>,
@@ -87,10 +95,18 @@ struct ChatChoice { message: ChatMessage }
 #[derive(Debug, Deserialize)]
 struct ChatMessage { content: Option<String> }
 
-fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn app_config_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_config_dir().map_err(|e| e.to_string())?;
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    Ok(dir.join("niva-settings.json"))
+    Ok(dir)
+}
+
+fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app_config_dir(app)?.join("niva-settings.json"))
+}
+
+fn history_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app_config_dir(app)?.join("niva-conversation.json"))
 }
 
 fn load_config(app: &tauri::AppHandle) -> Result<AppConfig, String> {
@@ -103,6 +119,29 @@ fn load_config(app: &tauri::AppHandle) -> Result<AppConfig, String> {
 fn save_config(app: &tauri::AppHandle, config: &AppConfig) -> Result<(), String> {
     let raw = serde_json::to_string_pretty(config).map_err(|e| e.to_string())?;
     fs::write(config_path(app)?, raw).map_err(|e| e.to_string())
+}
+
+fn load_history(app: &tauri::AppHandle) -> Vec<HistoryMessage> {
+    let Ok(path) = history_path(app) else { return Vec::new(); };
+    if !path.exists() { return Vec::new(); }
+    let Ok(raw) = fs::read_to_string(path) else { return Vec::new(); };
+    let Ok(mut history) = serde_json::from_str::<Vec<HistoryMessage>>(&raw) else { return Vec::new(); };
+    history.retain(|item| {
+        (item.role == "user" || item.role == "assistant") && !item.content.trim().is_empty()
+    });
+    if history.len() > MAX_HISTORY_MESSAGES {
+        history.drain(0..history.len() - MAX_HISTORY_MESSAGES);
+    }
+    history
+}
+
+fn save_history(app: &tauri::AppHandle, history: &[HistoryMessage]) -> Result<(), String> {
+    let mut trimmed = history.to_vec();
+    if trimmed.len() > MAX_HISTORY_MESSAGES {
+        trimmed.drain(0..trimmed.len() - MAX_HISTORY_MESSAGES);
+    }
+    let raw = serde_json::to_string_pretty(&trimmed).map_err(|e| e.to_string())?;
+    fs::write(history_path(app)?, raw).map_err(|e| e.to_string())
 }
 
 fn normalize_model(model: &str) -> String {
@@ -140,13 +179,23 @@ fn save_settings(app: tauri::AppHandle, settings: SettingsInput) -> Result<Setti
 }
 
 #[tauri::command]
+fn clear_conversation(app: tauri::AppHandle) -> Result<(), String> {
+    let path = history_path(&app)?;
+    if path.exists() { fs::remove_file(path).map_err(|e| e.to_string())?; }
+    Ok(())
+}
+
+#[tauri::command]
 async fn deepseek_chat(app: tauri::AppHandle, message: String) -> Result<NivaAction, String> {
     let config = load_config(&app)?;
     if config.deepseek_api_key.trim().is_empty() {
         return Err("尚未配置 DeepSeek API Key。双击 NIVA 打开后台进行配置。".to_string());
     }
 
-    let system_prompt = r#"你是 NIVA，一个活跃、聪明、自然的数字生命陪伴精灵。你的输出会直接驱动桌面 3D 身体。
+    let user_text = message.trim().to_string();
+    if user_text.is_empty() { return Err("输入内容为空。".to_string()); }
+
+    let system_prompt = r#"你是 NIVA，一个活跃、聪明、自然的数字生命陪伴精灵。你的输出会直接驱动桌面 3D 身体。你会收到最近的对话记录，要保持人物身份、上下文和语气连续，不要把每一句都当成第一次见面。
 你必须只输出一个合法 json 对象，不要 markdown，不要额外解释。
 
 优先从这些预设反应里选 motion：
@@ -171,12 +220,17 @@ json 示例：
 
 emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。回复用自然简洁中文，不要像客服，不要每次都挥手。"#;
 
+    let mut history = load_history(&app);
+    let mut messages = Vec::with_capacity(history.len() + 2);
+    messages.push(serde_json::json!({"role": "system", "content": system_prompt}));
+    for item in &history {
+        messages.push(serde_json::json!({"role": item.role, "content": item.content}));
+    }
+    messages.push(serde_json::json!({"role": "user", "content": user_text}));
+
     let payload = serde_json::json!({
         "model": normalize_model(&config.deepseek_model),
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": message}
-        ],
+        "messages": messages,
         "thinking": {"type": "disabled"},
         "response_format": {"type": "json_object"},
         "max_tokens": 800,
@@ -185,7 +239,7 @@ emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。回复用自�
 
     let response = reqwest::Client::new()
         .post("https://api.deepseek.com/chat/completions")
-        .bearer_auth(config.deepseek_api_key)
+        .bearer_auth(&config.deepseek_api_key)
         .json(&payload)
         .send()
         .await
@@ -207,30 +261,37 @@ emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。回复用自�
 
     if content.is_empty() { return Err("DeepSeek 返回了空内容，请重试。".to_string()); }
 
-    let cleaned = content
+    let without_prefix = content
         .strip_prefix("```json")
         .or_else(|| content.strip_prefix("```"))
-        .unwrap_or(content)
-        .strip_suffix("```")
-        .unwrap_or(content)
-        .trim();
+        .unwrap_or(content);
+    let cleaned = without_prefix.strip_suffix("```").unwrap_or(without_prefix).trim();
 
-    serde_json::from_str::<NivaAction>(cleaned).or_else(|_| {
-        Ok(NivaAction {
-            text: Some(content.to_string()),
-            emotion: Some("neutral".to_string()),
-            expression_intensity: Some(0.7),
-            motion: Some("greet".to_string()),
-            reaction_key: Some("greet".to_string()),
-            custom_reaction: None,
-        })
-    })
+    let action = serde_json::from_str::<NivaAction>(cleaned).unwrap_or_else(|_| NivaAction {
+        text: Some(content.to_string()),
+        emotion: Some("neutral".to_string()),
+        expression_intensity: Some(0.7),
+        motion: Some("greet".to_string()),
+        reaction_key: Some("greet".to_string()),
+        custom_reaction: None,
+    });
+
+    history.push(HistoryMessage { role: "user".to_string(), content: user_text });
+    history.push(HistoryMessage { role: "assistant".to_string(), content: cleaned.to_string() });
+    if history.len() > MAX_HISTORY_MESSAGES {
+        history.drain(0..history.len() - MAX_HISTORY_MESSAGES);
+    }
+    if let Err(error) = save_history(&app, &history) {
+        eprintln!("[NIVA] unable to persist conversation history: {error}");
+    }
+
+    Ok(action)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, deepseek_chat])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, clear_conversation, deepseek_chat])
         .run(tauri::generate_context!())
         .expect("error while running NIVA");
 }
