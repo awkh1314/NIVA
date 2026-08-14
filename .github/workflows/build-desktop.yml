@@ -10,6 +10,10 @@ on:
       - 'NIVA.vrm'
       - '.github/workflows/build-desktop.yml'
 
+concurrency:
+  group: niva-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   windows:
     runs-on: windows-latest
