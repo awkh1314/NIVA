@@ -1,4 +1,4 @@
-name: Deploy NIVA 2D Stage
+name: Deploy NIVA VRM Stage
 
 on:
   push:
@@ -6,8 +6,7 @@ on:
       - feat/stage-web-vrm
     paths:
       - 'apps/stage-web/**'
-      - 'assets/**'
-      - 'recomposite.png'
+      - 'NIVA.vrm'
       - '.github/workflows/deploy-stage-web.yml'
   workflow_dispatch:
 
@@ -26,32 +25,24 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: apps/stage-web/package.json
-
       - name: Install dependencies
         working-directory: apps/stage-web
         run: npm install
-
-      - name: Build NIVA 2D stage
+      - name: Build NIVA VRM stage
         working-directory: apps/stage-web
         run: npm run build
-
-      - name: Bundle NIVA 2D assets
+      - name: Bundle NIVA VRM
         working-directory: apps/stage-web
         run: |
-          mkdir -p dist/assets
-          cp -R ../../assets/. dist/assets/
-          cp ../../recomposite.png dist/recomposite.png
-
+          if [ -f ../../NIVA.vrm ]; then cp ../../NIVA.vrm dist/NIVA.vrm; fi
       - name: Configure Pages
         uses: actions/configure-pages@v5
-
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
