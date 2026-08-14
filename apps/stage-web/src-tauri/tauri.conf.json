@@ -14,16 +14,18 @@
       {
         "label": "main",
         "title": "NIVA",
-        "width": 520,
-        "height": 760,
+        "width": 460,
+        "height": 700,
         "minWidth": 360,
         "minHeight": 560,
         "transparent": true,
         "decorations": false,
         "alwaysOnTop": true,
-        "resizable": true,
+        "resizable": false,
         "center": true,
-        "shadow": false
+        "shadow": false,
+        "skipTaskbar": true,
+        "visibleOnAllWorkspaces": true
       }
     ],
     "security": {
