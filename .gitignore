@@ -1,0 +1,20 @@
+# 忽略项
+.DS_Store
+Thumbs.db
+*.log
+
+# 编辑器 / IDE
+.vscode/
+.idea/
+*.swp
+
+# 依赖与构建产物（后续接入大脑 / 构建时）
+node_modules/
+dist/
+build/
+
+# 本地配置与敏感信息
+.env
+.env.local
+*.key
+secrets.json
