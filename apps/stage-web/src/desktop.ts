@@ -51,18 +51,32 @@ export function installTextModeToggle(): void {
   const input = document.querySelector<HTMLInputElement>('#messageInput')
   if (!shell || !topbar || !input || document.querySelector('#textModeToggle')) return
 
-  const button = document.createElement('button')
-  button.id = 'textModeToggle'
-  button.className = 'desktop-text-toggle'
-  button.type = 'button'
-  button.textContent = '⌨'
-  button.title = '文字输入'
-  button.addEventListener('click', (event) => {
+  topbar.setAttribute('data-tauri-drag-region', '')
+
+  const textButton = document.createElement('button')
+  textButton.id = 'textModeToggle'
+  textButton.className = 'desktop-control desktop-text-toggle'
+  textButton.type = 'button'
+  textButton.textContent = '⌨'
+  textButton.title = '文字输入'
+  textButton.addEventListener('click', (event) => {
     event.stopPropagation()
     shell.classList.toggle('text-open')
     if (shell.classList.contains('text-open')) setTimeout(() => input.focus(), 60)
   })
-  topbar.appendChild(button)
+  topbar.appendChild(textButton)
+
+  const closeButton = document.createElement('button')
+  closeButton.id = 'desktopClose'
+  closeButton.className = 'desktop-control desktop-close'
+  closeButton.type = 'button'
+  closeButton.textContent = '×'
+  closeButton.title = '退出 NIVA'
+  closeButton.addEventListener('click', async (event) => {
+    event.stopPropagation()
+    await getCurrentWindow().close()
+  })
+  topbar.appendChild(closeButton)
 
   input.addEventListener('focus', () => shell.classList.add('text-open'))
   input.addEventListener('keydown', (event) => {
