@@ -48,7 +48,7 @@ export class AvatarRuntime {
       obj.frustumCulled = false
     })
     this.root.add(vrm.scene)
-    vrm.lookAt.target = this.target
+    if (vrm.lookAt) vrm.lookAt.target = this.target
     this.setExpression('neutral', 1)
   }
 
