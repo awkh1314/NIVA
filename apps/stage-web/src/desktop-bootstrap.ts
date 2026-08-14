@@ -26,6 +26,7 @@ type NivaRuntime = {
   setVoiceOutput(enabled: boolean): void
   readonly ready: boolean
   readonly voiceOutput: boolean
+  readonly speaking: boolean
 }
 
 type ModelEntry = { id: string; name: string; local?: boolean }
@@ -356,6 +357,14 @@ async function bootDesktop() {
     ? (settings.hasApiKey ? 'ALIVE · VOICE' : 'VOICE · LOCAL')
     : (settings.hasApiKey ? 'ALIVE · TEXT' : 'TEXT · LOCAL')
 
+  const waitUntilSpeechEnds = async (epoch: number) => {
+    const started = performance.now()
+    while (niva.speaking && epoch === interactionEpoch && !backstageOpen && performance.now() - started < 18000) {
+      await sleep(120)
+    }
+    if (epoch === interactionEpoch && !backstageOpen) await sleep(220)
+  }
+
   const runBrainQueue = async () => {
     if (brainBusy || backstageOpen) return
     brainBusy = true
@@ -379,8 +388,7 @@ async function bootDesktop() {
             niva.act(reply)
             setStatus(reply.motion === 'custom' ? 'ALIVE · LEARNING' : 'ALIVE · AI')
             backstage.status.textContent = `预设动作优先 · 已学习 ${learnedCount()} 个自定义反应`
-            const speakingMs = Math.min(14000, Math.max(1000, (reply.text?.length ?? 0) * 82 + 500))
-            await sleep(speakingMs)
+            await waitUntilSpeechEnds(epoch)
           }
         } catch (error) {
           if (epoch !== interactionEpoch) continue
@@ -388,7 +396,8 @@ async function bootDesktop() {
           if (!backstageOpen) {
             niva.send(text)
             setStatus(settings.hasApiKey ? 'ALIVE · LOCAL' : 'LOCAL · 双击配置 AI')
-            await sleep(1500)
+            await sleep(450)
+            await waitUntilSpeechEnds(epoch)
           }
         } finally {
           activeInput = ''
