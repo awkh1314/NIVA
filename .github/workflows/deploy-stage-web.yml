@@ -7,6 +7,7 @@ on:
     paths:
       - 'apps/stage-web/**'
       - 'assets/**'
+      - 'recomposite.png'
       - '.github/workflows/deploy-stage-web.yml'
   workflow_dispatch:
 
@@ -46,6 +47,7 @@ jobs:
         run: |
           mkdir -p dist/assets
           cp -R ../../assets/. dist/assets/
+          cp ../../recomposite.png dist/recomposite.png
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
