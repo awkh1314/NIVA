@@ -27,10 +27,14 @@ type NivaRuntime = {
   readonly voiceOutput: boolean
 }
 
-type ModelEntry = { id: string; name: string }
+type ModelEntry = { id: string; name: string; local?: boolean }
+type StoredModel = { id: string; name: string; blob: Blob; updatedAt: number }
 
 const BASE = import.meta.env.BASE_URL
 const LEARNED_KEY = 'niva.learned-reactions.v1'
+const MODEL_DB = 'niva-models-v1'
+const MODEL_STORE = 'models'
+const LOCAL_PREFIX = 'local:'
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 const runtime = () => (window as unknown as { NIVA?: NivaRuntime }).NIVA
 
@@ -153,6 +157,92 @@ async function loadModelCatalog(): Promise<ModelEntry[]> {
   }
 }
 
+function openModelDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(MODEL_DB, 1)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(MODEL_STORE)) db.createObjectStore(MODEL_STORE, { keyPath: 'id' })
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('无法打开本地模型库'))
+  })
+}
+
+async function listStoredModels(): Promise<ModelEntry[]> {
+  try {
+    const db = await openModelDb()
+    const rows = await new Promise<StoredModel[]>((resolve, reject) => {
+      const tx = db.transaction(MODEL_STORE, 'readonly')
+      const request = tx.objectStore(MODEL_STORE).getAll()
+      request.onsuccess = () => resolve(request.result as StoredModel[])
+      request.onerror = () => reject(request.error)
+    })
+    db.close()
+    return rows
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map((row) => ({ id: row.id, name: `${row.name} · 本地`, local: true }))
+  } catch (error) {
+    console.warn('[NIVA] local model catalog unavailable', error)
+    return []
+  }
+}
+
+async function saveStoredModel(file: File): Promise<ModelEntry> {
+  const cleanName = file.name.replace(/\.vrm$/i, '') || 'Local VRM'
+  const id = `${LOCAL_PREFIX}${file.name}`
+  const row: StoredModel = { id, name: cleanName, blob: file, updatedAt: Date.now() }
+  const db = await openModelDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(MODEL_STORE, 'readwrite')
+    tx.objectStore(MODEL_STORE).put(row)
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+    tx.onabort = () => reject(tx.error)
+  })
+  db.close()
+  return { id, name: `${cleanName} · 本地`, local: true }
+}
+
+async function readStoredModel(id: string): Promise<StoredModel | null> {
+  if (!id.startsWith(LOCAL_PREFIX)) return null
+  try {
+    const db = await openModelDb()
+    const row = await new Promise<StoredModel | undefined>((resolve, reject) => {
+      const tx = db.transaction(MODEL_STORE, 'readonly')
+      const request = tx.objectStore(MODEL_STORE).get(id)
+      request.onsuccess = () => resolve(request.result as StoredModel | undefined)
+      request.onerror = () => reject(request.error)
+    })
+    db.close()
+    return row ?? null
+  } catch {
+    return null
+  }
+}
+
+async function allModels(): Promise<ModelEntry[]> {
+  const [packaged, local] = await Promise.all([loadModelCatalog(), listStoredModels()])
+  const seen = new Set<string>()
+  return [...packaged, ...local].filter((entry) => {
+    if (seen.has(entry.id)) return false
+    seen.add(entry.id)
+    return true
+  })
+}
+
+async function loadModelById(niva: NivaRuntime, id: string): Promise<boolean> {
+  if (!id.startsWith(LOCAL_PREFIX)) return niva.loadModel(`${BASE}${id}`)
+  const stored = await readStoredModel(id)
+  if (!stored) return false
+  const url = URL.createObjectURL(stored.blob)
+  try {
+    return await niva.loadModel(url)
+  } finally {
+    window.setTimeout(() => URL.revokeObjectURL(url), 5000)
+  }
+}
+
 function createBackstage(settings: DesktopSettings) {
   const shell = document.querySelector<HTMLElement>('.shell')!
   const panel = document.createElement('aside')
@@ -192,7 +282,7 @@ function createBackstage(settings: DesktopSettings) {
       </label>
     </div>
     <div class="backstage-actions">
-      <button type="button" id="chooseLocalModel">临时载入本地 VRM</button>
+      <button type="button" id="chooseLocalModel">导入本地 VRM</button>
       <button type="button" id="resetLearned">清空已学习动作</button>
       <button type="button" class="primary" id="saveBackstage">保存</button>
     </div>
@@ -248,7 +338,7 @@ async function bootDesktop() {
   const statusText = document.querySelector<HTMLElement>('#statusText')!
   const modelFile = document.querySelector<HTMLInputElement>('#modelFile')!
   const backstage = createBackstage(settings)
-  const models = await loadModelCatalog()
+  let models = await allModels()
   fillModelSelect(backstage.activeModel, models, settings.activeModel)
 
   let currentMode: InteractionMode = settings.interactionMode
@@ -362,16 +452,26 @@ async function bootDesktop() {
   modelFile.addEventListener('change', async () => {
     const file = modelFile.files?.[0]
     if (!file) return
-    const url = URL.createObjectURL(file)
-    backstage.status.textContent = `正在载入 ${file.name}…`
-    const ok = await niva.loadModel(url)
-    backstage.status.textContent = ok ? `已临时切换到 ${file.name}` : '模型载入失败，请使用 VRM 文件。'
-    window.setTimeout(() => URL.revokeObjectURL(url), 5000)
+    backstage.status.textContent = `正在导入 ${file.name}…`
+    try {
+      const entry = await saveStoredModel(file)
+      models = await allModels()
+      fillModelSelect(backstage.activeModel, models, entry.id)
+      const ok = await loadModelById(niva, entry.id)
+      backstage.status.textContent = ok
+        ? `已导入并切换到 ${entry.name}；点击保存后下次启动继续使用。`
+        : '模型已保存，但载入失败，请确认是有效 VRM。'
+    } catch (error) {
+      console.error(error)
+      backstage.status.textContent = '导入失败，请检查 VRM 文件。'
+    } finally {
+      modelFile.value = ''
+    }
   }, true)
 
   backstage.activeModel.addEventListener('change', async () => {
     backstage.status.textContent = '正在切换人物模型…'
-    const ok = await niva.loadModel(`${BASE}${backstage.activeModel.value}`)
+    const ok = await loadModelById(niva, backstage.activeModel.value)
     backstage.status.textContent = ok ? `已切换：${backstage.activeModel.selectedOptions[0]?.textContent ?? backstage.activeModel.value}` : '模型切换失败。'
   })
 
@@ -390,7 +490,7 @@ async function bootDesktop() {
       niva.setVoiceOutput(settings.voiceOutput)
       currentMode = settings.interactionMode
       backstage.status.textContent = `已保存 · ${settings.deepseekModel} · 已学习 ${learnedCount()} 个动作`
-      await niva.loadModel(`${BASE}${settings.activeModel}`)
+      await loadModelById(niva, settings.activeModel)
       setTimeout(closeBackstage, 350)
     } catch (error) {
       console.error(error)
@@ -400,7 +500,7 @@ async function bootDesktop() {
 
   niva.setVoiceOutput(settings.voiceOutput)
   if (settings.activeModel !== 'NIVA.vrm' && models.some((entry) => entry.id === settings.activeModel)) {
-    await niva.loadModel(`${BASE}${settings.activeModel}`)
+    await loadModelById(niva, settings.activeModel)
   }
   if (!settings.hasApiKey) setStatus('LOCAL · 双击配置 AI')
   applyMode(settings.interactionMode)
