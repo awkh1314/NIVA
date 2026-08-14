@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { MotionName } from '../core/types'
+import type { ArmPose, CustomReaction, MotionName } from '../core/types'
 
 type BoneName =
   | 'hips' | 'spine' | 'chest' | 'upperChest' | 'neck' | 'head'
@@ -22,6 +22,9 @@ const TRACKED: BoneName[] = [
   'rightUpperLeg','rightLowerLeg','rightFoot',
 ]
 
+const clamp = (value: number | undefined, min = -1, max = 1) =>
+  THREE.MathUtils.clamp(Number.isFinite(value) ? Number(value) : 0, min, max)
+
 export class RawMotionController {
   private vrm: any = null
   private rest = new Map<BoneName, THREE.Quaternion>()
@@ -31,16 +34,13 @@ export class RawMotionController {
   private tmpAlign = new THREE.Quaternion()
   private tmpRestDir = new THREE.Vector3()
   private tmpDesired = new THREE.Vector3()
-  private tmpWorld = new THREE.Vector3()
-  private tmpCenter = new THREE.Vector3()
 
   attach(vrm: any) {
     this.vrm = vrm
     this.rest.clear()
     if (!vrm?.humanoid) return
 
-    // We intentionally drive the real skinned skeleton. This bypasses models whose
-    // normalized humanoid bridge does not visibly respond in the renderer.
+    // Drive the real skinned skeleton so a wider range of VRM exports visibly respond.
     vrm.humanoid.autoUpdateHumanBones = false
     for (const name of TRACKED) {
       const node = this.bone(name)
@@ -116,7 +116,51 @@ export class RawMotionController {
     this.arm('right', new THREE.Vector3(r * .17, -.98, .05), new THREE.Vector3(r * .06, -.995, .08))
   }
 
-  update(now: number, motion: MotionState, lookX: number, lookY: number) {
+  private applyArmPose(side: 'left' | 'right', pose: ArmPose | undefined, strength: number) {
+    const s = this.sideSign[side]
+    switch (pose) {
+      case 'open':
+        this.arm(side, new THREE.Vector3(s * .72, -.26, .08), new THREE.Vector3(s * .84, -.38, .12), strength)
+        break
+      case 'up':
+        this.arm(side, new THREE.Vector3(s * .52, .66, .10), new THREE.Vector3(s * .20, .94, .08), strength)
+        break
+      case 'cheek':
+        this.arm(side, new THREE.Vector3(s * .27, -.62, .17), new THREE.Vector3(-s * .32, .80, .30), strength)
+        break
+      case 'forward':
+        this.arm(side, new THREE.Vector3(s * .18, -.15, .96), new THREE.Vector3(s * .05, -.18, .98), strength)
+        break
+      case 'chest':
+        this.arm(side, new THREE.Vector3(s * .28, -.52, .16), new THREE.Vector3(-s * .55, .30, .48), strength)
+        break
+      case 'down':
+      default:
+        this.arm(side, new THREE.Vector3(s * .15, -.985, .05), new THREE.Vector3(s * .04, -.995, .07), strength)
+        break
+    }
+  }
+
+  private applyCustom(custom: CustomReaction | undefined, e: number, breath: number, sway: number, p: number) {
+    if (!custom) return
+    const energy = THREE.MathUtils.clamp(custom.energy ?? .65, 0, 1)
+    const strength = THREE.MathUtils.clamp(.55 + energy * .45, 0, 1) * Math.max(.35, e)
+    const yaw = clamp(custom.headYaw) * .38
+    const pitch = clamp(custom.headPitch) * .26
+    const tilt = clamp(custom.headTilt) * .30
+    const lean = clamp(custom.bodyLean) * .15
+    const turn = clamp(custom.bodyTurn) * .20
+    const pulse = Math.sin(p * Math.PI * (2 + energy * 4)) * .018 * energy
+
+    this.rotate('hips', -lean * .22, turn * .25, -lean * .10)
+    this.rotate('spine', lean * .45 + breath * .008, turn * .38, sway * .006)
+    this.rotate('chest', lean * .55 + pulse, turn * .62, -tilt * .12)
+    this.rotate('head', pitch, yaw, tilt)
+    this.applyArmPose('left', custom.leftArm, strength)
+    this.applyArmPose('right', custom.rightArm, strength)
+  }
+
+  update(now: number, motion: MotionState, lookX: number, lookY: number, custom?: CustomReaction | null) {
     if (!this.vrm?.humanoid) return
     this.reset()
 
@@ -128,7 +172,7 @@ export class RawMotionController {
     const p = finite ? THREE.MathUtils.clamp((now - motion.start) / motion.duration, 0, 1) : .62
     const e = finite ? Math.sin(Math.PI * p) : .9
 
-    // Persistent life: breathing, weight shift and eye/head attention never stop.
+    // Persistent life: breathing, weight shift and head attention never stop.
     this.rotate('hips', 0, sway * .018, -sway * .015)
     this.rotate('spine', breath * .012, sway * .010, micro * .010)
     this.rotate('chest', breath * .018, -sway * .012, sway * .018)
@@ -141,7 +185,6 @@ export class RawMotionController {
 
     switch (motion.name) {
       case 'thinking': {
-        // Right hand rises toward the cheek/chin; left arm stays naturally down.
         this.rotate('head', .035 - lookY * .08, -.10 + lookX * .10, -.13)
         this.rotate('chest', breath * .012, -.025, -.035)
         this.arm('left', new THREE.Vector3(ls * .13, -.99, .03), new THREE.Vector3(ls * .03, -1, .04))
@@ -187,6 +230,10 @@ export class RawMotionController {
       case 'angry': {
         this.rotate('head', .02, Math.sin(p * Math.PI * 10) * .06 * (1 - p), 0)
         this.rotate('chest', 0, 0, .025 * Math.sin(p * Math.PI * 6))
+        break
+      }
+      case 'custom': {
+        this.applyCustom(custom ?? undefined, e, breath, sway, p)
         break
       }
       case 'idle':
