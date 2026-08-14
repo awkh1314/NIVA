@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm'
 import { RawMotionController } from './avatar/RawMotionController'
+import { isVoiceSpeaking, speakVoice, stopVoice } from './voice-output'
 import type { CustomReaction, MotionName, NivaAction, SemanticExpression } from './core/types'
 
 type Expression = SemanticExpression
@@ -134,7 +135,10 @@ function playMotion(name?: MotionName) {
 
 function setVoiceOutput(enabled: boolean) {
   voiceEnabled = enabled
-  if (!enabled && 'speechSynthesis' in window) speechSynthesis.cancel()
+  if (!enabled) {
+    speakingUntil = 0
+    stopVoice()
+  }
 }
 
 function speakText(text: string) {
@@ -147,13 +151,8 @@ function speakText(text: string) {
   }, 16)
   speakingUntil = performance.now() + Math.max(900, text.length * 82)
 
-  if (voiceEnabled && 'speechSynthesis' in window) {
-    speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.lang = 'zh-CN'
-    utterance.rate = 1.03
-    utterance.pitch = 1.10
-    speechSynthesis.speak(utterance)
+  if (voiceEnabled) {
+    void speakVoice(text, { lang: 'zh-CN', rate: 1.03, pitch: 1.10 })
   }
 }
 
@@ -209,7 +208,7 @@ function updateFace(now: number) {
     if (t >= 1) blinkStart = -1
   }
 
-  if (now < speakingUntil) {
+  if (now < speakingUntil || isVoiceSpeaking()) {
     manager.setValue('aa', .16 + Math.abs(Math.sin(now * .021)) * .52)
     manager.setValue('ih', Math.abs(Math.sin(now * .015 + 1.2)) * .16)
   }
@@ -325,6 +324,7 @@ Object.assign(window, {
     motion: playMotion,
     get ready() { return !!vrm },
     get voiceOutput() { return voiceEnabled },
+    get speaking() { return performance.now() < speakingUntil || isVoiceSpeaking() },
     get mode() { return 'vrm-raw-motion' as const },
   },
 })
