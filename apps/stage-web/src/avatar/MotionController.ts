@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
-import { VRM } from '@pixiv/three-vrm'
+import type { VRM } from '@pixiv/three-vrm'
 import {
   VRMAnimationLoaderPlugin,
   createVRMAnimationClip,
@@ -19,13 +19,14 @@ export class MotionController {
   }
 
   async load(name: MotionName, url: string, vrm: VRM) {
+    if (!this.mixer) throw new Error('MotionController must be attached before loading motions')
     const loader = new GLTFLoader()
     loader.register((parser) => new VRMAnimationLoaderPlugin(parser))
     const gltf = await loader.loadAsync(url)
     const animation = gltf.userData.vrmAnimations?.[0]
     if (!animation) throw new Error(`No VRM animation found: ${url}`)
     const clip = createVRMAnimationClip(animation, vrm)
-    const action = this.mixer!.clipAction(clip)
+    const action = this.mixer.clipAction(clip)
     if (name === 'idle') {
       action.setLoop(THREE.LoopRepeat, Infinity)
     } else {
@@ -45,12 +46,12 @@ export class MotionController {
     this.current = next
 
     if (name !== 'idle' && this.mixer) {
-      const onFinished = (event: THREE.Event & { action?: THREE.AnimationAction }) => {
+      const onFinished = (event: { action?: THREE.AnimationAction }) => {
         if (event.action !== next) return
-        this.mixer?.removeEventListener('finished', onFinished)
+        this.mixer?.removeEventListener('finished', onFinished as never)
         this.play('idle', .4)
       }
-      this.mixer.addEventListener('finished', onFinished)
+      this.mixer.addEventListener('finished', onFinished as never)
     }
     return true
   }
