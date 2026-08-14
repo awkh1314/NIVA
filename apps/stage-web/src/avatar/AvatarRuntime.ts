@@ -13,9 +13,14 @@ const expressionMap: Record<SemanticExpression, string | null> = {
   thinking: 'relaxed',
 }
 
+// Temporary CC0 fallback body used only when the repo-local NIVA.vrm is absent.
+// Source: Polygonal Mind 100Avatars R1, avatar 057 "Rose".
+const FALLBACK_VRM_URL = 'https://arweave.net/Ea1KXujzJatQgCFSMzGOzp_UtHqB1pyia--U3AtkMAY'
+
 export class AvatarRuntime {
   vrm: VRM | null = null
   root = new THREE.Group()
+  usingFallback = false
   private target = new THREE.Object3D()
   private look = new THREE.Vector2()
   private desiredLook = new THREE.Vector2()
@@ -29,12 +34,30 @@ export class AvatarRuntime {
     scene.add(this.target)
   }
 
-  async load(url: string) {
+  private createLoader() {
     const loader = new GLTFLoader()
     loader.register((parser) => new VRMLoaderPlugin(parser))
-    const gltf = await loader.loadAsync(url)
+    return loader
+  }
+
+  private async loadVrm(url: string) {
+    const gltf = await this.createLoader().loadAsync(url)
     const vrm = gltf.userData.vrm as VRM | undefined
     if (!vrm) throw new Error(`No VRM data found in ${url}`)
+    return vrm
+  }
+
+  async load(url: string) {
+    let vrm: VRM
+    this.usingFallback = false
+
+    try {
+      vrm = await this.loadVrm(url)
+    } catch (localError) {
+      console.warn('Local NIVA.vrm unavailable; loading temporary CC0 fallback body.', localError)
+      vrm = await this.loadVrm(FALLBACK_VRM_URL)
+      this.usingFallback = true
+    }
 
     if (this.vrm) {
       this.root.remove(this.vrm.scene)
