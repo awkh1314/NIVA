@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { getCurrentWindow, currentMonitor, PhysicalPosition } from '@tauri-apps/api/window'
-import type { DesktopSettings, InteractionMode, NivaAction } from './core/types'
+import type { DesktopSettings, InteractionMode, LongTermMemorySnapshot, NivaAction } from './core/types'
 
 type SpeechRecognitionCtor = new () => {
   lang: string
@@ -122,6 +122,16 @@ export async function askDeepSeek(message: string): Promise<NivaAction> {
 export async function clearConversation(): Promise<void> {
   if (!isTauri()) return
   await invoke('clear_conversation')
+}
+
+export async function getLongTermMemory(): Promise<LongTermMemorySnapshot> {
+  if (!isTauri()) return { count: 0, capacity: 32, items: [] }
+  return invoke<LongTermMemorySnapshot>('get_long_term_memory')
+}
+
+export async function clearLongTermMemory(): Promise<void> {
+  if (!isTauri()) return
+  await invoke('clear_long_term_memory')
 }
 
 export async function getSettings(): Promise<DesktopSettings> {
