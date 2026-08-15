@@ -45,6 +45,14 @@ export interface NivaAction {
   reactionKey?: string
   customReaction?: CustomReaction
   lookTarget?: { x: number; y: number }
+  /** At most two stable, cross-session facts NIVA decided are worth remembering. */
+  memoryWrites?: string[]
+}
+
+export interface LongTermMemorySnapshot {
+  count: number
+  capacity: number
+  items: string[]
 }
 
 export type InteractionMode = 'voice' | 'text'
