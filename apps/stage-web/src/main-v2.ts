@@ -52,7 +52,7 @@ const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true 
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.outputColorSpace = THREE.SRGBColorSpace
 renderer.toneMapping = THREE.ACESFilmicToneMapping
-renderer.toneMappingExposure = 0.80
+renderer.toneMappingExposure = 0.74
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 
@@ -66,7 +66,7 @@ const rawMotion = new RawMotionController()
 // The previous setup stacked a very bright hemisphere + key + rim + point light and washed
 // light-colored VRM materials almost completely white.
 scene.add(new THREE.HemisphereLight(0xe8f2ff, 0x182034, 0.72))
-const key = new THREE.DirectionalLight(0xfff4ed, 1.05)
+const key = new THREE.DirectionalLight(0xfff4ed, 0.98)
 key.position.set(1.7, 2.8, 2.6)
 key.castShadow = true
 scene.add(key)
