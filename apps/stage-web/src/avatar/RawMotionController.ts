@@ -25,6 +25,16 @@ const TRACKED: BoneName[] = [
 const clamp = (value: number | undefined, min = -1, max = 1) =>
   THREE.MathUtils.clamp(Number.isFinite(value) ? Number(value) : 0, min, max)
 
+/**
+ * Procedural avatar motion controller.
+ *
+ * All motion definitions below use one semantic coordinate system:
+ *   +Y = up, +Z = avatar forward, sideSign = avatar left/right.
+ *
+ * VRM 0.x stores avatars facing Z-, while VRM 1.0 stores them facing Z+.
+ * This controller normalizes that difference before solving the raw skeleton,
+ * so a gesture keeps the same meaning on both formats and at every view angle.
+ */
 export class RawMotionController {
   private vrm: any = null
   private rest = new Map<BoneName, THREE.Quaternion>()
@@ -40,6 +50,8 @@ export class RawMotionController {
   private tmpLowerWorld = new THREE.Vector3()
   private baseYaw = 0
   private viewYaw = 0
+  private forwardSign = 1
+  private rotationXZSign = 1
   private rotationControlsInstalled = false
   private dragging = false
   private dragPointerId = -1
@@ -50,24 +62,31 @@ export class RawMotionController {
     this.rest.clear()
     if (!vrm?.humanoid) return
 
-    // AvatarSample_A/legacy VRM exports may face away from a +Z camera.
-    // Correct only known legacy/sample bodies; other imported VRM models keep their authored facing.
-    const metaName = String(vrm?.meta?.name ?? vrm?.meta?.title ?? '')
     const metaVersion = String(vrm?.meta?.metaVersion ?? vrm?.metaVersion ?? '')
-    this.baseYaw = metaVersion === '0' || /AvatarSample[_\s-]*A/i.test(metaName) ? Math.PI : 0
+    const isVrm0 = metaVersion === '0'
+
+    // VRM 0.x is authored facing Z-. VRM 1.0 is authored facing Z+.
+    // The camera watches from +Z, so only VRM0 needs a 180° presentation yaw.
+    this.baseYaw = isVrm0 ? Math.PI : 0
+    this.forwardSign = isVrm0 ? -1 : 1
+
+    // Converting VRM0 semantic rotations into the VRM1-style motion space flips X/Z axes.
+    // Y/yaw keeps the same sign under the 180° Y conversion.
+    this.rotationXZSign = isVrm0 ? -1 : 1
     this.viewYaw = 0
     this.applyRootOrientation()
     this.installRotationControls()
 
-    // Drive the real skinned skeleton so a wider range of VRM exports visibly respond.
+    // We intentionally solve the real skinned skeleton. Rest rotations are preserved so
+    // VRM1 models that are not fully normalized still keep their authored bone roll.
     vrm.humanoid.autoUpdateHumanBones = false
     for (const name of TRACKED) {
       const node = this.bone(name)
       if (node) this.rest.set(name, node.quaternion.clone())
     }
 
-    // Determine left/right in avatar-local coordinates, not world X.
-    // World X flips when the user rotates the model 180 degrees, which previously made both arms converge.
+    // VRM0 and VRM1 use opposite X handedness for avatar right. Derive left/right
+    // from the actual model instead of hard-coding one format's convention.
     const hips = this.worldPos('hips')
     const left = this.worldPos('leftUpperArm')
     const right = this.worldPos('rightUpperArm')
@@ -107,7 +126,7 @@ export class RawMotionController {
       this.dragPointerId = event.pointerId
       this.dragX = event.clientX
       stage.style.cursor = 'grabbing'
-      try { stage.setPointerCapture(event.pointerId) } catch { /* unsupported capture is harmless */ }
+      try { stage.setPointerCapture(event.pointerId) } catch { /* optional */ }
     })
 
     stage.addEventListener('pointermove', (event) => {
@@ -123,12 +142,11 @@ export class RawMotionController {
       this.dragging = false
       this.dragPointerId = -1
       stage.style.cursor = 'grab'
-      try { stage.releasePointerCapture(event.pointerId) } catch { /* already released */ }
+      try { stage.releasePointerCapture(event.pointerId) } catch { /* optional */ }
     }
     stage.addEventListener('pointerup', stopDrag)
     stage.addEventListener('pointercancel', stopDrag)
 
-    // Double-click restores the authored/default front view.
     stage.addEventListener('dblclick', () => {
       this.viewYaw = 0
       this.applyRootOrientation()
@@ -158,21 +176,27 @@ export class RawMotionController {
     const node = this.bone(name)
     const rest = this.rest.get(name)
     if (!node || !rest) return
-    const delta = new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, 'XYZ'))
+
+    const delta = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      x * this.rotationXZSign,
+      y,
+      z * this.rotationXZSign,
+      'XYZ',
+    ))
     node.quaternion.copy(rest).multiply(delta)
   }
 
-  /** Convert an avatar-local direction to world space using the current model/view rotation. */
+  /** Convert semantic avatar-local direction (+Z forward) to current world space. */
   private avatarDirectionToWorld(localDirection: THREE.Vector3, target: THREE.Vector3) {
     const root = this.vrm?.scene as THREE.Object3D | undefined
-    target.copy(localDirection).normalize()
+    target.set(localDirection.x, localDirection.y, localDirection.z * this.forwardSign).normalize()
     if (!root) return target
     root.updateWorldMatrix(true, false)
     root.getWorldQuaternion(this.tmpRootQ)
     return target.applyQuaternion(this.tmpRootQ).normalize()
   }
 
-  /** Aim a bone's child toward a world-space direction while preserving the bone's rest roll. */
+  /** Aim a bone's child toward a world-space direction while preserving authored roll. */
   private aim(name: BoneName, childName: BoneName, worldDirection: THREE.Vector3, strength = 1) {
     const node = this.bone(name)
     const child = this.bone(childName)
@@ -196,9 +220,6 @@ export class RawMotionController {
     const upper = `${side}UpperArm` as BoneName
     const lower = `${side}LowerArm` as BoneName
     const hand = `${side}Hand` as BoneName
-
-    // Motion definitions are authored in avatar-local space.
-    // Rotate those directions together with the avatar before solving the raw bones in world space.
     this.avatarDirectionToWorld(upperDir, this.tmpUpperWorld)
     this.avatarDirectionToWorld(lowerDir, this.tmpLowerWorld)
     this.aim(upper, lower, this.tmpUpperWorld, strength)
@@ -208,31 +229,31 @@ export class RawMotionController {
   private relaxedArms() {
     const l = this.sideSign.left
     const r = this.sideSign.right
-    this.arm('left', new THREE.Vector3(l * .17, -.98, .05), new THREE.Vector3(l * .06, -.995, .08))
-    this.arm('right', new THREE.Vector3(r * .17, -.98, .05), new THREE.Vector3(r * .06, -.995, .08))
+    this.arm('left', new THREE.Vector3(l * .14, -.989, .045), new THREE.Vector3(l * .04, -.996, .07))
+    this.arm('right', new THREE.Vector3(r * .14, -.989, .045), new THREE.Vector3(r * .04, -.996, .07))
   }
 
   private applyArmPose(side: 'left' | 'right', pose: ArmPose | undefined, strength: number) {
     const s = this.sideSign[side]
     switch (pose) {
       case 'open':
-        this.arm(side, new THREE.Vector3(s * .72, -.26, .08), new THREE.Vector3(s * .84, -.38, .12), strength)
+        this.arm(side, new THREE.Vector3(s * .70, -.34, .12), new THREE.Vector3(s * .82, -.44, .18), strength)
         break
       case 'up':
-        this.arm(side, new THREE.Vector3(s * .52, .66, .10), new THREE.Vector3(s * .20, .94, .08), strength)
+        this.arm(side, new THREE.Vector3(s * .48, .72, .10), new THREE.Vector3(s * .16, .96, .08), strength)
         break
       case 'cheek':
-        this.arm(side, new THREE.Vector3(s * .27, -.62, .17), new THREE.Vector3(-s * .32, .80, .30), strength)
+        this.arm(side, new THREE.Vector3(s * .24, -.66, .22), new THREE.Vector3(-s * .28, .80, .38), strength)
         break
       case 'forward':
-        this.arm(side, new THREE.Vector3(s * .18, -.15, .96), new THREE.Vector3(s * .05, -.18, .98), strength)
+        this.arm(side, new THREE.Vector3(s * .16, -.18, .97), new THREE.Vector3(s * .04, -.16, .99), strength)
         break
       case 'chest':
-        this.arm(side, new THREE.Vector3(s * .28, -.52, .16), new THREE.Vector3(-s * .55, .30, .48), strength)
+        this.arm(side, new THREE.Vector3(s * .24, -.58, .24), new THREE.Vector3(-s * .48, .34, .57), strength)
         break
       case 'down':
       default:
-        this.arm(side, new THREE.Vector3(s * .15, -.985, .05), new THREE.Vector3(s * .04, -.995, .07), strength)
+        this.arm(side, new THREE.Vector3(s * .13, -.990, .04), new THREE.Vector3(s * .035, -.997, .06), strength)
         break
     }
   }
@@ -241,16 +262,16 @@ export class RawMotionController {
     if (!custom) return
     const energy = THREE.MathUtils.clamp(custom.energy ?? .65, 0, 1)
     const strength = THREE.MathUtils.clamp(.55 + energy * .45, 0, 1) * Math.max(.35, e)
-    const yaw = clamp(custom.headYaw) * .38
-    const pitch = clamp(custom.headPitch) * .26
-    const tilt = clamp(custom.headTilt) * .30
-    const lean = clamp(custom.bodyLean) * .15
-    const turn = clamp(custom.bodyTurn) * .20
-    const pulse = Math.sin(p * Math.PI * (2 + energy * 4)) * .018 * energy
+    const yaw = clamp(custom.headYaw) * .34
+    const pitch = clamp(custom.headPitch) * .23
+    const tilt = clamp(custom.headTilt) * .25
+    const lean = clamp(custom.bodyLean) * .13
+    const turn = clamp(custom.bodyTurn) * .18
+    const pulse = Math.sin(p * Math.PI * (2 + energy * 4)) * .014 * energy
 
-    this.rotate('hips', -lean * .22, turn * .25, -lean * .10)
-    this.rotate('spine', lean * .45 + breath * .008, turn * .38, sway * .006)
-    this.rotate('chest', lean * .55 + pulse, turn * .62, -tilt * .12)
+    this.rotate('hips', -lean * .18, turn * .22, -lean * .07)
+    this.rotate('spine', lean * .38 + breath * .006, turn * .32, sway * .004)
+    this.rotate('chest', lean * .48 + pulse, turn * .52, -tilt * .10)
     this.rotate('head', pitch, yaw, tilt)
     this.applyArmPose('left', custom.leftArm, strength)
     this.applyArmPose('right', custom.rightArm, strength)
@@ -261,19 +282,19 @@ export class RawMotionController {
     this.reset()
 
     const t = now / 1000
-    const breath = Math.sin(t * 1.85)
-    const sway = Math.sin(t * .62)
-    const micro = Math.sin(t * .27)
+    const breath = Math.sin(t * 1.72)
+    const sway = Math.sin(t * .55)
+    const micro = Math.sin(t * .25)
     const finite = Number.isFinite(motion.duration)
     const p = finite ? THREE.MathUtils.clamp((now - motion.start) / motion.duration, 0, 1) : .62
     const e = finite ? Math.sin(Math.PI * p) : .9
 
-    // Persistent life: breathing, weight shift and head attention never stop.
-    this.rotate('hips', 0, sway * .018, -sway * .015)
-    this.rotate('spine', breath * .012, sway * .010, micro * .010)
-    this.rotate('chest', breath * .018, -sway * .012, sway * .018)
-    this.rotate('upperChest', breath * .008, -sway * .006, sway * .009)
-    this.rotate('head', -lookY * .12 + breath * .006, lookX * .19 + sway * .018, -sway * .018)
+    // Natural baseline: small breathing/weight shift, eyes/head follow attention, arms down.
+    this.rotate('hips', 0, sway * .012, -sway * .010)
+    this.rotate('spine', breath * .008, sway * .007, micro * .006)
+    this.rotate('chest', breath * .012, -sway * .008, sway * .010)
+    this.rotate('upperChest', breath * .005, -sway * .004, sway * .005)
+    this.rotate('head', -lookY * .10 + breath * .004, lookX * .16 + sway * .010, -sway * .010)
     this.relaxedArms()
 
     const ls = this.sideSign.left
@@ -281,51 +302,60 @@ export class RawMotionController {
 
     switch (motion.name) {
       case 'thinking': {
-        this.rotate('head', .035 - lookY * .08, -.10 + lookX * .10, -.13)
-        this.rotate('chest', breath * .012, -.025, -.035)
-        this.arm('left', new THREE.Vector3(ls * .13, -.99, .03), new THREE.Vector3(ls * .03, -1, .04))
-        this.arm('right', new THREE.Vector3(rs * .28, -.73, .15), new THREE.Vector3(-rs * .33, .78, .30), e)
+        // Right hand to chin/cheek, left arm remains relaxed.
+        this.rotate('head', .025 - lookY * .06, -.08 + lookX * .08, -.09)
+        this.rotate('chest', breath * .008, -.018, -.020)
+        this.arm('left', new THREE.Vector3(ls * .13, -.991, .04), new THREE.Vector3(ls * .035, -.998, .06))
+        this.arm('right', new THREE.Vector3(rs * .24, -.72, .26), new THREE.Vector3(-rs * .28, .76, .46), e)
         break
       }
       case 'wave': {
         const wave = Math.sin(p * Math.PI * 7)
-        this.arm('right', new THREE.Vector3(rs * .62, .48, .12), new THREE.Vector3(rs * (.16 + wave * .34), .88, .12), e)
-        this.rotate('head', -.03, lookX * .08, -rs * .05 * e)
+        this.arm('right', new THREE.Vector3(rs * .54, .56, .12), new THREE.Vector3(rs * (.12 + wave * .28), .93, .10), e)
+        this.rotate('head', -.02, lookX * .06, -rs * .035 * e)
         break
       }
       case 'greet': {
-        this.rotate('head', .10 * e - lookY * .06, lookX * .1, -.08 * e)
-        this.rotate('chest', -.025 * e, 0, .025 * e)
+        // A small nod and slight forward acknowledgement, not a random head roll.
+        const nod = Math.sin(p * Math.PI * 2) * .07 * e
+        this.rotate('head', .05 * e + nod - lookY * .04, lookX * .06, -.025 * e)
+        this.rotate('chest', -.018 * e, 0, .012 * e)
         break
       }
       case 'happy': {
+        // Clearly readable celebration: both arms up/out, small body bounce.
         const bounce = Math.sin(p * Math.PI * 4) * e
-        this.rotate('hips', -.035 * Math.max(0, bounce), sway * .01, 0)
-        this.arm('left', new THREE.Vector3(ls * .58, .48, .08), new THREE.Vector3(ls * .18, .88, .12), e)
-        this.arm('right', new THREE.Vector3(rs * .58, .48, .08), new THREE.Vector3(rs * .18, .88, .12), e)
-        this.rotate('head', -.08 * e, 0, sway * .025)
+        this.rotate('hips', -.020 * Math.max(0, bounce), sway * .008, 0)
+        this.arm('left', new THREE.Vector3(ls * .50, .64, .10), new THREE.Vector3(ls * .18, .95, .08), e)
+        this.arm('right', new THREE.Vector3(rs * .50, .64, .10), new THREE.Vector3(rs * .18, .95, .08), e)
+        this.rotate('head', -.045 * e, 0, sway * .014)
         break
       }
       case 'sad': {
-        this.rotate('head', .18 * e, 0, .04 * e)
-        this.rotate('chest', .10 * e, 0, -.02 * e)
-        this.arm('left', new THREE.Vector3(ls * .10, -.995, -.06), new THREE.Vector3(-ls * .02, -.995, -.05))
-        this.arm('right', new THREE.Vector3(rs * .10, -.995, -.06), new THREE.Vector3(-rs * .02, -.995, -.05))
+        // Lower gaze and soften the torso; hands remain visibly at the sides.
+        this.rotate('head', .12 * e, 0, .025 * e)
+        this.rotate('chest', .065 * e, 0, -.012 * e)
+        this.arm('left', new THREE.Vector3(ls * .08, -.996, -.02), new THREE.Vector3(ls * .02, -.999, -.01))
+        this.arm('right', new THREE.Vector3(rs * .08, -.996, -.02), new THREE.Vector3(rs * .02, -.999, -.01))
         break
       }
       case 'lookAround': {
-        this.rotate('head', -lookY * .08, Math.sin(p * Math.PI * 3) * .36 * e, sway * .02)
+        this.rotate('head', -lookY * .06, Math.sin(p * Math.PI * 3) * .28 * e, sway * .012)
         break
       }
       case 'surprised': {
-        this.rotate('head', -.11 * e, 0, 0)
-        this.arm('left', new THREE.Vector3(ls * .42, -.70, .16), new THREE.Vector3(ls * .28, -.86, .20), e)
-        this.arm('right', new THREE.Vector3(rs * .42, -.70, .16), new THREE.Vector3(rs * .28, -.86, .20), e)
+        // Hands lift slightly away from the body; avoid the previous crossed/inside pose.
+        this.rotate('head', -.06 * e, 0, 0)
+        this.arm('left', new THREE.Vector3(ls * .34, -.76, .24), new THREE.Vector3(ls * .24, -.86, .28), e)
+        this.arm('right', new THREE.Vector3(rs * .34, -.76, .24), new THREE.Vector3(rs * .24, -.86, .28), e)
         break
       }
       case 'angry': {
-        this.rotate('head', .02, Math.sin(p * Math.PI * 10) * .06 * (1 - p), 0)
-        this.rotate('chest', 0, 0, .025 * Math.sin(p * Math.PI * 6))
+        // Firm posture only; do not shake the head/body aggressively.
+        this.rotate('head', -.015 * e, lookX * .04, 0)
+        this.rotate('chest', -.020 * e, 0, 0)
+        this.arm('left', new THREE.Vector3(ls * .18, -.96, .16), new THREE.Vector3(-ls * .22, -.78, .50), e * .65)
+        this.arm('right', new THREE.Vector3(rs * .18, -.96, .16), new THREE.Vector3(-rs * .22, -.78, .50), e * .65)
         break
       }
       case 'custom': {
