@@ -8,11 +8,11 @@ import type { CustomReaction, MotionName, NivaAction, SemanticExpression } from 
 
 type Expression = SemanticExpression
 const base = import.meta.env.BASE_URL
-const modelUrl = `${base}NIVA.vrm`
+const modelUrl = `${base}NIVA.vrm?v=avatar-sample-a-2`
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
-<main class="shell" data-emotion="thinking">
+<main class="shell" data-emotion="neutral">
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
   <header class="topbar">
     <div class="brand"><strong>NIVA</strong><span>DIGITAL LIFE</span></div>
@@ -24,7 +24,7 @@ app.innerHTML = `
     <div class="load-card" id="loadCard"><strong>正在唤醒 NIVA</strong><span id="loadHint">加载身体、表情与生命行为…</span><button id="localModel" hidden>载入本地 NIVA.vrm</button><input id="modelFile" type="file" accept=".vrm" hidden></div>
   </section>
   <section class="conversation">
-    <div class="dialog"><div id="userLine" class="user-line" hidden></div><div class="niva-line"><b>NIVA</b><span id="speechText">我在想一件事情…</span></div></div>
+    <div class="dialog"><div id="userLine" class="user-line" hidden></div><div class="niva-line"><b>NIVA</b><span id="speechText">我在。</span></div></div>
     <form id="composer" class="composer"><input id="messageInput" maxlength="240" autocomplete="off" placeholder="和 NIVA 说点什么…"><button>发送</button></form>
     <div class="quick"><button data-text="你好">你好</button><button data-text="挥挥手">挥挥手</button><button data-text="我今天有点累">我有点累</button><button data-text="我成功了">我成功了</button></div>
   </section>
@@ -61,13 +61,14 @@ const cyan = new THREE.PointLight(0x60eaff, 14, 5); cyan.position.set(1.5, 1.4, 
 
 let vrm: any = null
 let modelRoot: THREE.Object3D | null = null
-let activeEmotion: Expression = 'thinking'
-let emotionIntensity = .8
+let activeEmotion: Expression = 'neutral'
+let emotionIntensity = .35
 let motion: { name: MotionName; start: number; duration: number } = { name: 'thinking', start: performance.now(), duration: 6500 }
 let activeCustomReaction: CustomReaction | null = null
 let lookX = 0, lookY = 0, targetLookX = 0, targetLookY = 0
-let nextBlink = performance.now() + 2800
+let nextBlink = performance.now() + 4800
 let blinkStart = -1
+let faceWarmupUntil = performance.now() + 2600
 let speakingUntil = 0
 let typeTimer = 0
 let lastInteraction = performance.now()
@@ -75,7 +76,23 @@ let nextAutonomy = performance.now() + 9000
 let voiceEnabled = true
 
 const emotionNames: Record<Expression, string | null> = {
-  neutral: null, happy: 'happy', shy: 'happy', sad: 'sad', angry: 'angry', surprised: 'surprised', thinking: null,
+  neutral: null,
+  happy: 'happy',
+  shy: 'happy',
+  sad: 'sad',
+  angry: 'angry',
+  surprised: 'surprised',
+  thinking: null,
+}
+
+const emotionScale: Record<Expression, number> = {
+  neutral: 0,
+  happy: .22,
+  shy: .12,
+  sad: .18,
+  angry: .16,
+  surprised: .14,
+  thinking: 0,
 }
 
 function fitCamera() {
@@ -191,26 +208,38 @@ function send(text: string) {
 function updateFace(now: number) {
   const manager = vrm?.expressionManager
   if (!manager) return
-  for (const name of ['happy','sad','angry','surprised','blink','aa','ih']) manager.setValue(name, 0)
+
+  // Keep neutral facial geometry as the baseline. Some VRM presets alter eyes very aggressively,
+  // so every frame starts from zero and emotional presets are applied only at a subtle weight.
+  for (const name of [
+    'happy', 'sad', 'angry', 'relaxed', 'surprised',
+    'blink', 'blinkLeft', 'blinkRight',
+    'aa', 'ih', 'ou', 'ee', 'oh',
+  ]) manager.setValue(name, 0)
 
   const mapped = emotionNames[activeEmotion]
-  if (mapped) manager.setValue(mapped, emotionIntensity * (activeEmotion === 'shy' ? .55 : 1))
-  if (activeEmotion === 'thinking') manager.setValue('surprised', .16)
+  if (mapped) manager.setValue(mapped, emotionIntensity * emotionScale[activeEmotion])
 
-  if (now >= nextBlink && blinkStart < 0) {
-    blinkStart = now
-    nextBlink = now + 2800 + Math.random() * 4200
-  }
-  if (blinkStart >= 0) {
-    const t = (now - blinkStart) / 145
-    const v = t < .5 ? t * 2 : Math.max(0, 2 - t * 2)
-    manager.setValue('blink', v)
-    if (t >= 1) blinkStart = -1
+  // Hold the eyes open just after a model is loaded so startup never lands on an ugly closed-eye frame.
+  if (now >= faceWarmupUntil) {
+    if (now >= nextBlink && blinkStart < 0) {
+      blinkStart = now
+      nextBlink = now + 3600 + Math.random() * 4800
+    }
+    if (blinkStart >= 0) {
+      const t = (now - blinkStart) / 118
+      const v = t < .5 ? t * 2 : Math.max(0, 2 - t * 2)
+      manager.setValue('blink', v * .82)
+      if (t >= 1) blinkStart = -1
+    }
   }
 
+  // Very small lip sync only. The previous wide aa/ih oscillation distorted AvatarSample_A's mouth.
   if (now < speakingUntil || isVoiceSpeaking()) {
-    manager.setValue('aa', .16 + Math.abs(Math.sin(now * .021)) * .52)
-    manager.setValue('ih', Math.abs(Math.sin(now * .015 + 1.2)) * .16)
+    const aa = .035 + Math.abs(Math.sin(now * .017)) * .085
+    const ih = Math.abs(Math.sin(now * .011 + .8)) * .022
+    manager.setValue('aa', aa)
+    manager.setValue('ih', ih)
   }
 }
 
@@ -227,9 +256,8 @@ function updateLife(now: number) {
   if (motion.name === 'idle' && now > nextAutonomy && now - lastInteraction > 4000) {
     const pool: MotionName[] = ['lookAround', 'thinking', 'greet', 'happy']
     const chosen = pool[Math.floor(Math.random() * pool.length)]
-    if (chosen === 'happy') setExpression('happy', .72)
-    else if (chosen === 'thinking') setExpression('thinking', .72)
-    else setExpression('neutral', .7)
+    if (chosen === 'happy') setExpression('happy', .58)
+    else setExpression('neutral', .35)
     playMotion(chosen)
   }
 
@@ -272,9 +300,13 @@ async function loadVrm(url: string) {
 
     rawMotion.attach(vrm)
     activeCustomReaction = null
-    setExpression('thinking', .76)
-    motion = { name: 'thinking', start: performance.now(), duration: 6500 }
-    updateLife(performance.now())
+    const now = performance.now()
+    faceWarmupUntil = now + 2600
+    nextBlink = faceWarmupUntil + 2200 + Math.random() * 1800
+    blinkStart = -1
+    setExpression('neutral', .35)
+    motion = { name: 'thinking', start: now, duration: 6500 }
+    updateLife(now)
     vrm.update(0)
     fitCamera()
     loadCard.classList.add('hidden')
