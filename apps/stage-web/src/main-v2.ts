@@ -9,7 +9,10 @@ import type { CustomReaction, MotionName, NivaAction, SemanticExpression } from 
 type Expression = SemanticExpression
 const base = import.meta.env.BASE_URL
 const modelUrl = `${base}NIVA.vrm?v=avatar-sample-a-3`
-const DEFAULT_MOTION: MotionName = 'dance'
+const DESKTOP_MODE = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+// Web is our motion/debug stage, so it keeps dancing by default. The packaged
+// desktop product settles into a quiet idle after a short acknowledgement.
+const DEFAULT_MOTION: MotionName = DESKTOP_MODE ? 'idle' : 'dance'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
@@ -62,8 +65,8 @@ const cyan = new THREE.PointLight(0x60eaff, 14, 5); cyan.position.set(1.5, 1.4, 
 
 let vrm: any = null
 let modelRoot: THREE.Object3D | null = null
-let activeEmotion: Expression = 'happy'
-let emotionIntensity = .42
+let activeEmotion: Expression = DESKTOP_MODE ? 'neutral' : 'happy'
+let emotionIntensity = DESKTOP_MODE ? 0 : .42
 let motion: { name: MotionName; start: number; duration: number } = { name: DEFAULT_MOTION, start: performance.now(), duration: Infinity }
 let activeCustomReaction: CustomReaction | null = null
 let lookX = 0, lookY = 0, targetLookX = 0, targetLookY = 0
@@ -76,7 +79,7 @@ let faceWarmupUntil = performance.now() + 2600
 let speakingUntil = 0
 let typeTimer = 0
 let lastInteraction = performance.now()
-let nextAutonomy = performance.now() + 9000
+let nextAutonomy = performance.now() + (DESKTOP_MODE ? 15000 : 9000)
 let voiceEnabled = true
 let tapPointerId = -1
 let tapStartX = 0
@@ -277,21 +280,24 @@ function updateLife(now: number) {
   lookX += (targetLookX - lookX) * .075
   lookY += (targetLookY - lookY) * .075
 
-  // Short reactions temporarily interrupt the default dance. When they finish,
-  // NIVA resumes dancing automatically rather than falling back to a static idle.
+  // Temporary reactions always return to the product's baseline. On the web stage
+  // that baseline is dance for rapid visual testing; the desktop baseline is quiet idle.
   if (Number.isFinite(motion.duration) && now - motion.start >= motion.duration) {
     activeCustomReaction = null
-    setExpression('happy', .42)
+    setExpression(DESKTOP_MODE ? 'neutral' : 'happy', DESKTOP_MODE ? 0 : .42)
     motion = { name: DEFAULT_MOTION, start: now, duration: Infinity }
   }
 
-  // Idle remains available as an explicit debug/user choice. Only idle can trigger
-  // autonomous micro-actions; the default dance already supplies continuous motion.
-  if (motion.name === 'idle' && now > nextAutonomy && now - lastInteraction > 4000) {
-    const pool: MotionName[] = ['lookAround', 'thinking', 'greet', 'happy']
+  // In the desktop product, micro-actions should feel occasional rather than noisy.
+  // Web debug mode still supports idle autonomy if the tester explicitly selects idle.
+  if (motion.name === 'idle' && now > nextAutonomy && now - lastInteraction > (DESKTOP_MODE ? 7000 : 4000)) {
+    const pool: MotionName[] = DESKTOP_MODE
+      ? ['lookAround', 'lookAround', 'greet', 'thinking']
+      : ['lookAround', 'thinking', 'greet', 'happy']
     const chosen = pool[Math.floor(Math.random() * pool.length)]
     if (chosen === 'happy') setExpression('happy', .58)
-    else setExpression('neutral', .35)
+    else setExpression('neutral', 0)
+    nextAutonomy = now + (DESKTOP_MODE ? 14000 + Math.random() * 18000 : 9000 + Math.random() * 8000)
     playMotion(chosen)
   }
 
@@ -343,14 +349,23 @@ async function loadVrm(url: string) {
     nextGazeShift = now + 3200
     targetLookX = 0
     targetLookY = 0
-    setExpression('happy', .42)
-    motion = { name: DEFAULT_MOTION, start: now, duration: Infinity }
+
+    if (DESKTOP_MODE) {
+      // A short acknowledgement makes launch feel intentional, then the normal
+      // finite-duration motion path returns NIVA to a calm neutral idle.
+      setExpression('happy', .28)
+      motion = { name: 'greet', start: now, duration: 1500 }
+    } else {
+      setExpression('happy', .42)
+      motion = { name: DEFAULT_MOTION, start: now, duration: Infinity }
+    }
+
     updateLife(now)
     vrm.update(0)
     fitCamera()
     loadCard.classList.add('hidden')
-    statusText.textContent = 'ALIVE · DANCE'
-    nextAutonomy = performance.now() + 8500
+    statusText.textContent = DESKTOP_MODE ? 'ALIVE' : 'ALIVE · DANCE'
+    nextAutonomy = now + (DESKTOP_MODE ? 15000 + Math.random() * 7000 : 8500)
     speakText('我在。')
     return true
   } catch (error) {
