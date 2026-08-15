@@ -66,6 +66,9 @@ let emotionIntensity = .35
 let motion: { name: MotionName; start: number; duration: number } = { name: 'thinking', start: performance.now(), duration: 6500 }
 let activeCustomReaction: CustomReaction | null = null
 let lookX = 0, lookY = 0, targetLookX = 0, targetLookY = 0
+let pointerAttentionUntil = 0
+let explicitLookUntil = 0
+let nextGazeShift = performance.now() + 3600
 let nextBlink = performance.now() + 4800
 let blinkStart = -1
 let faceWarmupUntil = performance.now() + 2600
@@ -74,6 +77,12 @@ let typeTimer = 0
 let lastInteraction = performance.now()
 let nextAutonomy = performance.now() + 9000
 let voiceEnabled = true
+let tapPointerId = -1
+let tapStartX = 0
+let tapStartY = 0
+let tapStartAt = 0
+let tapMoved = false
+let tapTimer = 0
 
 const emotionNames: Record<Expression, string | null> = {
   neutral: null,
@@ -181,6 +190,7 @@ function act(action: NivaAction) {
   if (action.lookTarget) {
     targetLookX = THREE.MathUtils.clamp(action.lookTarget.x, -1, 1)
     targetLookY = THREE.MathUtils.clamp(action.lookTarget.y, -1, 1)
+    explicitLookUntil = performance.now() + 2600
   }
   if (action.text) speakText(action.text)
 }
@@ -244,6 +254,15 @@ function updateFace(now: number) {
 }
 
 function updateLife(now: number) {
+  // When the user is not actively pointing at NIVA, let her attention wander a little
+  // instead of staring at the exact same point forever. Explicit AI look targets win.
+  if (now > pointerAttentionUntil && now > explicitLookUntil && now > nextGazeShift) {
+    const returnToUser = Math.random() < .34
+    targetLookX = returnToUser ? 0 : (Math.random() * 2 - 1) * .42
+    targetLookY = returnToUser ? 0 : (Math.random() * 2 - 1) * .22
+    nextGazeShift = now + 2400 + Math.random() * 4600
+  }
+
   lookX += (targetLookX - lookX) * .075
   lookY += (targetLookY - lookY) * .075
 
@@ -304,6 +323,11 @@ async function loadVrm(url: string) {
     faceWarmupUntil = now + 2600
     nextBlink = faceWarmupUntil + 2200 + Math.random() * 1800
     blinkStart = -1
+    pointerAttentionUntil = 0
+    explicitLookUntil = 0
+    nextGazeShift = now + 3200
+    targetLookX = 0
+    targetLookY = 0
     setExpression('neutral', .35)
     motion = { name: 'thinking', start: now, duration: 6500 }
     updateLife(now)
@@ -328,11 +352,45 @@ stage.addEventListener('pointermove', (event) => {
   const r = stage.getBoundingClientRect()
   targetLookX = ((event.clientX - r.left) / r.width - .5) * 2
   targetLookY = ((event.clientY - r.top) / r.height - .5) * 2
+  pointerAttentionUntil = performance.now() + 900
+
+  if (event.pointerId === tapPointerId) {
+    const dx = event.clientX - tapStartX
+    const dy = event.clientY - tapStartY
+    if (dx * dx + dy * dy > 64) tapMoved = true
+  }
 })
-stage.addEventListener('pointerleave', () => { targetLookX = 0; targetLookY = 0 })
-stage.addEventListener('pointerdown', () => {
-  lastInteraction = performance.now()
-  if (vrm) act({ text: '嗯？我在听。', emotion: 'happy', motion: 'greet' })
+stage.addEventListener('pointerleave', () => {
+  pointerAttentionUntil = 0
+  nextGazeShift = Math.min(nextGazeShift, performance.now() + 420)
+})
+stage.addEventListener('pointerdown', (event) => {
+  if (event.button !== 0) return
+  tapPointerId = event.pointerId
+  tapStartX = event.clientX
+  tapStartY = event.clientY
+  tapStartAt = performance.now()
+  tapMoved = false
+})
+stage.addEventListener('pointerup', (event) => {
+  if (event.pointerId !== tapPointerId) return
+  const wasTap = !tapMoved && performance.now() - tapStartAt < 520
+  tapPointerId = -1
+  if (!wasTap || !vrm) return
+
+  // Delay a single tap slightly so a double-click used to reset the view does not
+  // also make NIVA speak twice.
+  clearTimeout(tapTimer)
+  tapTimer = window.setTimeout(() => {
+    lastInteraction = performance.now()
+    act({ text: '嗯？我在听。', emotion: 'happy', motion: 'greet' })
+  }, 230)
+})
+stage.addEventListener('pointercancel', (event) => {
+  if (event.pointerId === tapPointerId) tapPointerId = -1
+})
+stage.addEventListener('dblclick', () => {
+  clearTimeout(tapTimer)
 })
 composer.addEventListener('submit', (event) => { event.preventDefault(); send(input.value) })
 document.querySelectorAll<HTMLButtonElement>('[data-text]').forEach((button) => {
