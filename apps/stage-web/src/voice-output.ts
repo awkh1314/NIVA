@@ -17,13 +17,11 @@ function voiceScore(voice: SpeechSynthesisVoice, lang: string): number {
   const wanted = lang.toLowerCase()
   let score = 0
 
-  // Prefer Mandarin voices first.
   if (locale === wanted) score += 80
   else if (locale.startsWith('zh-cn')) score += 72
   else if (locale.startsWith('zh')) score += 45
 
-  // Windows 11 / Edge may expose Microsoft's natural Chinese voices under names
-  // such as Xiaoxiao or Xiaoyi. Prefer the natural/online variants when present.
+  // Prefer Microsoft's sweeter female Mandarin voices when Windows/WebView exposes them.
   if (name.includes('xiaoxiao')) score += 90
   if (name.includes('xiaoyi')) score += 86
   if (name.includes('xiaoyou')) score += 76
@@ -31,14 +29,13 @@ function voiceScore(voice: SpeechSynthesisVoice, lang: string): number {
   if (name.includes('xiaorui')) score += 64
   if (name.includes('xiaozhen')) score += 58
 
+  // Natural / neural variants sound much less robotic than legacy desktop voices.
   if (name.includes('natural')) score += 60
   if (name.includes('neural')) score += 55
   if (name.includes('online')) score += 25
   if (name.includes('microsoft')) score += 18
 
-  // Older Windows Chinese voices are still a better fallback than an unrelated locale.
   if (name.includes('huihui') || name.includes('yaoyao')) score += 30
-
   return score
 }
 
@@ -95,10 +92,12 @@ class BrowserSpeechOutputProvider implements VoiceOutputProvider {
       utterance.lang = lang
       if (preferredVoice) utterance.voice = preferredVoice
 
-      // Slightly slower and only mildly raised in pitch gives a softer, sweeter sound
-      // without the synthetic/cartoon effect of the previous high-pitch preset.
-      utterance.rate = options.rate ?? 0.96
-      utterance.pitch = options.pitch ?? 1.04
+      // The avatar layer used to request 1.03 / 1.10, which can make female voices
+      // sound synthetic. Clamp the effective prosody to a softer, more natural range.
+      const requestedRate = options.rate ?? 0.96
+      const requestedPitch = options.pitch ?? 1.04
+      utterance.rate = Math.min(0.99, Math.max(0.90, requestedRate))
+      utterance.pitch = Math.min(1.06, Math.max(1.00, requestedPitch))
       utterance.volume = 1
       utterance.onend = finish
       utterance.onerror = finish
