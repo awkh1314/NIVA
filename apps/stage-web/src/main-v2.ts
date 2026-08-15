@@ -7,16 +7,17 @@ import { isVoiceSpeaking, speakVoice, stopVoice } from './voice-output'
 import type { CustomReaction, MotionName, NivaAction, SemanticExpression } from './core/types'
 
 type Expression = SemanticExpression
+type LifeState = 'idle' | 'attention' | 'listening' | 'thinking' | 'speaking' | 'backstage'
+
 const base = import.meta.env.BASE_URL
 const modelUrl = `${base}NIVA.vrm?v=avatar-sample-a-3`
 const DESKTOP_MODE = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-// Web is our motion/debug stage, so it keeps dancing by default. The packaged
-// desktop product settles into a quiet idle after a short acknowledgement.
+// Web remains a fast motion/debug stage. The packaged product rests quietly.
 const DEFAULT_MOTION: MotionName = DESKTOP_MODE ? 'idle' : 'dance'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
-<main class="shell" data-emotion="neutral">
+<main class="shell" data-emotion="neutral" data-life-state="idle">
   <div class="ambient ambient-a"></div><div class="ambient ambient-b"></div>
   <header class="topbar">
     <div class="brand"><strong>NIVA</strong><span>DIGITAL LIFE</span></div>
@@ -81,6 +82,7 @@ let typeTimer = 0
 let lastInteraction = performance.now()
 let nextAutonomy = performance.now() + (DESKTOP_MODE ? 15000 : 9000)
 let voiceEnabled = true
+let lifeState: LifeState = 'idle'
 let tapPointerId = -1
 let tapStartX = 0
 let tapStartY = 0
@@ -144,6 +146,28 @@ function setExpression(emotion: Expression, intensity = .8) {
   activeEmotion = emotion
   emotionIntensity = THREE.MathUtils.clamp(intensity, 0, 1)
   shell.dataset.emotion = emotion
+}
+
+function setLifeState(state: LifeState) {
+  if (lifeState === state) return
+  lifeState = state
+  shell.dataset.lifeState = state
+
+  // Deliberate interaction states own the body. Autonomous micro-actions wait until
+  // the user-facing activity has settled instead of firing over listening/thinking.
+  if (state !== 'idle' && state !== 'attention') {
+    nextAutonomy = Math.max(nextAutonomy, performance.now() + 12000)
+  }
+  if (state === 'listening') {
+    targetLookX = 0
+    targetLookY = 0
+    explicitLookUntil = performance.now() + 1600
+  }
+}
+
+function effectiveLifeState(now: number): LifeState {
+  if (now < speakingUntil || isVoiceSpeaking()) return 'speaking'
+  return lifeState
 }
 
 function playMotion(name?: MotionName) {
@@ -270,7 +294,14 @@ function updateFace(now: number) {
 }
 
 function updateLife(now: number) {
-  if (now > pointerAttentionUntil && now > explicitLookUntil && now > nextGazeShift) {
+  const state = effectiveLifeState(now)
+  shell.dataset.lifeState = state
+
+  // Listening keeps eye contact. Thinking is calmer and less pointer-reactive.
+  if (state === 'listening') {
+    targetLookX = 0
+    targetLookY = 0
+  } else if (state !== 'thinking' && state !== 'backstage' && now > pointerAttentionUntil && now > explicitLookUntil && now > nextGazeShift) {
     const returnToUser = Math.random() < .34
     targetLookX = returnToUser ? 0 : (Math.random() * 2 - 1) * .42
     targetLookY = returnToUser ? 0 : (Math.random() * 2 - 1) * .22
@@ -288,9 +319,10 @@ function updateLife(now: number) {
     motion = { name: DEFAULT_MOTION, start: now, duration: Infinity }
   }
 
-  // In the desktop product, micro-actions should feel occasional rather than noisy.
-  // Web debug mode still supports idle autonomy if the tester explicitly selects idle.
-  if (motion.name === 'idle' && now > nextAutonomy && now - lastInteraction > (DESKTOP_MODE ? 7000 : 4000)) {
+  // Autonomous micro-actions only exist in passive states. They never interrupt
+  // listening, thinking, speaking, or backstage configuration.
+  const passiveState = state === 'idle' || state === 'attention'
+  if (passiveState && motion.name === 'idle' && now > nextAutonomy && now - lastInteraction > (DESKTOP_MODE ? 7000 : 4000)) {
     const pool: MotionName[] = DESKTOP_MODE
       ? ['lookAround', 'lookAround', 'greet', 'thinking']
       : ['lookAround', 'thinking', 'greet', 'happy']
@@ -349,10 +381,11 @@ async function loadVrm(url: string) {
     nextGazeShift = now + 3200
     targetLookX = 0
     targetLookY = 0
+    setLifeState('idle')
 
     if (DESKTOP_MODE) {
-      // A short acknowledgement makes launch feel intentional, then the normal
-      // finite-duration motion path returns NIVA to a calm neutral idle.
+      // A short silent acknowledgement makes launch feel intentional. Product-level
+      // onboarding/return logic decides whether NIVA actually speaks.
       setExpression('happy', .28)
       motion = { name: 'greet', start: now, duration: 1500 }
     } else {
@@ -366,7 +399,7 @@ async function loadVrm(url: string) {
     loadCard.classList.add('hidden')
     statusText.textContent = DESKTOP_MODE ? 'ALIVE' : 'ALIVE · DANCE'
     nextAutonomy = now + (DESKTOP_MODE ? 15000 + Math.random() * 7000 : 8500)
-    speakText('我在。')
+    if (!DESKTOP_MODE) speakText('我在。')
     return true
   } catch (error) {
     console.error(error)
@@ -447,10 +480,12 @@ Object.assign(window, {
     loadModel: loadVrm,
     setEmotion: setExpression,
     setVoiceOutput,
+    setLifeState,
     motion: playMotion,
     get ready() { return !!vrm },
     get voiceOutput() { return voiceEnabled },
     get speaking() { return performance.now() < speakingUntil || isVoiceSpeaking() },
+    get lifeState() { return effectiveLifeState(performance.now()) },
     get modelInfo() { return currentModelInfo() },
     get mode() { return 'vrm-raw-motion' as const },
   },
