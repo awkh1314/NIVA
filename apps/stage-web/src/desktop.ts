@@ -14,6 +14,8 @@ type SpeechRecognitionCtor = new () => {
   stop(): void
 }
 
+type SavedWindowPosition = { x: number; y: number }
+
 export type DesktopStatus = 'voice' | 'text' | 'offline'
 
 export interface VoiceInputProvider {
@@ -29,7 +31,32 @@ export interface SettingsSaveInput {
   apiKey?: string
 }
 
+const DESKTOP_POSITION_KEY = 'niva.desktop.position.v1'
+
 export const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+
+function loadSavedWindowPosition(): SavedWindowPosition | null {
+  try {
+    const raw = localStorage.getItem(DESKTOP_POSITION_KEY)
+    if (!raw) return null
+    const value = JSON.parse(raw) as Partial<SavedWindowPosition>
+    if (!Number.isFinite(value.x) || !Number.isFinite(value.y)) return null
+    return { x: Number(value.x), y: Number(value.y) }
+  } catch {
+    return null
+  }
+}
+
+function saveWindowPosition(position: SavedWindowPosition): void {
+  try {
+    localStorage.setItem(DESKTOP_POSITION_KEY, JSON.stringify({
+      x: Math.round(position.x),
+      y: Math.round(position.y),
+    }))
+  } catch {
+    // Position memory is optional; a storage failure should never block NIVA startup.
+  }
+}
 
 export async function setupDesktopWindow(): Promise<void> {
   if (!isTauri()) return
@@ -37,15 +64,50 @@ export async function setupDesktopWindow(): Promise<void> {
   try {
     const win = getCurrentWindow()
     await win.setAlwaysOnTop(true)
-    const monitor = await currentMonitor()
+
+    const initialMonitor = await currentMonitor()
     const size = await win.outerSize()
-    if (monitor) {
-      const area = monitor.workArea
-      const margin = 20 * monitor.scaleFactor
+    const saved = loadSavedWindowPosition()
+
+    if (saved) {
+      await win.setPosition(new PhysicalPosition(Math.round(saved.x), Math.round(saved.y)))
+      // If a monitor was unplugged and the saved point is no longer reachable,
+      // fall back to the bottom-right of the monitor NIVA started on.
+      const restoredMonitor = await currentMonitor()
+      if (!restoredMonitor && initialMonitor) {
+        const area = initialMonitor.workArea
+        const margin = 20 * initialMonitor.scaleFactor
+        await win.setPosition(new PhysicalPosition(
+          Math.round(area.position.x + area.size.width - size.width - margin),
+          Math.round(area.position.y + area.size.height - size.height - margin),
+        ))
+      }
+    } else if (initialMonitor) {
+      const area = initialMonitor.workArea
+      const margin = 20 * initialMonitor.scaleFactor
       await win.setPosition(new PhysicalPosition(
         Math.round(area.position.x + area.size.width - size.width - margin),
         Math.round(area.position.y + area.size.height - size.height - margin),
       ))
+    }
+
+    await win.onMoved(({ payload }) => {
+      saveWindowPosition({ x: payload.x, y: payload.y })
+    })
+
+    // Left-drag remains reserved for rotating the VRM body. Right-drag moves the
+    // entire desktop companion window, so the two interactions never fight.
+    const stage = document.querySelector<HTMLElement>('#stage')
+    if (stage) {
+      stage.addEventListener('contextmenu', (event) => event.preventDefault())
+      stage.addEventListener('pointerdown', (event) => {
+        if (event.button !== 2) return
+        event.preventDefault()
+        event.stopPropagation()
+        void win.startDragging().catch((error) => {
+          console.warn('[NIVA desktop] window drag failed', error)
+        })
+      }, { capture: true })
     }
   } catch (error) {
     console.warn('[NIVA desktop] window setup failed', error)
