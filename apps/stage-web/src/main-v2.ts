@@ -80,7 +80,7 @@ let faceWarmupUntil = performance.now() + 2600
 let speakingUntil = 0
 let typeTimer = 0
 let lastInteraction = performance.now()
-let nextAutonomy = performance.now() + (DESKTOP_MODE ? 15000 : 9000)
+let nextAutonomy = performance.now() + (DESKTOP_MODE ? 28000 : 9000)
 let voiceEnabled = true
 let lifeState: LifeState = 'idle'
 let tapPointerId = -1
@@ -150,18 +150,22 @@ function setExpression(emotion: Expression, intensity = .8) {
 
 function setLifeState(state: LifeState) {
   if (lifeState === state) return
+  const previous = lifeState
   lifeState = state
   shell.dataset.lifeState = state
 
   // Deliberate interaction states own the body. Autonomous micro-actions wait until
   // the user-facing activity has settled instead of firing over listening/thinking.
   if (state !== 'idle' && state !== 'attention') {
-    nextAutonomy = Math.max(nextAutonomy, performance.now() + 12000)
+    nextAutonomy = Math.max(nextAutonomy, performance.now() + 16000)
   }
   if (state === 'listening') {
     targetLookX = 0
     targetLookY = 0
     explicitLookUntil = performance.now() + 1600
+  }
+  if (DESKTOP_MODE && state === 'idle' && previous !== 'idle' && motion.name === 'idle') {
+    setExpression('neutral', 0)
   }
 }
 
@@ -297,43 +301,68 @@ function updateLife(now: number) {
   const state = effectiveLifeState(now)
   shell.dataset.lifeState = state
 
-  // Listening keeps eye contact. Thinking is calmer and less pointer-reactive.
-  if (state === 'listening') {
-    targetLookX = 0
-    targetLookY = 0
-  } else if (state !== 'thinking' && state !== 'backstage' && now > pointerAttentionUntil && now > explicitLookUntil && now > nextGazeShift) {
-    const returnToUser = Math.random() < .34
-    targetLookX = returnToUser ? 0 : (Math.random() * 2 - 1) * .42
-    targetLookY = returnToUser ? 0 : (Math.random() * 2 - 1) * .22
-    nextGazeShift = now + 2400 + Math.random() * 4600
+  // Gaze cadence is stateful: attentive/listening states stay with the user, speaking
+  // makes tiny conversational glances, while idle wanders slowly instead of darting.
+  if (state === 'listening' || state === 'attention') {
+    if (now > pointerAttentionUntil && now > explicitLookUntil) {
+      targetLookX = 0
+      targetLookY = 0
+    }
+  } else if (state === 'thinking') {
+    if (now > pointerAttentionUntil && now > explicitLookUntil && now > nextGazeShift) {
+      targetLookX = -.10 + (Math.random() * 2 - 1) * .10
+      targetLookY = -.04 + (Math.random() * 2 - 1) * .06
+      nextGazeShift = now + 4200 + Math.random() * 2800
+    }
+  } else if (state === 'speaking') {
+    if (now > pointerAttentionUntil && now > explicitLookUntil && now > nextGazeShift) {
+      const meetEyes = Math.random() < .72
+      targetLookX = meetEyes ? 0 : (Math.random() * 2 - 1) * .12
+      targetLookY = meetEyes ? 0 : (Math.random() * 2 - 1) * .06
+      nextGazeShift = now + 3000 + Math.random() * 2600
+    }
+  } else if (state !== 'backstage' && now > pointerAttentionUntil && now > explicitLookUntil && now > nextGazeShift) {
+    const returnToUser = Math.random() < .56
+    targetLookX = returnToUser ? 0 : (Math.random() * 2 - 1) * .28
+    targetLookY = returnToUser ? 0 : (Math.random() * 2 - 1) * .13
+    nextGazeShift = now + 4600 + Math.random() * 5000
   }
 
-  lookX += (targetLookX - lookX) * .075
-  lookY += (targetLookY - lookY) * .075
+  lookX += (targetLookX - lookX) * .065
+  lookY += (targetLookY - lookY) * .065
 
-  // Temporary reactions always return to the product's baseline. On the web stage
-  // that baseline is dance for rapid visual testing; the desktop baseline is quiet idle.
+  // A short explicit reaction can end while NIVA is still speaking or thinking. In
+  // that case return only the body to idle and keep the expression until the state ends.
   if (Number.isFinite(motion.duration) && now - motion.start >= motion.duration) {
     activeCustomReaction = null
-    setExpression(DESKTOP_MODE ? 'neutral' : 'happy', DESKTOP_MODE ? 0 : .42)
     motion = { name: DEFAULT_MOTION, start: now, duration: Infinity }
+    if (!DESKTOP_MODE) {
+      setExpression('happy', .42)
+    } else if (state === 'idle' || state === 'attention') {
+      setExpression('neutral', 0)
+    }
   }
 
-  // Autonomous micro-actions only exist in passive states. They never interrupt
-  // listening, thinking, speaking, or backstage configuration.
+  // Desktop autonomy is deliberately sparse. Breathing, weight shift and gaze are
+  // continuous; only occasionally layer a small acknowledgement or look-around action.
   const passiveState = state === 'idle' || state === 'attention'
-  if (passiveState && motion.name === 'idle' && now > nextAutonomy && now - lastInteraction > (DESKTOP_MODE ? 7000 : 4000)) {
-    const pool: MotionName[] = DESKTOP_MODE
-      ? ['lookAround', 'lookAround', 'greet', 'thinking']
-      : ['lookAround', 'thinking', 'greet', 'happy']
-    const chosen = pool[Math.floor(Math.random() * pool.length)]
-    if (chosen === 'happy') setExpression('happy', .58)
-    else setExpression('neutral', 0)
-    nextAutonomy = now + (DESKTOP_MODE ? 14000 + Math.random() * 18000 : 9000 + Math.random() * 8000)
+  const quietFor = now - lastInteraction
+  if (passiveState && motion.name === 'idle' && now > nextAutonomy && quietFor > (DESKTOP_MODE ? 10000 : 5000)) {
+    let chosen: MotionName
+    if (DESKTOP_MODE) {
+      chosen = Math.random() < .68 ? 'lookAround' : 'greet'
+      setExpression('neutral', 0)
+      nextAutonomy = now + 28000 + Math.random() * 38000
+    } else {
+      const pool: MotionName[] = ['lookAround', 'lookAround', 'greet', 'thinking']
+      chosen = pool[Math.floor(Math.random() * pool.length)]
+      setExpression('neutral', 0)
+      nextAutonomy = now + 14000 + Math.random() * 18000
+    }
     playMotion(chosen)
   }
 
-  rawMotion.update(now, motion, lookX, lookY, activeCustomReaction)
+  rawMotion.update(now, motion, lookX, lookY, activeCustomReaction, state)
 }
 
 function animate() {
@@ -398,7 +427,7 @@ async function loadVrm(url: string) {
     fitCamera()
     loadCard.classList.add('hidden')
     statusText.textContent = DESKTOP_MODE ? 'ALIVE' : 'ALIVE · DANCE'
-    nextAutonomy = now + (DESKTOP_MODE ? 15000 + Math.random() * 7000 : 8500)
+    nextAutonomy = now + (DESKTOP_MODE ? 28000 + Math.random() * 16000 : 8500)
     if (!DESKTOP_MODE) speakText('我在。')
     return true
   } catch (error) {
