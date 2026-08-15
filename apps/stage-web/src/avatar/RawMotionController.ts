@@ -34,11 +34,26 @@ export class RawMotionController {
   private tmpAlign = new THREE.Quaternion()
   private tmpRestDir = new THREE.Vector3()
   private tmpDesired = new THREE.Vector3()
+  private baseYaw = 0
+  private viewYaw = 0
+  private rotationControlsInstalled = false
+  private dragging = false
+  private dragPointerId = -1
+  private dragX = 0
 
   attach(vrm: any) {
     this.vrm = vrm
     this.rest.clear()
     if (!vrm?.humanoid) return
+
+    // AvatarSample_A/legacy VRM exports may face away from a +Z camera.
+    // Correct only known legacy/sample bodies; other imported VRM models keep their authored facing.
+    const metaName = String(vrm?.meta?.name ?? vrm?.meta?.title ?? '')
+    const metaVersion = String(vrm?.meta?.metaVersion ?? vrm?.metaVersion ?? '')
+    this.baseYaw = metaVersion === '0' || /AvatarSample[_\s-]*A/i.test(metaName) ? Math.PI : 0
+    this.viewYaw = 0
+    this.applyRootOrientation()
+    this.installRotationControls()
 
     // Drive the real skinned skeleton so a wider range of VRM exports visibly respond.
     vrm.humanoid.autoUpdateHumanBones = false
@@ -52,6 +67,55 @@ export class RawMotionController {
     const right = this.worldPos('rightUpperArm')
     if (hips && left) this.sideSign.left = Math.sign(left.x - hips.x) || 1
     if (hips && right) this.sideSign.right = Math.sign(right.x - hips.x) || -1
+  }
+
+  private applyRootOrientation() {
+    const root = this.vrm?.scene as THREE.Object3D | undefined
+    if (!root) return
+    root.rotation.y = this.baseYaw + this.viewYaw
+    root.updateMatrixWorld(true)
+  }
+
+  private installRotationControls() {
+    if (this.rotationControlsInstalled) return
+    const stage = document.querySelector<HTMLElement>('#stage')
+    if (!stage) return
+    this.rotationControlsInstalled = true
+    stage.style.touchAction = 'none'
+    stage.style.cursor = 'grab'
+
+    stage.addEventListener('pointerdown', (event) => {
+      if (event.button !== 0) return
+      this.dragging = true
+      this.dragPointerId = event.pointerId
+      this.dragX = event.clientX
+      stage.style.cursor = 'grabbing'
+      try { stage.setPointerCapture(event.pointerId) } catch { /* unsupported capture is harmless */ }
+    })
+
+    stage.addEventListener('pointermove', (event) => {
+      if (!this.dragging || event.pointerId !== this.dragPointerId) return
+      const dx = event.clientX - this.dragX
+      this.dragX = event.clientX
+      this.viewYaw += dx * 0.012
+      this.applyRootOrientation()
+    })
+
+    const stopDrag = (event: PointerEvent) => {
+      if (event.pointerId !== this.dragPointerId) return
+      this.dragging = false
+      this.dragPointerId = -1
+      stage.style.cursor = 'grab'
+      try { stage.releasePointerCapture(event.pointerId) } catch { /* already released */ }
+    }
+    stage.addEventListener('pointerup', stopDrag)
+    stage.addEventListener('pointercancel', stopDrag)
+
+    // Double-click restores the authored/default front view.
+    stage.addEventListener('dblclick', () => {
+      this.viewYaw = 0
+      this.applyRootOrientation()
+    })
   }
 
   private bone(name: BoneName): THREE.Object3D | null {
