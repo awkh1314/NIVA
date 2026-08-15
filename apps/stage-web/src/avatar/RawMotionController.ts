@@ -34,6 +34,10 @@ export class RawMotionController {
   private tmpAlign = new THREE.Quaternion()
   private tmpRestDir = new THREE.Vector3()
   private tmpDesired = new THREE.Vector3()
+  private tmpRootQ = new THREE.Quaternion()
+  private tmpRootInvQ = new THREE.Quaternion()
+  private tmpUpperWorld = new THREE.Vector3()
+  private tmpLowerWorld = new THREE.Vector3()
   private baseYaw = 0
   private viewYaw = 0
   private rotationControlsInstalled = false
@@ -62,11 +66,24 @@ export class RawMotionController {
       if (node) this.rest.set(name, node.quaternion.clone())
     }
 
+    // Determine left/right in avatar-local coordinates, not world X.
+    // World X flips when the user rotates the model 180 degrees, which previously made both arms converge.
     const hips = this.worldPos('hips')
     const left = this.worldPos('leftUpperArm')
     const right = this.worldPos('rightUpperArm')
-    if (hips && left) this.sideSign.left = Math.sign(left.x - hips.x) || 1
-    if (hips && right) this.sideSign.right = Math.sign(right.x - hips.x) || -1
+    const root = this.vrm?.scene as THREE.Object3D | undefined
+    if (root) {
+      root.updateWorldMatrix(true, false)
+      root.getWorldQuaternion(this.tmpRootInvQ).invert()
+      if (hips && left) {
+        const localLeft = left.clone().sub(hips).applyQuaternion(this.tmpRootInvQ)
+        this.sideSign.left = Math.sign(localLeft.x) || 1
+      }
+      if (hips && right) {
+        const localRight = right.clone().sub(hips).applyQuaternion(this.tmpRootInvQ)
+        this.sideSign.right = Math.sign(localRight.x) || -1
+      }
+    }
   }
 
   private applyRootOrientation() {
@@ -145,6 +162,16 @@ export class RawMotionController {
     node.quaternion.copy(rest).multiply(delta)
   }
 
+  /** Convert an avatar-local direction to world space using the current model/view rotation. */
+  private avatarDirectionToWorld(localDirection: THREE.Vector3, target: THREE.Vector3) {
+    const root = this.vrm?.scene as THREE.Object3D | undefined
+    target.copy(localDirection).normalize()
+    if (!root) return target
+    root.updateWorldMatrix(true, false)
+    root.getWorldQuaternion(this.tmpRootQ)
+    return target.applyQuaternion(this.tmpRootQ).normalize()
+  }
+
   /** Aim a bone's child toward a world-space direction while preserving the bone's rest roll. */
   private aim(name: BoneName, childName: BoneName, worldDirection: THREE.Vector3, strength = 1) {
     const node = this.bone(name)
@@ -169,8 +196,13 @@ export class RawMotionController {
     const upper = `${side}UpperArm` as BoneName
     const lower = `${side}LowerArm` as BoneName
     const hand = `${side}Hand` as BoneName
-    this.aim(upper, lower, upperDir, strength)
-    this.aim(lower, hand, lowerDir, strength)
+
+    // Motion definitions are authored in avatar-local space.
+    // Rotate those directions together with the avatar before solving the raw bones in world space.
+    this.avatarDirectionToWorld(upperDir, this.tmpUpperWorld)
+    this.avatarDirectionToWorld(lowerDir, this.tmpLowerWorld)
+    this.aim(upper, lower, this.tmpUpperWorld, strength)
+    this.aim(lower, hand, this.tmpLowerWorld, strength)
   }
 
   private relaxedArms() {
