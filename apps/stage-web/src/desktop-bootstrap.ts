@@ -44,6 +44,8 @@ const presetReactions: Record<string, MotionName> = {
   greet: 'greet',
   hello: 'greet',
   wave: 'wave',
+  dance: 'dance',
+  dancing: 'dance',
   celebrate: 'happy',
   happy: 'happy',
   comfort: 'sad',
@@ -60,7 +62,7 @@ const presetReactions: Record<string, MotionName> = {
 }
 
 const allowedEmotions = new Set<SemanticExpression>(['neutral', 'happy', 'shy', 'sad', 'angry', 'surprised', 'thinking'])
-const allowedMotions = new Set<MotionName>(['idle', 'wave', 'greet', 'thinking', 'happy', 'sad', 'lookAround', 'surprised', 'angry', 'custom'])
+const allowedMotions = new Set<MotionName>(['idle', 'dance', 'wave', 'greet', 'thinking', 'happy', 'sad', 'lookAround', 'surprised', 'angry', 'custom'])
 const allowedArms = new Set<ArmPose>(['down', 'open', 'up', 'cheek', 'forward', 'chest'])
 
 function normalizeKey(key: string | undefined): string {
