@@ -2,6 +2,8 @@ import './desktop.css'
 import {
   askDeepSeek,
   clearConversation,
+  clearLongTermMemory,
+  getLongTermMemory,
   getSettings,
   installTextModeToggle,
   isTauri,
@@ -14,6 +16,7 @@ import type {
   CustomReaction,
   DesktopSettings,
   InteractionMode,
+  LongTermMemorySnapshot,
   MotionName,
   NivaAction,
   SemanticExpression,
@@ -90,6 +93,16 @@ function sanitizeCustom(value: CustomReaction | undefined): CustomReaction | und
   }
 }
 
+function sanitizeMemoryWrites(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const items = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 2)
+  return items.length ? items : undefined
+}
+
 function loadLearned(): Record<string, CustomReaction> {
   try {
     const raw = localStorage.getItem(LEARNED_KEY)
@@ -137,6 +150,7 @@ function safeAction(action: NivaAction): NivaAction {
     text: action.text || '我在。',
     emotion,
     expressionIntensity: clamp(action.expressionIntensity, .8, 0, 1),
+    memoryWrites: sanitizeMemoryWrites(action.memoryWrites),
   })
 }
 
@@ -287,11 +301,12 @@ function createBackstage(settings: DesktopSettings) {
     </div>
     <div class="backstage-actions">
       <button type="button" id="chooseLocalModel">导入本地 VRM</button>
-      <button type="button" id="clearConversation">清除对话记忆</button>
+      <button type="button" id="clearConversation">清除近期对话</button>
+      <button type="button" id="clearLongTermMemory">清除长期记忆</button>
       <button type="button" id="resetLearned">清空已学习动作</button>
       <button type="button" class="primary" id="saveBackstage">保存</button>
     </div>
-    <div class="backstage-foot"><span id="backstageStatus">预设动作优先 · 已学习 ${learnedCount()} 个自定义反应</span></div>
+    <div class="backstage-foot"><span id="backstageStatus">固定人格 · 有限长期记忆</span></div>
   `
   shell.appendChild(panel)
 
@@ -346,6 +361,7 @@ async function bootDesktop() {
   let models = await allModels()
   fillModelSelect(backstage.activeModel, models, settings.activeModel)
 
+  let memorySnapshot: LongTermMemorySnapshot = await getLongTermMemory().catch(() => ({ count: 0, capacity: 32, items: [] }))
   let currentMode: InteractionMode = settings.interactionMode
   let stopVoice: (() => void) | null = null
   let backstageOpen = false
@@ -355,9 +371,18 @@ async function bootDesktop() {
   const pendingInputs: string[] = []
 
   const setStatus = (text: string) => { statusText.textContent = text }
+  const setBackstageSummary = (lead = '固定人格') => {
+    backstage.status.textContent = `${lead} · 长期记忆 ${memorySnapshot.count}/${memorySnapshot.capacity} · 已学习 ${learnedCount()} 个动作`
+  }
+  const refreshMemorySnapshot = async () => {
+    memorySnapshot = await getLongTermMemory().catch(() => memorySnapshot)
+    return memorySnapshot
+  }
   const idleStatus = () => currentMode === 'voice'
     ? (settings.hasApiKey ? 'ALIVE · VOICE' : 'VOICE · LOCAL')
     : (settings.hasApiKey ? 'ALIVE · TEXT' : 'TEXT · LOCAL')
+
+  setBackstageSummary()
 
   const waitUntilSpeechEnds = async (epoch: number) => {
     const started = performance.now()
@@ -389,7 +414,12 @@ async function bootDesktop() {
           if (!backstageOpen) {
             niva.act(reply)
             setStatus(reply.motion === 'custom' ? 'ALIVE · LEARNING' : 'ALIVE · AI')
-            backstage.status.textContent = `预设动作优先 · 已学习 ${learnedCount()} 个自定义反应`
+            if (reply.memoryWrites?.length) {
+              await refreshMemorySnapshot()
+              setBackstageSummary(`记住了 ${reply.memoryWrites.length} 条`)
+            } else {
+              setBackstageSummary()
+            }
             await waitUntilSpeechEnds(epoch)
           }
         } catch (error) {
@@ -461,6 +491,7 @@ async function bootDesktop() {
     stopVoice = null
     backstage.panel.classList.add('open')
     shell.classList.add('backstage-open')
+    void refreshMemorySnapshot().then(() => setBackstageSummary())
     setTimeout(() => backstage.interaction.focus(), 50)
   }
 
@@ -504,20 +535,33 @@ async function bootDesktop() {
   backstage.panel.querySelector<HTMLButtonElement>('#clearConversation')!.onclick = async () => {
     interactionEpoch += 1
     pendingInputs.length = 0
-    backstage.status.textContent = '正在清除对话记忆…'
+    backstage.status.textContent = '正在清除近期对话…'
     try {
       await clearConversation()
       userLine.hidden = true
       userLine.textContent = ''
-      backstage.status.textContent = '对话记忆已清除。人物设置和已学习动作保持不变。'
+      setBackstageSummary('近期对话已清除，长期记忆保留')
     } catch (error) {
       console.error(error)
-      backstage.status.textContent = '清除对话记忆失败。'
+      backstage.status.textContent = '清除近期对话失败。'
+    }
+  }
+  backstage.panel.querySelector<HTMLButtonElement>('#clearLongTermMemory')!.onclick = async () => {
+    interactionEpoch += 1
+    pendingInputs.length = 0
+    backstage.status.textContent = '正在清除长期记忆…'
+    try {
+      await clearLongTermMemory()
+      memorySnapshot = { count: 0, capacity: memorySnapshot.capacity || 32, items: [] }
+      setBackstageSummary('长期记忆已清除')
+    } catch (error) {
+      console.error(error)
+      backstage.status.textContent = '清除长期记忆失败。'
     }
   }
   backstage.panel.querySelector<HTMLButtonElement>('#resetLearned')!.onclick = () => {
     localStorage.removeItem(LEARNED_KEY)
-    backstage.status.textContent = '已清空学习动作；下一次遇到新反应会重新学习。'
+    setBackstageSummary('已清空学习动作')
   }
 
   modelFile.addEventListener('change', async () => {
@@ -560,7 +604,7 @@ async function bootDesktop() {
       backstage.apiKey.placeholder = settings.hasApiKey ? '已保存；留空表示不修改' : '粘贴 API Key'
       niva.setVoiceOutput(settings.voiceOutput)
       currentMode = settings.interactionMode
-      backstage.status.textContent = `已保存 · ${settings.deepseekModel} · 已学习 ${learnedCount()} 个动作`
+      setBackstageSummary(`已保存 · ${settings.deepseekModel}`)
       await loadModelById(niva, settings.activeModel)
       setTimeout(closeBackstage, 350)
     } catch (error) {
