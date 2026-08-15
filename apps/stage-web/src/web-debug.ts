@@ -1,6 +1,12 @@
 import './web-debug.css'
 import type { MotionName, NivaAction, SemanticExpression } from './core/types'
 
+type ModelInfo = {
+  name: string
+  version: string
+  expressions: string[]
+}
+
 type NivaDebugApi = {
   act(action: NivaAction): void
   send(text: string): void
@@ -11,76 +17,149 @@ type NivaDebugApi = {
   readonly ready: boolean
   readonly voiceOutput: boolean
   readonly speaking: boolean
+  readonly modelInfo: ModelInfo
   readonly mode: string
 }
 
 type DebugWindow = Window & { NIVA?: NivaDebugApi }
 
+type MotionProfile = {
+  value: MotionName
+  label: string
+  emotion: SemanticExpression
+  intensity: number
+}
+
+type StoredModel = {
+  key: string
+  name: string
+  blob: Blob
+  updatedAt: number
+}
+
 const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
+
+const MODEL_DB = 'niva-web-debug-assets-v1'
+const MODEL_STORE = 'models'
+const MODEL_KEY = 'active-vrm'
 
 const emotions: Array<{ value: SemanticExpression; label: string }> = [
   { value: 'neutral', label: '自然' },
   { value: 'happy', label: '开心' },
-  { value: 'shy', label: '害羞' },
-  { value: 'thinking', label: '思考' },
-  { value: 'sad', label: '低落' },
+  { value: 'shy', label: '柔和/害羞' },
+  { value: 'sad', label: '难过' },
   { value: 'surprised', label: '惊讶' },
-  { value: 'angry', label: '坚定' },
+  { value: 'angry', label: '生气' },
 ]
 
-const motions: Array<{ value: MotionName; label: string }> = [
-  { value: 'idle', label: '待机' },
-  { value: 'greet', label: '回应' },
-  { value: 'wave', label: '挥手' },
-  { value: 'thinking', label: '思考' },
-  { value: 'happy', label: '庆祝' },
-  { value: 'sad', label: '安慰' },
-  { value: 'surprised', label: '惊讶' },
-  { value: 'angry', label: '坚定' },
-  { value: 'lookAround', label: '观察' },
+const motions: MotionProfile[] = [
+  { value: 'idle', label: '自然站立', emotion: 'neutral', intensity: .25 },
+  { value: 'greet', label: '点头回应', emotion: 'neutral', intensity: .25 },
+  { value: 'wave', label: '右手挥手', emotion: 'happy', intensity: .42 },
+  { value: 'thinking', label: '托腮思考', emotion: 'thinking', intensity: .30 },
+  { value: 'happy', label: '双手庆祝', emotion: 'happy', intensity: .48 },
+  { value: 'sad', label: '低头难过', emotion: 'sad', intensity: .38 },
+  { value: 'surprised', label: '受惊抬手', emotion: 'surprised', intensity: .42 },
+  { value: 'angry', label: '严肃站姿', emotion: 'angry', intensity: .36 },
+  { value: 'lookAround', label: '左右观察', emotion: 'neutral', intensity: .25 },
 ]
 
 const customReactions: Record<string, NivaAction> = {
   curious: {
     emotion: 'thinking',
-    expressionIntensity: .46,
+    expressionIntensity: .30,
     motion: 'custom',
     customReaction: {
-      headYaw: .20,
-      headPitch: -.08,
-      headTilt: .34,
-      bodyLean: .10,
-      bodyTurn: .08,
+      headYaw: .18,
+      headPitch: -.04,
+      headTilt: .26,
+      bodyLean: .06,
+      bodyTurn: .06,
       leftArm: 'down',
       rightArm: 'chest',
-      energy: .48,
+      energy: .42,
     },
   },
   open: {
     emotion: 'happy',
-    expressionIntensity: .50,
+    expressionIntensity: .42,
     motion: 'custom',
     customReaction: {
-      headTilt: -.12,
-      bodyLean: .04,
+      headTilt: -.08,
+      bodyLean: .02,
       leftArm: 'open',
       rightArm: 'open',
-      energy: .66,
+      energy: .58,
     },
   },
   cheek: {
     emotion: 'shy',
-    expressionIntensity: .40,
+    expressionIntensity: .34,
     motion: 'custom',
     customReaction: {
-      headYaw: -.12,
-      headTilt: -.24,
+      headYaw: -.10,
+      headTilt: -.18,
       leftArm: 'down',
       rightArm: 'cheek',
-      energy: .42,
+      energy: .38,
     },
   },
+}
+
+function openModelDb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in window)) {
+      reject(new Error('IndexedDB unavailable'))
+      return
+    }
+    const request = indexedDB.open(MODEL_DB, 1)
+    request.onupgradeneeded = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains(MODEL_STORE)) db.createObjectStore(MODEL_STORE, { keyPath: 'key' })
+    }
+    request.onsuccess = () => resolve(request.result)
+    request.onerror = () => reject(request.error ?? new Error('IndexedDB open failed'))
+  })
+}
+
+async function saveStoredModel(file: File): Promise<void> {
+  const db = await openModelDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(MODEL_STORE, 'readwrite')
+    const request = tx.objectStore(MODEL_STORE).put({
+      key: MODEL_KEY,
+      name: file.name,
+      blob: file,
+      updatedAt: Date.now(),
+    } satisfies StoredModel)
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error ?? new Error('model save failed'))
+  })
+  db.close()
+}
+
+async function loadStoredModel(): Promise<StoredModel | null> {
+  const db = await openModelDb()
+  const value = await new Promise<StoredModel | null>((resolve, reject) => {
+    const tx = db.transaction(MODEL_STORE, 'readonly')
+    const request = tx.objectStore(MODEL_STORE).get(MODEL_KEY)
+    request.onsuccess = () => resolve((request.result as StoredModel | undefined) ?? null)
+    request.onerror = () => reject(request.error ?? new Error('model read failed'))
+  })
+  db.close()
+  return value
+}
+
+async function clearStoredModel(): Promise<void> {
+  const db = await openModelDb()
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction(MODEL_STORE, 'readwrite')
+    const request = tx.objectStore(MODEL_STORE).delete(MODEL_KEY)
+    request.onsuccess = () => resolve()
+    request.onerror = () => reject(request.error ?? new Error('model delete failed'))
+  })
+  db.close()
 }
 
 async function waitForNiva(): Promise<NivaDebugApi | null> {
@@ -139,7 +218,7 @@ async function installWebDebugPanel() {
       </section>
 
       <section class="web-debug-section">
-        <div class="web-debug-section-head"><h3>预设动作</h3><span>直接触发</span></div>
+        <div class="web-debug-section-head"><h3>动作</h3><span>动作与对应表情一起触发</span></div>
         <div class="web-debug-chips" id="webDebugMotions">
           ${chipButtons(motions.map(({ value, label }) => ({ value, label })), 'data-motion')}
         </div>
@@ -182,13 +261,14 @@ async function installWebDebugPanel() {
       </section>
 
       <section class="web-debug-section">
-        <div class="web-debug-section-head"><h3>模型</h3><span>本地 VRM 临时测试</span></div>
+        <div class="web-debug-section-head"><h3>模型</h3><span>载入一次，浏览器自动记住</span></div>
         <input id="webDebugModelFile" type="file" accept=".vrm" hidden />
         <div class="web-debug-inline-actions">
-          <button type="button" id="webDebugModel">载入本地 VRM</button>
+          <button type="button" id="webDebugModel">载入并记住 VRM</button>
+          <button type="button" id="webDebugClearModel">清除本地模型</button>
           <button type="button" id="webDebugReload">刷新页面</button>
         </div>
-        <p class="web-debug-note" id="webDebugNote">网页调试不会修改 EXE 的本地设置。</p>
+        <p class="web-debug-note" id="webDebugNote">在线模型仅作兼容回退。请载入你本机的 AvatarSample_A.vrm；成功后以后刷新会自动恢复这个文件。</p>
       </section>
     </div>
   `
@@ -221,6 +301,12 @@ async function installWebDebugPanel() {
     setActiveButton(panel, '[data-motion]', activeMotion)
   }
 
+  const setIntensity = (value: number) => {
+    intensity = value
+    intensityInput.value = String(value)
+    intensityValue.value = `${Math.round(value * 100)}%`
+  }
+
   panel.querySelectorAll<HTMLButtonElement>('[data-emotion]').forEach((button) => {
     button.dataset.value = button.dataset.emotion ?? ''
     button.addEventListener('click', () => {
@@ -233,15 +319,22 @@ async function installWebDebugPanel() {
   panel.querySelectorAll<HTMLButtonElement>('[data-motion]').forEach((button) => {
     button.dataset.value = button.dataset.motion ?? ''
     button.addEventListener('click', () => {
-      activeMotion = button.dataset.motion as MotionName
-      niva.motion(activeMotion)
+      const profile = motions.find((item) => item.value === button.dataset.motion)
+      if (!profile) return
+      activeMotion = profile.value
+      activeEmotion = profile.emotion
+      setIntensity(profile.intensity)
+      niva.act({
+        motion: profile.value,
+        emotion: profile.emotion,
+        expressionIntensity: profile.intensity,
+      })
       updateSelection()
     })
   })
 
   intensityInput.addEventListener('input', () => {
-    intensity = Number(intensityInput.value)
-    intensityValue.value = `${Math.round(intensity * 100)}%`
+    setIntensity(Number(intensityInput.value))
     niva.setEmotion(activeEmotion, intensity)
   })
 
@@ -251,6 +344,7 @@ async function installWebDebugPanel() {
       if (!action) return
       activeEmotion = action.emotion ?? activeEmotion
       activeMotion = 'custom'
+      setIntensity(action.expressionIntensity ?? intensity)
       niva.act(action)
       updateSelection()
     })
@@ -281,16 +375,12 @@ async function installWebDebugPanel() {
   })
 
   panel.querySelector<HTMLButtonElement>('#webDebugReset')!.addEventListener('click', () => {
-    intensity = .35
     activeEmotion = 'neutral'
     activeMotion = 'idle'
-    intensityInput.value = String(intensity)
-    intensityValue.value = '35%'
+    setIntensity(.25)
     voice.checked = true
     niva.setVoiceOutput(true)
-    niva.setEmotion(activeEmotion, intensity)
-    niva.motion(activeMotion)
-    niva.act({ lookTarget: { x: 0, y: 0 } })
+    niva.act({ emotion: 'neutral', expressionIntensity: .25, motion: 'idle', lookTarget: { x: 0, y: 0 } })
     document.querySelector<HTMLElement>('#stage')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     updateSelection()
   })
@@ -299,14 +389,40 @@ async function installWebDebugPanel() {
   modelFile.addEventListener('change', async () => {
     const file = modelFile.files?.[0]
     if (!file) return
-    note.textContent = `正在载入 ${file.name}…`
+    note.textContent = `正在校验并载入 ${file.name}…`
     const url = URL.createObjectURL(file)
     try {
       const ok = await niva.loadModel(url)
-      note.textContent = ok ? `已载入 ${file.name}（仅当前网页会话）` : `${file.name} 载入失败`
+      if (!ok) {
+        note.textContent = `${file.name} 载入失败，没有保存。`
+        return
+      }
+      try {
+        await saveStoredModel(file)
+        const info = niva.modelInfo
+        note.textContent = `已载入并记住 ${file.name} · VRM${info.version}。之后刷新网页会自动恢复。`
+      } catch (error) {
+        console.warn(error)
+        note.textContent = `已载入 ${file.name}，但浏览器未能持久保存；本次会话仍可测试。`
+      }
+      activeEmotion = 'neutral'
+      activeMotion = 'idle'
+      setIntensity(.25)
+      niva.act({ emotion: 'neutral', expressionIntensity: .25, motion: 'idle' })
+      updateSelection()
     } finally {
       window.setTimeout(() => URL.revokeObjectURL(url), 5000)
       modelFile.value = ''
+    }
+  })
+
+  panel.querySelector<HTMLButtonElement>('#webDebugClearModel')!.addEventListener('click', async () => {
+    try {
+      await clearStoredModel()
+      note.textContent = '已清除浏览器保存的本地模型。刷新后会回到在线兼容模型。'
+    } catch (error) {
+      console.warn(error)
+      note.textContent = '清除失败：当前浏览器不允许访问本地模型存储。'
     }
   })
 
@@ -316,11 +432,43 @@ async function installWebDebugPanel() {
     panel.querySelector<HTMLButtonElement>('#webDebugCollapse')!.textContent = collapsed ? '+' : '–'
   })
 
+  const restoreStoredModel = async () => {
+    try {
+      const stored = await loadStoredModel()
+      if (!stored) {
+        const info = niva.modelInfo
+        note.textContent = `当前在线兼容模型：${info.name} · VRM${info.version}。建议载入你本机的 AvatarSample_A.vrm 作为实际调试模型。`
+        return
+      }
+      note.textContent = `正在恢复浏览器保存的 ${stored.name}…`
+      const url = URL.createObjectURL(stored.blob)
+      try {
+        const ok = await niva.loadModel(url)
+        if (!ok) {
+          note.textContent = `${stored.name} 恢复失败，请重新选择文件。`
+          return
+        }
+        const info = niva.modelInfo
+        note.textContent = `已自动恢复 ${stored.name} · VRM${info.version}。这是当前调试模型。`
+        niva.act({ emotion: 'neutral', expressionIntensity: .25, motion: 'idle' })
+      } finally {
+        window.setTimeout(() => URL.revokeObjectURL(url), 5000)
+      }
+    } catch (error) {
+      console.warn(error)
+      const info = niva.modelInfo
+      note.textContent = `当前模型：${info.name} · VRM${info.version}。本地模型自动恢复不可用。`
+    }
+  }
+
   window.setInterval(() => {
-    ready.textContent = niva.ready ? '已加载' : '加载中'
+    const info = niva.modelInfo
+    ready.textContent = niva.ready ? `${info.name} · VRM${info.version}` : '加载中'
     live.textContent = !niva.ready ? 'WAKING' : niva.speaking ? 'SPEAKING' : 'ALIVE'
     live.dataset.state = !niva.ready ? 'waking' : niva.speaking ? 'speaking' : 'alive'
   }, 220)
+
+  void restoreStoredModel()
 }
 
 void installWebDebugPanel()
