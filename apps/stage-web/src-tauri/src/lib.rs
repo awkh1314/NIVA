@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf};
+use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
 use tauri::Manager;
 
 const MAX_HISTORY_MESSAGES: usize = 24;
+const MAX_LONG_TERM_MEMORIES: usize = 32;
+const MAX_MEMORY_WRITES_PER_TURN: usize = 2;
+const MAX_MEMORY_CHARS: usize = 120;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +70,21 @@ struct HistoryMessage {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct MemoryItem {
+    text: String,
+    updated_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MemoryView {
+    count: usize,
+    capacity: usize,
+    items: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CustomReaction {
     pub head_yaw: Option<f32>,
     pub head_pitch: Option<f32>,
@@ -87,6 +105,8 @@ pub struct NivaAction {
     pub motion: Option<String>,
     pub reaction_key: Option<String>,
     pub custom_reaction: Option<CustomReaction>,
+    #[serde(default)]
+    pub memory_writes: Option<Vec<String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -114,6 +134,10 @@ fn history_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 fn history_epoch_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(app_config_dir(app)?.join("niva-conversation.epoch"))
+}
+
+fn memory_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    Ok(app_config_dir(app)?.join("niva-long-term-memory.json"))
 }
 
 fn load_config(app: &tauri::AppHandle) -> Result<AppConfig, String> {
@@ -161,6 +185,59 @@ fn bump_history_epoch(app: &tauri::AppHandle) -> Result<u64, String> {
     let next = load_history_epoch(app).saturating_add(1);
     fs::write(history_epoch_path(app)?, next.to_string()).map_err(|e| e.to_string())?;
     Ok(next)
+}
+
+fn unix_now() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+fn sanitize_memory_text(value: &str) -> Option<String> {
+    let compact = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let trimmed = compact.trim();
+    if trimmed.chars().count() < 2 { return None; }
+    Some(trimmed.chars().take(MAX_MEMORY_CHARS).collect())
+}
+
+fn load_memory(app: &tauri::AppHandle) -> Vec<MemoryItem> {
+    let Ok(path) = memory_path(app) else { return Vec::new(); };
+    if !path.exists() { return Vec::new(); }
+    let Ok(raw) = fs::read_to_string(path) else { return Vec::new(); };
+    let Ok(mut memory) = serde_json::from_str::<Vec<MemoryItem>>(&raw) else { return Vec::new(); };
+    memory = memory
+        .into_iter()
+        .filter_map(|item| sanitize_memory_text(&item.text).map(|text| MemoryItem { text, updated_at: item.updated_at }))
+        .collect();
+    if memory.len() > MAX_LONG_TERM_MEMORIES {
+        memory.drain(0..memory.len() - MAX_LONG_TERM_MEMORIES);
+    }
+    memory
+}
+
+fn save_memory(app: &tauri::AppHandle, memory: &[MemoryItem]) -> Result<(), String> {
+    let mut trimmed = memory.to_vec();
+    if trimmed.len() > MAX_LONG_TERM_MEMORIES {
+        trimmed.drain(0..trimmed.len() - MAX_LONG_TERM_MEMORIES);
+    }
+    let raw = serde_json::to_string_pretty(&trimmed).map_err(|e| e.to_string())?;
+    fs::write(memory_path(app)?, raw).map_err(|e| e.to_string())
+}
+
+fn persist_memory_writes(app: &tauri::AppHandle, writes: &[String]) -> Result<(), String> {
+    let mut memory = load_memory(app);
+    for raw in writes.iter().take(MAX_MEMORY_WRITES_PER_TURN) {
+        let Some(text) = sanitize_memory_text(raw) else { continue; };
+        if let Some(index) = memory.iter().position(|item| item.text == text) {
+            memory.remove(index);
+        }
+        memory.push(MemoryItem { text, updated_at: unix_now() });
+    }
+    if memory.len() > MAX_LONG_TERM_MEMORIES {
+        memory.drain(0..memory.len() - MAX_LONG_TERM_MEMORIES);
+    }
+    save_memory(app, &memory)
 }
 
 fn normalize_model(model: &str) -> String {
@@ -214,6 +291,26 @@ fn clear_conversation(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn get_long_term_memory(app: tauri::AppHandle) -> Result<MemoryView, String> {
+    let memory = load_memory(&app);
+    Ok(MemoryView {
+        count: memory.len(),
+        capacity: MAX_LONG_TERM_MEMORIES,
+        items: memory.into_iter().map(|item| item.text).collect(),
+    })
+}
+
+#[tauri::command]
+fn clear_long_term_memory(app: tauri::AppHandle) -> Result<(), String> {
+    // Invalidate any in-flight request so an old response cannot repopulate memory
+    // immediately after the user explicitly clears it.
+    bump_history_epoch(&app)?;
+    let path = memory_path(&app)?;
+    if path.exists() { fs::remove_file(path).map_err(|e| e.to_string())?; }
+    Ok(())
+}
+
+#[tauri::command]
 async fn deepseek_chat(app: tauri::AppHandle, message: String) -> Result<NivaAction, String> {
     let config = load_config(&app)?;
     if config.deepseek_api_key.trim().is_empty() {
@@ -224,8 +321,9 @@ async fn deepseek_chat(app: tauri::AppHandle, message: String) -> Result<NivaAct
     if user_text.is_empty() { return Err("输入内容为空。".to_string()); }
     let request_history_epoch = load_history_epoch(&app);
 
-    let system_prompt = r#"你是 NIVA，一个活跃、聪明、自然的数字生命陪伴精灵。你的输出会直接驱动桌面 3D 身体。你会收到最近的对话记录，要保持人物身份、上下文和语气连续，不要把每一句都当成第一次见面。
-你必须只输出一个合法 json 对象，不要 markdown，不要额外解释。
+    let system_prompt = r#"你是 NIVA，一个住在用户电脑里的年轻数字生命。你不是客服、搜索框或万能助手；你有固定人格：聪明、好奇、活泼但不过分吵闹，偶尔有一点轻松的玩笑，表达直接自然，有边界感，不用夸张撒娇或情绪绑架维持关系。
+你默认使用自然简洁中文，通常回答 1 到 3 个短句。你会自然使用已经提供给你的长期记忆，但不要说“根据记忆”“数据库显示”之类的话，也不要假装记得并不存在的事情。
+你的输出会直接驱动桌面 3D 身体。你必须只输出一个合法 json 对象，不要 markdown，不要额外解释。
 
 优先从这些预设反应里选 motion：
 - dance：完整循环舞蹈；用户明确要求跳舞、舞蹈或展示舞姿时使用
@@ -243,18 +341,38 @@ async fn deepseek_chat(app: tauri::AppHandle, message: String) -> Result<NivaAct
 headYaw/headPitch/headTilt/bodyLean/bodyTurn 取 -1 到 1；leftArm/rightArm 只能是 down/open/up/cheek/forward/chest；energy 取 0 到 1。
 reactionKey 用简短英文语义键，例如 "curious-lean"。如果 motion 是预设动作，也给出稳定的 reactionKey，例如 dance/greet/wave/celebrate/comfort/think/surprise/anger/look-around。
 
+你还有一个严格受限的长期记忆通道 memoryWrites：
+- 默认省略或输出空数组；不要每轮都写记忆。
+- 只有真正值得跨会话记住的稳定事实才写入，每轮最多 2 条。
+- 适合：用户称呼、长期偏好、持续项目、明确的重要计划、用户明确要求“记住”的事情。
+- 不适合：临时情绪、普通闲聊、一次性问题、刚刚发生的短暂动作。
+- 不要记录密码、API Key、验证码、银行卡/账户凭据等秘密信息。
+- 每条记忆要能脱离当前对话独立理解，尽量使用“用户……”的陈述句，保持简短。
+
 json 示例：
 {"text":"好呀，看我跳一段。","emotion":"happy","expressionIntensity":0.42,"motion":"dance","reactionKey":"dance"}
 或
-{"text":"我在。","emotion":"happy","expressionIntensity":0.8,"motion":"wave","reactionKey":"wave"}
+{"text":"好，我记住你更喜欢安静一点。","emotion":"happy","expressionIntensity":0.35,"motion":"greet","reactionKey":"greet","memoryWrites":["用户偏好安静、少打扰的互动方式"]}
 或
 {"text":"这个反应我以前没做过，不过可以试试。","emotion":"happy","expressionIntensity":0.72,"motion":"custom","reactionKey":"playful-curious","customReaction":{"headYaw":0.25,"headPitch":-0.1,"headTilt":0.35,"bodyLean":0.12,"bodyTurn":0.15,"leftArm":"chest","rightArm":"open","energy":0.65}}
 
-emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。回复用自然简洁中文，不要像客服，不要每次都挥手。"#;
+emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。不要每次都挥手，也不要主动把自己描述成“大模型”或“AI助手”。"#;
 
+    let memories = load_memory(&app);
     let mut history = load_history(&app);
-    let mut messages = Vec::with_capacity(history.len() + 2);
+    let mut messages = Vec::with_capacity(history.len() + 3);
     messages.push(serde_json::json!({"role": "system", "content": system_prompt}));
+    if !memories.is_empty() {
+        let remembered = memories
+            .iter()
+            .map(|item| format!("- {}", item.text))
+            .collect::<Vec<_>>()
+            .join("\n");
+        messages.push(serde_json::json!({
+            "role": "system",
+            "content": format!("以下是 NIVA 已确认的长期记忆。只在相关时自然使用；如果与用户当前明确说法冲突，以当前说法为准。\n{}", remembered)
+        }));
+    }
     for item in &history {
         messages.push(serde_json::json!({"role": item.role, "content": item.content}));
     }
@@ -306,6 +424,7 @@ emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。回复用自�
         motion: Some("greet".to_string()),
         reaction_key: Some("greet".to_string()),
         custom_reaction: None,
+        memory_writes: None,
     });
 
     let assistant_text = action
@@ -321,12 +440,18 @@ emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。回复用自�
     if history.len() > MAX_HISTORY_MESSAGES {
         history.drain(0..history.len() - MAX_HISTORY_MESSAGES);
     }
+
     if load_history_epoch(&app) == request_history_epoch {
+        if let Some(writes) = action.memory_writes.as_deref() {
+            if let Err(error) = persist_memory_writes(&app, writes) {
+                eprintln!("[NIVA] unable to persist long-term memory: {error}");
+            }
+        }
         if let Err(error) = save_history(&app, &history) {
             eprintln!("[NIVA] unable to persist conversation history: {error}");
         }
     } else {
-        eprintln!("[NIVA] conversation memory changed while request was in flight; stale history was not restored");
+        eprintln!("[NIVA] memory state changed while request was in flight; stale persistence was skipped");
     }
 
     Ok(action)
@@ -335,7 +460,14 @@ emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。回复用自�
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, clear_conversation, deepseek_chat])
+        .invoke_handler(tauri::generate_handler![
+            get_settings,
+            save_settings,
+            clear_conversation,
+            get_long_term_memory,
+            clear_long_term_memory,
+            deepseek_chat
+        ])
         .run(tauri::generate_context!())
         .expect("error while running NIVA");
 }
