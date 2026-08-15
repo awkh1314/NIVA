@@ -301,6 +301,83 @@ export class RawMotionController {
     const rs = this.sideSign.right
 
     switch (motion.name) {
+      case 'dance': {
+        // 16-second looping choreography with four phrases:
+        // side groove -> overhead wave -> forward/open -> star finish and reset.
+        const danceT = ((now - motion.start) / 1000) % 16
+        const phrase = Math.floor(danceT / 4)
+        const phraseT = (danceT % 4) / 4
+        const beat = Math.sin(danceT * Math.PI * 2)
+        const fast = Math.sin(danceT * Math.PI * 4)
+        const side = Math.sin(danceT * Math.PI)
+        const turn = Math.sin(danceT * Math.PI * .5)
+        const bounce = Math.max(0, fast)
+
+        this.rotate('hips', -.020 * bounce, .065 * turn, -.055 * side)
+        this.rotate('spine', -.010 * bounce, .032 * turn, .035 * side)
+        this.rotate('chest', -.014 * bounce, -.025 * turn, .050 * side)
+        this.rotate('upperChest', -.008 * bounce, -.018 * turn, .026 * side)
+        this.rotate('head', -.018 * bounce - lookY * .035, lookX * .055 + .025 * turn, -.038 * side)
+
+        // Small in-place steps keep the full body involved without translating the avatar.
+        this.rotate('leftUpperLeg', beat * .040, 0, -side * .025)
+        this.rotate('rightUpperLeg', -beat * .040, 0, side * .025)
+        this.rotate('leftLowerLeg', Math.max(0, -beat) * .055, 0, 0)
+        this.rotate('rightLowerLeg', Math.max(0, beat) * .055, 0, 0)
+        this.rotate('leftFoot', -beat * .018, 0, side * .012)
+        this.rotate('rightFoot', beat * .018, 0, -side * .012)
+
+        if (phrase === 0) {
+          // Phrase A: alternating diagonal side sweeps.
+          this.arm('left',
+            new THREE.Vector3(ls * (.48 + beat * .08), -.50 + beat * .20, .18),
+            new THREE.Vector3(ls * (.70 + beat * .06), -.35 + beat * .18, .22),
+          )
+          this.arm('right',
+            new THREE.Vector3(rs * (.48 - beat * .08), -.50 - beat * .20, .18),
+            new THREE.Vector3(rs * (.70 - beat * .06), -.35 - beat * .18, .22),
+          )
+        } else if (phrase === 1) {
+          // Phrase B: both arms overhead, elbows alternating to the beat.
+          this.arm('left',
+            new THREE.Vector3(ls * .46, .58 + beat * .10, .12),
+            new THREE.Vector3(ls * (.16 + beat * .18), .96, .10),
+          )
+          this.arm('right',
+            new THREE.Vector3(rs * .46, .58 - beat * .10, .12),
+            new THREE.Vector3(rs * (.16 - beat * .18), .96, .10),
+          )
+        } else if (phrase === 2) {
+          // Phrase C: push toward the viewer, then open back out to the sides.
+          const reach = .5 + .5 * Math.sin((danceT - 8) * Math.PI)
+          this.arm('left',
+            new THREE.Vector3(ls * (.28 + (1 - reach) * .34), -.10 + beat * .10, .22 + reach * .58),
+            new THREE.Vector3(ls * (.10 + (1 - reach) * .54), -.04 + beat * .08, .28 + reach * .66),
+          )
+          this.arm('right',
+            new THREE.Vector3(rs * (.28 + (1 - reach) * .34), -.10 - beat * .10, .22 + reach * .58),
+            new THREE.Vector3(rs * (.10 + (1 - reach) * .54), -.04 - beat * .08, .28 + reach * .66),
+          )
+        } else {
+          // Phrase D: star/celebration finish. During the final second the arms return
+          // smoothly to phrase A so the 16-second loop has no visible snap.
+          const reset = THREE.MathUtils.smoothstep(phraseT, .72, 1)
+          const upperX = THREE.MathUtils.lerp(.52, .48, reset)
+          const upperY = THREE.MathUtils.lerp(.66 + beat * .08, -.50, reset)
+          const lowerX = THREE.MathUtils.lerp(.20, .70, reset)
+          const lowerY = THREE.MathUtils.lerp(.96, -.35, reset)
+          const z = THREE.MathUtils.lerp(.12, .20, reset)
+          this.arm('left',
+            new THREE.Vector3(ls * upperX, upperY, z),
+            new THREE.Vector3(ls * lowerX, lowerY, z + .04),
+          )
+          this.arm('right',
+            new THREE.Vector3(rs * upperX, upperY, z),
+            new THREE.Vector3(rs * lowerX, lowerY, z + .04),
+          )
+        }
+        break
+      }
       case 'thinking': {
         // Right hand to chin/cheek, left arm remains relaxed.
         this.rotate('head', .025 - lookY * .06, -.08 + lookX * .08, -.09)
