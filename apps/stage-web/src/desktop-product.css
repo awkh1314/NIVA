@@ -152,3 +152,91 @@ html.niva-desktop .niva-product-settings #saveBackstage {
   min-height: 42px;
   font-size: 11px;
 }
+
+html.niva-desktop .niva-first-run {
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 18px;
+  z-index: 92;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(126,230,255,.22);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(8,16,31,.92), rgba(5,10,20,.88)),
+    radial-gradient(circle at 90% 0%, rgba(120,92,255,.16), transparent 46%);
+  box-shadow: 0 24px 70px rgba(0,0,0,.30), inset 0 1px 0 rgba(255,255,255,.05);
+  backdrop-filter: blur(24px) saturate(125%);
+  color: #effaff;
+  pointer-events: auto;
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  transition: opacity .20s ease, transform .20s ease;
+}
+
+html.niva-desktop .niva-first-run.closing {
+  opacity: 0;
+  transform: translateY(8px) scale(.985);
+  pointer-events: none;
+}
+
+html.niva-desktop .niva-first-run-kicker {
+  font-size: 8px;
+  letter-spacing: .18em;
+  color: rgba(126,230,255,.64);
+}
+
+html.niva-desktop .niva-first-run strong {
+  font-size: 17px;
+  font-weight: 680;
+  letter-spacing: .01em;
+}
+
+html.niva-desktop .niva-first-run p {
+  margin: 0;
+  max-width: 360px;
+  font-size: 10px;
+  line-height: 1.62;
+  color: rgba(218,237,247,.68);
+}
+
+html.niva-desktop .niva-first-run-hints {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+html.niva-desktop .niva-first-run-hints span {
+  padding: 5px 8px;
+  border: 1px solid rgba(126,230,255,.10);
+  border-radius: 999px;
+  background: rgba(255,255,255,.03);
+  color: rgba(221,240,249,.62);
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+html.niva-desktop .niva-first-run button {
+  margin-top: 2px;
+  min-height: 38px;
+  border: 1px solid rgba(126,230,255,.28);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(105,225,255,.16), rgba(84,168,255,.10));
+  color: #f3fcff;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+html.niva-desktop .niva-first-run button:hover {
+  border-color: rgba(126,230,255,.48);
+  background: linear-gradient(180deg, rgba(105,225,255,.22), rgba(84,168,255,.14));
+}
+
+html.niva-desktop .shell:has(.niva-first-run) .conversation {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
