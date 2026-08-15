@@ -8,7 +8,7 @@ import type { CustomReaction, MotionName, NivaAction, SemanticExpression } from 
 
 type Expression = SemanticExpression
 const base = import.meta.env.BASE_URL
-const modelUrl = `${base}NIVA.vrm?v=avatar-sample-a-2`
+const modelUrl = `${base}NIVA.vrm?v=avatar-sample-a-3`
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
@@ -63,7 +63,7 @@ let vrm: any = null
 let modelRoot: THREE.Object3D | null = null
 let activeEmotion: Expression = 'neutral'
 let emotionIntensity = .35
-let motion: { name: MotionName; start: number; duration: number } = { name: 'thinking', start: performance.now(), duration: 6500 }
+let motion: { name: MotionName; start: number; duration: number } = { name: 'idle', start: performance.now(), duration: Infinity }
 let activeCustomReaction: CustomReaction | null = null
 let lookX = 0, lookY = 0, targetLookX = 0, targetLookY = 0
 let pointerAttentionUntil = 0
@@ -84,23 +84,25 @@ let tapStartAt = 0
 let tapMoved = false
 let tapTimer = 0
 
-const emotionNames: Record<Expression, string | null> = {
-  neutral: null,
-  happy: 'happy',
-  shy: 'happy',
-  sad: 'sad',
-  angry: 'angry',
-  surprised: 'surprised',
-  thinking: null,
+// three-vrm normalizes most VRM0 preset names, but older samples can still expose
+// legacy/custom aliases. Test available expressions instead of assuming one spelling.
+const expressionCandidates: Record<Expression, string[]> = {
+  neutral: ['neutral', 'Neutral'],
+  happy: ['happy', 'joy', 'Joy'],
+  shy: ['relaxed', 'fun', 'Fun', 'happy', 'joy', 'Joy'],
+  sad: ['sad', 'sorrow', 'Sorrow'],
+  angry: ['angry', 'Angry'],
+  surprised: ['surprised', 'Surprised'],
+  thinking: [],
 }
 
 const emotionScale: Record<Expression, number> = {
   neutral: 0,
-  happy: .22,
-  shy: .12,
-  sad: .18,
-  angry: .16,
-  surprised: .14,
+  happy: .38,
+  shy: .26,
+  sad: .32,
+  angry: .30,
+  surprised: .30,
   thinking: 0,
 }
 
@@ -153,7 +155,7 @@ function playMotion(name?: MotionName) {
     sad: 2300,
     lookAround: 2600,
     surprised: 1200,
-    angry: 1200,
+    angry: 1400,
     custom: 2300,
   }
   motion = { name, start: performance.now(), duration: duration[name] ?? 1800 }
@@ -178,7 +180,7 @@ function speakText(text: string) {
   speakingUntil = performance.now() + Math.max(900, text.length * 82)
 
   if (voiceEnabled) {
-    void speakVoice(text, { lang: 'zh-CN', rate: 1.03, pitch: 1.10 })
+    void speakVoice(text, { lang: 'zh-CN', rate: .96, pitch: 1.04 })
   }
 }
 
@@ -215,22 +217,30 @@ function send(text: string) {
   window.setTimeout(() => act(localReply(t)), 420)
 }
 
+function setFirstAvailableExpression(manager: any, candidates: string[], value: number) {
+  for (const name of candidates) {
+    if (manager.getExpression?.(name)) {
+      manager.setValue(name, value)
+      return name
+    }
+  }
+  return null
+}
+
 function updateFace(now: number) {
   const manager = vrm?.expressionManager
   if (!manager) return
 
-  // Keep neutral facial geometry as the baseline. Some VRM presets alter eyes very aggressively,
-  // so every frame starts from zero and emotional presets are applied only at a subtle weight.
-  for (const name of [
-    'happy', 'sad', 'angry', 'relaxed', 'surprised',
-    'blink', 'blinkLeft', 'blinkRight',
-    'aa', 'ih', 'ou', 'ee', 'oh',
-  ]) manager.setValue(name, 0)
+  // Reset every registered expression, including legacy/custom aliases. This prevents
+  // an old expression from leaking into the next debug selection.
+  manager.resetValues?.()
 
-  const mapped = emotionNames[activeEmotion]
-  if (mapped) manager.setValue(mapped, emotionIntensity * emotionScale[activeEmotion])
+  const candidates = expressionCandidates[activeEmotion]
+  if (candidates.length) {
+    setFirstAvailableExpression(manager, candidates, emotionIntensity * emotionScale[activeEmotion])
+  }
 
-  // Hold the eyes open just after a model is loaded so startup never lands on an ugly closed-eye frame.
+  // Hold the eyes open just after a model load so startup cannot freeze on a blink.
   if (now >= faceWarmupUntil) {
     if (now >= nextBlink && blinkStart < 0) {
       blinkStart = now
@@ -239,23 +249,21 @@ function updateFace(now: number) {
     if (blinkStart >= 0) {
       const t = (now - blinkStart) / 118
       const v = t < .5 ? t * 2 : Math.max(0, 2 - t * 2)
-      manager.setValue('blink', v * .82)
+      setFirstAvailableExpression(manager, ['blink', 'Blink'], v * .78)
       if (t >= 1) blinkStart = -1
     }
   }
 
-  // Very small lip sync only. The previous wide aa/ih oscillation distorted AvatarSample_A's mouth.
+  // Subtle lip sync only; use aliases so VRM0 a/i and VRM1 aa/ih both work.
   if (now < speakingUntil || isVoiceSpeaking()) {
-    const aa = .035 + Math.abs(Math.sin(now * .017)) * .085
-    const ih = Math.abs(Math.sin(now * .011 + .8)) * .022
-    manager.setValue('aa', aa)
-    manager.setValue('ih', ih)
+    const aa = .028 + Math.abs(Math.sin(now * .017)) * .070
+    const ih = Math.abs(Math.sin(now * .011 + .8)) * .016
+    setFirstAvailableExpression(manager, ['aa', 'a', 'A'], aa)
+    setFirstAvailableExpression(manager, ['ih', 'i', 'I'], ih)
   }
 }
 
 function updateLife(now: number) {
-  // When the user is not actively pointing at NIVA, let her attention wander a little
-  // instead of staring at the exact same point forever. Explicit AI look targets win.
   if (now > pointerAttentionUntil && now > explicitLookUntil && now > nextGazeShift) {
     const returnToUser = Math.random() < .34
     targetLookX = returnToUser ? 0 : (Math.random() * 2 - 1) * .42
@@ -329,7 +337,7 @@ async function loadVrm(url: string) {
     targetLookX = 0
     targetLookY = 0
     setExpression('neutral', .35)
-    motion = { name: 'thinking', start: now, duration: 6500 }
+    motion = { name: 'idle', start: now, duration: Infinity }
     updateLife(now)
     vrm.update(0)
     fitCamera()
@@ -378,8 +386,6 @@ stage.addEventListener('pointerup', (event) => {
   tapPointerId = -1
   if (!wasTap || !vrm) return
 
-  // Delay a single tap slightly so a double-click used to reset the view does not
-  // also make NIVA speak twice.
   clearTimeout(tapTimer)
   tapTimer = window.setTimeout(() => {
     if (shell.classList.contains('backstage-open')) return
@@ -405,6 +411,13 @@ modelFile.onchange = () => {
   loadVrm(url).finally(() => window.setTimeout(() => URL.revokeObjectURL(url), 5000))
 }
 
+function currentModelInfo() {
+  const metaVersion = String(vrm?.meta?.metaVersion ?? vrm?.metaVersion ?? '?')
+  const name = String(vrm?.meta?.name ?? vrm?.meta?.title ?? 'VRM')
+  const expressions = Object.keys(vrm?.expressionManager?.expressionMap ?? {})
+  return { name, version: metaVersion, expressions }
+}
+
 Object.assign(window, {
   NIVA: {
     act,
@@ -416,6 +429,7 @@ Object.assign(window, {
     get ready() { return !!vrm },
     get voiceOutput() { return voiceEnabled },
     get speaking() { return performance.now() < speakingUntil || isVoiceSpeaking() },
+    get modelInfo() { return currentModelInfo() },
     get mode() { return 'vrm-raw-motion' as const },
   },
 })
