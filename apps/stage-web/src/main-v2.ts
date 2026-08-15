@@ -382,6 +382,7 @@ stage.addEventListener('pointerup', (event) => {
   // also make NIVA speak twice.
   clearTimeout(tapTimer)
   tapTimer = window.setTimeout(() => {
+    if (shell.classList.contains('backstage-open')) return
     lastInteraction = performance.now()
     act({ text: '嗯？我在听。', emotion: 'happy', motion: 'greet' })
   }, 230)
