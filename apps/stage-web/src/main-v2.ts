@@ -12,8 +12,8 @@ type LifeState = 'idle' | 'attention' | 'listening' | 'thinking' | 'speaking' | 
 const base = import.meta.env.BASE_URL
 const modelUrl = `${base}NIVA.vrm?v=avatar-sample-a-3`
 const DESKTOP_MODE = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-// Web remains a fast motion/debug stage. The packaged product rests quietly.
-const DEFAULT_MOTION: MotionName = DESKTOP_MODE ? 'idle' : 'dance'
+// Natural standing is the baseline everywhere. Dance remains an explicit reaction only.
+const DEFAULT_MOTION: MotionName = 'idle'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
@@ -66,8 +66,8 @@ const cyan = new THREE.PointLight(0x60eaff, 14, 5); cyan.position.set(1.5, 1.4, 
 
 let vrm: any = null
 let modelRoot: THREE.Object3D | null = null
-let activeEmotion: Expression = DESKTOP_MODE ? 'neutral' : 'happy'
-let emotionIntensity = DESKTOP_MODE ? 0 : .42
+let activeEmotion: Expression = 'neutral'
+let emotionIntensity = 0
 let motion: { name: MotionName; start: number; duration: number } = { name: DEFAULT_MOTION, start: performance.now(), duration: Infinity }
 let activeCustomReaction: CustomReaction | null = null
 let lookX = 0, lookY = 0, targetLookX = 0, targetLookY = 0
@@ -80,7 +80,7 @@ let faceWarmupUntil = performance.now() + 2600
 let speakingUntil = 0
 let typeTimer = 0
 let lastInteraction = performance.now()
-let nextAutonomy = performance.now() + (DESKTOP_MODE ? 28000 : 9000)
+let nextAutonomy = performance.now() + (DESKTOP_MODE ? 28000 : 14000)
 let voiceEnabled = true
 let lifeState: LifeState = 'idle'
 let tapPointerId = -1
@@ -164,7 +164,7 @@ function setLifeState(state: LifeState) {
     targetLookY = 0
     explicitLookUntil = performance.now() + 1600
   }
-  if (DESKTOP_MODE && state === 'idle' && previous !== 'idle' && motion.name === 'idle') {
+  if (state === 'idle' && previous !== 'idle' && motion.name === 'idle') {
     setExpression('neutral', 0)
   }
 }
@@ -331,16 +331,11 @@ function updateLife(now: number) {
   lookX += (targetLookX - lookX) * .065
   lookY += (targetLookY - lookY) * .065
 
-  // A short explicit reaction can end while NIVA is still speaking or thinking. In
-  // that case return only the body to idle and keep the expression until the state ends.
+  // Every finite reaction returns to the same natural-standing baseline.
   if (Number.isFinite(motion.duration) && now - motion.start >= motion.duration) {
     activeCustomReaction = null
     motion = { name: DEFAULT_MOTION, start: now, duration: Infinity }
-    if (!DESKTOP_MODE) {
-      setExpression('happy', .42)
-    } else if (state === 'idle' || state === 'attention') {
-      setExpression('neutral', 0)
-    }
+    if (state === 'idle' || state === 'attention') setExpression('neutral', 0)
   }
 
   // Desktop autonomy is deliberately sparse. Breathing, weight shift and gaze are
@@ -413,12 +408,11 @@ async function loadVrm(url: string) {
     setLifeState('idle')
 
     if (DESKTOP_MODE) {
-      // A short silent acknowledgement makes launch feel intentional. Product-level
-      // onboarding/return logic decides whether NIVA actually speaks.
+      // A short silent acknowledgement is allowed, but the resting preset is idle.
       setExpression('happy', .28)
       motion = { name: 'greet', start: now, duration: 1500 }
     } else {
-      setExpression('happy', .42)
+      setExpression('neutral', 0)
       motion = { name: DEFAULT_MOTION, start: now, duration: Infinity }
     }
 
@@ -426,8 +420,8 @@ async function loadVrm(url: string) {
     vrm.update(0)
     fitCamera()
     loadCard.classList.add('hidden')
-    statusText.textContent = DESKTOP_MODE ? 'ALIVE' : 'ALIVE · DANCE'
-    nextAutonomy = now + (DESKTOP_MODE ? 28000 + Math.random() * 16000 : 8500)
+    statusText.textContent = 'ALIVE'
+    nextAutonomy = now + (DESKTOP_MODE ? 28000 + Math.random() * 16000 : 14000 + Math.random() * 12000)
     if (!DESKTOP_MODE) speakText('我在。')
     return true
   } catch (error) {
