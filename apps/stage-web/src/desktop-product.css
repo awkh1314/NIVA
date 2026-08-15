@@ -240,3 +240,36 @@ html.niva-desktop .shell:has(.niva-first-run) .conversation {
   opacity: 0 !important;
   pointer-events: none !important;
 }
+
+html.niva-desktop .niva-coach-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  z-index: 88;
+  max-width: calc(100% - 36px);
+  padding: 9px 12px;
+  border: 1px solid rgba(126,230,255,.16);
+  border-radius: 999px;
+  background: rgba(7,14,28,.84);
+  box-shadow: 0 12px 34px rgba(0,0,0,.24), inset 0 1px 0 rgba(255,255,255,.035);
+  backdrop-filter: blur(18px) saturate(120%);
+  color: rgba(230,246,253,.76);
+  font-size: 9px;
+  line-height: 1.4;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, 8px) scale(.98);
+  transition: opacity .20s ease, transform .20s ease;
+}
+
+html.niva-desktop .niva-coach-toast.visible {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+}
+
+html.niva-desktop .backstage-open .niva-coach-toast,
+html.niva-desktop .shell:has(.niva-first-run) .niva-coach-toast {
+  opacity: 0 !important;
+}
