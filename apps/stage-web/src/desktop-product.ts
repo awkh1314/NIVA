@@ -2,13 +2,21 @@ import './desktop-product.css'
 import { isTauri } from './desktop'
 import type { NivaAction } from './core/types'
 
+type LifeState = 'idle' | 'attention' | 'listening' | 'thinking' | 'speaking' | 'backstage'
+
 type NivaRuntime = {
   act(action: NivaAction): void
+  setLifeState(state: LifeState): void
   readonly ready: boolean
   readonly speaking: boolean
+  readonly lifeState: LifeState
 }
 
 const FIRST_RUN_KEY = 'niva.product.first-run.v1'
+const LAST_SEEN_KEY = 'niva.product.last-seen.v1'
+const HEARTBEAT_MS = 60_000
+const RETURN_GREETING_AFTER_MS = 8 * 60 * 60 * 1000
+const LONG_ABSENCE_MS = 72 * 60 * 60 * 1000
 const runtime = () => (window as unknown as { NIVA?: NivaRuntime }).NIVA
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
@@ -131,6 +139,33 @@ function markFirstRunCompleted() {
   }
 }
 
+function readLastSeen(): number | null {
+  try {
+    const raw = localStorage.getItem(LAST_SEEN_KEY)
+    const value = Number(raw)
+    return Number.isFinite(value) && value > 0 ? value : null
+  } catch {
+    return null
+  }
+}
+
+function writeLastSeen(at = Date.now()) {
+  try {
+    localStorage.setItem(LAST_SEEN_KEY, String(at))
+  } catch {
+    // Presence history is optional; the product still works without localStorage.
+  }
+}
+
+function installPresenceHeartbeat() {
+  writeLastSeen()
+  const timer = window.setInterval(() => writeLastSeen(), HEARTBEAT_MS)
+  window.addEventListener('pagehide', () => {
+    writeLastSeen()
+    clearInterval(timer)
+  }, { once: true })
+}
+
 function createFirstRunCard(niva: NivaRuntime) {
   if (firstRunCompleted() || document.querySelector('#nivaFirstRun')) return
   const shell = document.querySelector<HTMLElement>('.shell')
@@ -153,16 +188,17 @@ function createFirstRunCard(niva: NivaRuntime) {
   `
   shell.appendChild(card)
 
-  // The body has already acknowledged launch. The first-run card adds one silent,
-  // intentional wave so the introduction feels authored rather than like a tooltip.
   window.setTimeout(() => {
     if (!card.isConnected || niva.speaking) return
+    niva.setLifeState('attention')
     niva.act({ emotion: 'happy', expressionIntensity: .30, motion: 'wave' })
   }, 650)
 
   card.querySelector<HTMLButtonElement>('#nivaFirstRunStart')!.onclick = () => {
     markFirstRunCompleted()
+    writeLastSeen()
     card.classList.add('closing')
+    niva.setLifeState('attention')
     niva.act({
       text: '好。以后我会待在这里，想说话的时候直接叫我。',
       emotion: 'happy',
@@ -171,6 +207,77 @@ function createFirstRunCard(niva: NivaRuntime) {
     })
     window.setTimeout(() => card.remove(), 220)
   }
+}
+
+function returnGreeting(lastSeen: number | null): NivaAction | null {
+  if (!lastSeen) return null
+  const now = Date.now()
+  const gap = Math.max(0, now - lastSeen)
+  if (gap < RETURN_GREETING_AFTER_MS) return null
+
+  if (gap >= LONG_ABSENCE_MS) {
+    return {
+      text: '好久不见。你回来啦。',
+      emotion: 'happy',
+      expressionIntensity: .28,
+      motion: 'wave',
+    }
+  }
+
+  const hour = new Date().getHours()
+  if (hour >= 5 && hour < 11) {
+    return { text: '早。你回来啦。', emotion: 'happy', expressionIntensity: .24, motion: 'greet' }
+  }
+  if (hour >= 11 && hour < 18) {
+    return { text: '下午好。又见面了。', emotion: 'happy', expressionIntensity: .22, motion: 'greet' }
+  }
+  if (hour >= 18 || hour < 1) {
+    return { text: '晚上好。你回来啦。', emotion: 'happy', expressionIntensity: .24, motion: 'greet' }
+  }
+  return { text: '这么晚还在呀。', emotion: 'shy', expressionIntensity: .18, motion: 'greet' }
+}
+
+function lifeStateFromStatus(text: string): LifeState {
+  const value = text.toUpperCase()
+  if (value.includes('THINKING')) return 'thinking'
+  if (value.includes('LISTENING')) return 'listening'
+  return 'idle'
+}
+
+function installLifeStateBridge(niva: NivaRuntime) {
+  const shell = document.querySelector<HTMLElement>('.shell')
+  const status = document.querySelector<HTMLElement>('#statusText')
+  if (!shell || !status || status.dataset.lifeBridge === 'true') return
+  status.dataset.lifeBridge = 'true'
+
+  let lastApplied: LifeState | null = null
+  const apply = () => {
+    let next: LifeState
+    if (shell.classList.contains('backstage-open')) next = 'backstage'
+    else if (niva.speaking) next = 'speaking'
+    else next = lifeStateFromStatus(status.textContent ?? '')
+
+    if (next === lastApplied) return
+    lastApplied = next
+    niva.setLifeState(next)
+  }
+
+  const statusObserver = new MutationObserver(apply)
+  statusObserver.observe(status, { childList: true, characterData: true, subtree: true })
+
+  const shellObserver = new MutationObserver(apply)
+  shellObserver.observe(shell, { attributes: true, attributeFilter: ['class'] })
+
+  // Speech synthesis finishing does not necessarily mutate status text, so a small
+  // poll keeps the effective state correct without coupling the product layer to TTS.
+  const timer = window.setInterval(apply, 180)
+  window.addEventListener('pagehide', () => {
+    clearInterval(timer)
+    statusObserver.disconnect()
+    shellObserver.disconnect()
+  }, { once: true })
+
+  apply()
 }
 
 function installNaturalAttention(niva: NivaRuntime) {
@@ -195,14 +302,18 @@ function installNaturalAttention(niva: NivaRuntime) {
       if (shell.classList.contains('backstage-open')) return
       if (document.querySelector('#nivaFirstRun')) return
       if (niva.speaking) return
+      if (niva.lifeState !== 'idle' && niva.lifeState !== 'attention') return
       if (now - lastUserTouch < 12000) return
       if (now - lastAcknowledgement < 45000) return
 
-      // Do not speak. A tiny acknowledgement after a long quiet period is enough to
-      // make NIVA feel aware of the user without turning desktop presence into spam.
+      // No speech here. Presence should feel aware, not needy.
       lastAcknowledgement = now
       lastUserTouch = now
+      niva.setLifeState('attention')
       niva.act({ emotion: 'happy', expressionIntensity: .16, motion: 'greet' })
+      window.setTimeout(() => {
+        if (!niva.speaking && niva.lifeState === 'attention') niva.setLifeState('idle')
+      }, 1900)
     }, 260)
   })
 
@@ -210,13 +321,28 @@ function installNaturalAttention(niva: NivaRuntime) {
 }
 
 async function bootPresenceLayer() {
+  const previousLastSeen = readLastSeen()
   const niva = await waitForRuntime()
   if (!niva) return
+
+  installLifeStateBridge(niva)
   installNaturalAttention(niva)
+  installPresenceHeartbeat()
+
   if (!firstRunCompleted()) {
     await sleep(900)
     createFirstRunCard(niva)
+    return
   }
+
+  const greeting = returnGreeting(previousLastSeen)
+  if (!greeting) return
+
+  await sleep(1200)
+  const shell = document.querySelector<HTMLElement>('.shell')
+  if (shell?.classList.contains('backstage-open') || niva.speaking) return
+  niva.setLifeState('attention')
+  niva.act(greeting)
 }
 
 function bootProductLayer() {
