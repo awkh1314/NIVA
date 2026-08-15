@@ -1,5 +1,16 @@
 import './desktop-product.css'
 import { isTauri } from './desktop'
+import type { NivaAction } from './core/types'
+
+type NivaRuntime = {
+  act(action: NivaAction): void
+  readonly ready: boolean
+  readonly speaking: boolean
+}
+
+const FIRST_RUN_KEY = 'niva.product.first-run.v1'
+const runtime = () => (window as unknown as { NIVA?: NivaRuntime }).NIVA
+const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms))
 
 function productizeBackstage(): boolean {
   const panel = document.querySelector<HTMLElement>('#nivaBackstage')
@@ -85,16 +96,133 @@ function productizeBackstage(): boolean {
   return true
 }
 
-function bootProductLayer() {
-  if (!isTauri()) return
+function ensureBackstageProductLayer() {
   if (productizeBackstage()) return
-
   const observer = new MutationObserver(() => {
     if (!productizeBackstage()) return
     observer.disconnect()
   })
   observer.observe(document.documentElement, { childList: true, subtree: true })
   window.setTimeout(() => observer.disconnect(), 10000)
+}
+
+async function waitForRuntime(): Promise<NivaRuntime | null> {
+  for (let i = 0; i < 120; i++) {
+    const niva = runtime()
+    if (niva?.ready) return niva
+    await sleep(80)
+  }
+  return null
+}
+
+function firstRunCompleted(): boolean {
+  try {
+    return localStorage.getItem(FIRST_RUN_KEY) === 'done'
+  } catch {
+    return false
+  }
+}
+
+function markFirstRunCompleted() {
+  try {
+    localStorage.setItem(FIRST_RUN_KEY, 'done')
+  } catch {
+    // Onboarding remains non-critical if WebView storage is unavailable.
+  }
+}
+
+function createFirstRunCard(niva: NivaRuntime) {
+  if (firstRunCompleted() || document.querySelector('#nivaFirstRun')) return
+  const shell = document.querySelector<HTMLElement>('.shell')
+  if (!shell) return
+
+  const card = document.createElement('section')
+  card.id = 'nivaFirstRun'
+  card.className = 'niva-first-run'
+  card.setAttribute('aria-label', '认识 NIVA')
+  card.innerHTML = `
+    <div class="niva-first-run-kicker">WELCOME TO NIVA</div>
+    <strong>你好，我是 NIVA。</strong>
+    <p>我会待在你的桌面。你可以直接和我说话，或者用文字告诉我你在想什么。</p>
+    <div class="niva-first-run-hints">
+      <span>直接说话</span>
+      <span>右键拖动 · 移动</span>
+      <span>双击 · 设置</span>
+    </div>
+    <button type="button" id="nivaFirstRunStart">开始</button>
+  `
+  shell.appendChild(card)
+
+  // The body has already acknowledged launch. The first-run card adds one silent,
+  // intentional wave so the introduction feels authored rather than like a tooltip.
+  window.setTimeout(() => {
+    if (!card.isConnected || niva.speaking) return
+    niva.act({ emotion: 'happy', expressionIntensity: .30, motion: 'wave' })
+  }, 650)
+
+  card.querySelector<HTMLButtonElement>('#nivaFirstRunStart')!.onclick = () => {
+    markFirstRunCompleted()
+    card.classList.add('closing')
+    niva.act({
+      text: '好。以后我会待在这里，想说话的时候直接叫我。',
+      emotion: 'happy',
+      expressionIntensity: .32,
+      motion: 'greet',
+    })
+    window.setTimeout(() => card.remove(), 220)
+  }
+}
+
+function installNaturalAttention(niva: NivaRuntime) {
+  const stage = document.querySelector<HTMLElement>('#stage')
+  const shell = document.querySelector<HTMLElement>('.shell')
+  if (!stage || !shell || stage.dataset.productAttention === 'true') return
+  stage.dataset.productAttention = 'true'
+
+  let lastUserTouch = performance.now()
+  let lastAcknowledgement = performance.now()
+  let attentionTimer = 0
+
+  const noteTouch = () => { lastUserTouch = performance.now() }
+  stage.addEventListener('pointerdown', noteTouch, { passive: true })
+  stage.addEventListener('dblclick', noteTouch, { passive: true })
+
+  stage.addEventListener('pointerenter', () => {
+    clearTimeout(attentionTimer)
+    attentionTimer = window.setTimeout(() => {
+      const now = performance.now()
+      if (!stage.matches(':hover')) return
+      if (shell.classList.contains('backstage-open')) return
+      if (document.querySelector('#nivaFirstRun')) return
+      if (niva.speaking) return
+      if (now - lastUserTouch < 12000) return
+      if (now - lastAcknowledgement < 45000) return
+
+      // Do not speak. A tiny acknowledgement after a long quiet period is enough to
+      // make NIVA feel aware of the user without turning desktop presence into spam.
+      lastAcknowledgement = now
+      lastUserTouch = now
+      niva.act({ emotion: 'happy', expressionIntensity: .16, motion: 'greet' })
+    }, 260)
+  })
+
+  stage.addEventListener('pointerleave', () => clearTimeout(attentionTimer), { passive: true })
+}
+
+async function bootPresenceLayer() {
+  const niva = await waitForRuntime()
+  if (!niva) return
+  installNaturalAttention(niva)
+  if (!firstRunCompleted()) {
+    await sleep(900)
+    createFirstRunCard(niva)
+  }
+}
+
+function bootProductLayer() {
+  if (!isTauri()) return
+  ensureBackstageProductLayer()
+  void bootPresenceLayer()
 }
 
 bootProductLayer()
