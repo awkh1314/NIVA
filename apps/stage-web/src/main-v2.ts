@@ -51,18 +51,34 @@ const input = document.querySelector<HTMLInputElement>('#messageInput')!
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.outputColorSpace = THREE.SRGBColorSpace
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 0.80
 renderer.shadowMap.enabled = true
 renderer.shadowMap.type = THREE.PCFSoftShadowMap
 
 const scene = new THREE.Scene()
+scene.environment = null
 const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 100)
 const clock = new THREE.Clock()
 const rawMotion = new RawMotionController()
 
-scene.add(new THREE.HemisphereLight(0xdff8ff, 0x0b1021, 2.2))
-const key = new THREE.DirectionalLight(0xffffff, 2.7); key.position.set(1.7, 2.8, 2.6); key.castShadow = true; scene.add(key)
-const rim = new THREE.DirectionalLight(0x9c7cff, 2.0); rim.position.set(-2.2, 2.0, -1.6); scene.add(rim)
-const cyan = new THREE.PointLight(0x60eaff, 14, 5); cyan.position.set(1.5, 1.4, 1.6); scene.add(cyan)
+// Soft portrait lighting: keep white fabric below clipping while preserving face/hair depth.
+// The previous setup stacked a very bright hemisphere + key + rim + point light and washed
+// light-colored VRM materials almost completely white.
+scene.add(new THREE.HemisphereLight(0xe8f2ff, 0x182034, 0.72))
+const key = new THREE.DirectionalLight(0xfff4ed, 1.05)
+key.position.set(1.7, 2.8, 2.6)
+key.castShadow = true
+scene.add(key)
+const fill = new THREE.DirectionalLight(0xaec8ff, 0.22)
+fill.position.set(-1.5, 1.6, 2.1)
+scene.add(fill)
+const rim = new THREE.DirectionalLight(0xa68cff, 0.34)
+rim.position.set(-2.2, 2.0, -1.6)
+scene.add(rim)
+const cyan = new THREE.PointLight(0x72e6ff, 1.8, 4.5, 2)
+cyan.position.set(1.5, 1.4, 1.6)
+scene.add(cyan)
 
 let vrm: any = null
 let modelRoot: THREE.Object3D | null = null
