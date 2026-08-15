@@ -228,6 +228,7 @@ async fn deepseek_chat(app: tauri::AppHandle, message: String) -> Result<NivaAct
 你必须只输出一个合法 json 对象，不要 markdown，不要额外解释。
 
 优先从这些预设反应里选 motion：
+- dance：完整循环舞蹈；用户明确要求跳舞、舞蹈或展示舞姿时使用
 - wave：挥手/打招呼
 - greet：轻微点头或回应
 - thinking：思考
@@ -240,9 +241,11 @@ async fn deepseek_chat(app: tauri::AppHandle, message: String) -> Result<NivaAct
 
 只有当上面确实没有合适反应时，才允许 motion="custom"，并填写 customReaction。customReaction 是安全的程序化姿态参数，不是代码：
 headYaw/headPitch/headTilt/bodyLean/bodyTurn 取 -1 到 1；leftArm/rightArm 只能是 down/open/up/cheek/forward/chest；energy 取 0 到 1。
-reactionKey 用简短英文语义键，例如 "curious-lean"。如果 motion 是预设动作，也给出稳定的 reactionKey，例如 greet/wave/celebrate/comfort/think/surprise/anger/look-around。
+reactionKey 用简短英文语义键，例如 "curious-lean"。如果 motion 是预设动作，也给出稳定的 reactionKey，例如 dance/greet/wave/celebrate/comfort/think/surprise/anger/look-around。
 
 json 示例：
+{"text":"好呀，看我跳一段。","emotion":"happy","expressionIntensity":0.42,"motion":"dance","reactionKey":"dance"}
+或
 {"text":"我在。","emotion":"happy","expressionIntensity":0.8,"motion":"wave","reactionKey":"wave"}
 或
 {"text":"这个反应我以前没做过，不过可以试试。","emotion":"happy","expressionIntensity":0.72,"motion":"custom","reactionKey":"playful-curious","customReaction":{"headYaw":0.25,"headPitch":-0.1,"headTilt":0.35,"bodyLean":0.12,"bodyTurn":0.15,"leftArm":"chest","rightArm":"open","energy":0.65}}
