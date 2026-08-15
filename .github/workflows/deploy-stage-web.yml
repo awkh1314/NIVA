@@ -26,6 +26,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Use AvatarSample_A as web default body
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 --retry-delay 2 \
+            -o NIVA.vrm \
+            'https://raw.githubusercontent.com/hirokazuniimoto/virtual-avatar-sdk/114d4336e0ac36bf9c2297b0a93ad7604b13704b/assets/avatars/AvatarSample_A.vrm'
+          test "$(wc -c < NIVA.vrm)" -gt 20000000
+          echo "AvatarSample_A prepared: $(wc -c < NIVA.vrm) bytes"
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
