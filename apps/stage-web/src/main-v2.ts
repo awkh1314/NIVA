@@ -9,6 +9,7 @@ import type { CustomReaction, MotionName, NivaAction, SemanticExpression } from 
 type Expression = SemanticExpression
 const base = import.meta.env.BASE_URL
 const modelUrl = `${base}NIVA.vrm?v=avatar-sample-a-3`
+const DEFAULT_MOTION: MotionName = 'dance'
 
 const app = document.querySelector<HTMLDivElement>('#app')!
 app.innerHTML = `
@@ -26,7 +27,7 @@ app.innerHTML = `
   <section class="conversation">
     <div class="dialog"><div id="userLine" class="user-line" hidden></div><div class="niva-line"><b>NIVA</b><span id="speechText">我在。</span></div></div>
     <form id="composer" class="composer"><input id="messageInput" maxlength="240" autocomplete="off" placeholder="和 NIVA 说点什么…"><button>发送</button></form>
-    <div class="quick"><button data-text="你好">你好</button><button data-text="挥挥手">挥挥手</button><button data-text="我今天有点累">我有点累</button><button data-text="我成功了">我成功了</button></div>
+    <div class="quick"><button data-text="你好">你好</button><button data-text="跳舞给我看">跳舞</button><button data-text="挥挥手">挥挥手</button><button data-text="我今天有点累">我有点累</button><button data-text="我成功了">我成功了</button></div>
   </section>
 </main>`
 
@@ -61,9 +62,9 @@ const cyan = new THREE.PointLight(0x60eaff, 14, 5); cyan.position.set(1.5, 1.4, 
 
 let vrm: any = null
 let modelRoot: THREE.Object3D | null = null
-let activeEmotion: Expression = 'neutral'
-let emotionIntensity = .35
-let motion: { name: MotionName; start: number; duration: number } = { name: 'idle', start: performance.now(), duration: Infinity }
+let activeEmotion: Expression = 'happy'
+let emotionIntensity = .42
+let motion: { name: MotionName; start: number; duration: number } = { name: DEFAULT_MOTION, start: performance.now(), duration: Infinity }
 let activeCustomReaction: CustomReaction | null = null
 let lookX = 0, lookY = 0, targetLookX = 0, targetLookY = 0
 let pointerAttentionUntil = 0
@@ -148,6 +149,7 @@ function playMotion(name?: MotionName) {
   if (name !== 'custom') activeCustomReaction = null
   const duration: Partial<Record<MotionName, number>> = {
     idle: Infinity,
+    dance: Infinity,
     wave: 2200,
     greet: 1500,
     thinking: 3000,
@@ -198,6 +200,7 @@ function act(action: NivaAction) {
 }
 
 function localReply(text: string): NivaAction {
+  if (/跳舞|舞蹈|dance/i.test(text)) return { text: '好呀，看我跳一段。', emotion: 'happy', expressionIntensity: .42, motion: 'dance' }
   if (/你好|嗨|hello|hi/i.test(text)) return { text: '你好，我在。刚刚还在想你什么时候会叫我。', emotion: 'happy', motion: 'wave' }
   if (/挥|招手|wave/i.test(text)) return { text: '看到啦。', emotion: 'happy', motion: 'wave' }
   if (/累|难受|疲惫|困/.test(text)) return { text: '那就把节奏放慢一点。我陪你把眼前这件事处理完。', emotion: 'sad', motion: 'greet' }
@@ -274,12 +277,16 @@ function updateLife(now: number) {
   lookX += (targetLookX - lookX) * .075
   lookY += (targetLookY - lookY) * .075
 
+  // Short reactions temporarily interrupt the default dance. When they finish,
+  // NIVA resumes dancing automatically rather than falling back to a static idle.
   if (Number.isFinite(motion.duration) && now - motion.start >= motion.duration) {
     activeCustomReaction = null
-    motion = { name: 'idle', start: now, duration: Infinity }
-    nextAutonomy = now + 5500 + Math.random() * 5000
+    setExpression('happy', .42)
+    motion = { name: DEFAULT_MOTION, start: now, duration: Infinity }
   }
 
+  // Idle remains available as an explicit debug/user choice. Only idle can trigger
+  // autonomous micro-actions; the default dance already supplies continuous motion.
   if (motion.name === 'idle' && now > nextAutonomy && now - lastInteraction > 4000) {
     const pool: MotionName[] = ['lookAround', 'thinking', 'greet', 'happy']
     const chosen = pool[Math.floor(Math.random() * pool.length)]
@@ -336,13 +343,13 @@ async function loadVrm(url: string) {
     nextGazeShift = now + 3200
     targetLookX = 0
     targetLookY = 0
-    setExpression('neutral', .35)
-    motion = { name: 'idle', start: now, duration: Infinity }
+    setExpression('happy', .42)
+    motion = { name: DEFAULT_MOTION, start: now, duration: Infinity }
     updateLife(now)
     vrm.update(0)
     fitCamera()
     loadCard.classList.add('hidden')
-    statusText.textContent = 'ALIVE'
+    statusText.textContent = 'ALIVE · DANCE'
     nextAutonomy = performance.now() + 8500
     speakText('我在。')
     return true
