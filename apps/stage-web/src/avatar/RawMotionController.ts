@@ -14,6 +14,8 @@ type MotionState = {
   duration: number
 }
 
+type LifeState = 'idle' | 'attention' | 'listening' | 'thinking' | 'speaking' | 'backstage'
+
 const TRACKED: BoneName[] = [
   'hips','spine','chest','upperChest','neck','head',
   'leftUpperArm','leftLowerArm','leftHand',
@@ -226,11 +228,11 @@ export class RawMotionController {
     this.aim(lower, hand, this.tmpLowerWorld, strength)
   }
 
-  private relaxedArms() {
+  private relaxedArms(leftBias = 0, rightBias = 0) {
     const l = this.sideSign.left
     const r = this.sideSign.right
-    this.arm('left', new THREE.Vector3(l * .14, -.989, .045), new THREE.Vector3(l * .04, -.996, .07))
-    this.arm('right', new THREE.Vector3(r * .14, -.989, .045), new THREE.Vector3(r * .04, -.996, .07))
+    this.arm('left', new THREE.Vector3(l * (.14 + leftBias), -.989, .045), new THREE.Vector3(l * .04, -.996, .07))
+    this.arm('right', new THREE.Vector3(r * (.14 + rightBias), -.989, .045), new THREE.Vector3(r * .04, -.996, .07))
   }
 
   private applyArmPose(side: 'left' | 'right', pose: ArmPose | undefined, strength: number) {
@@ -277,25 +279,99 @@ export class RawMotionController {
     this.applyArmPose('right', custom.rightArm, strength)
   }
 
-  update(now: number, motion: MotionState, lookX: number, lookY: number, custom?: CustomReaction | null) {
+  update(
+    now: number,
+    motion: MotionState,
+    lookX: number,
+    lookY: number,
+    custom?: CustomReaction | null,
+    lifeState: LifeState = 'idle',
+  ) {
     if (!this.vrm?.humanoid) return
     this.reset()
 
     const t = now / 1000
-    const breath = Math.sin(t * 1.72)
-    const sway = Math.sin(t * .55)
+    const breath = Math.sin(t * 1.58)
+    const sway = Math.sin(t * .46)
+    const weight = Math.sin(t * .19 + .8)
     const micro = Math.sin(t * .25)
+    const talk = Math.sin(t * 2.75)
+    const talkAccent = Math.sin(t * 5.1 + .6)
     const finite = Number.isFinite(motion.duration)
     const p = finite ? THREE.MathUtils.clamp((now - motion.start) / motion.duration, 0, 1) : .62
     const e = finite ? Math.sin(Math.PI * p) : .9
 
-    // Natural baseline: small breathing/weight shift, eyes/head follow attention, arms down.
-    this.rotate('hips', 0, sway * .012, -sway * .010)
-    this.rotate('spine', breath * .008, sway * .007, micro * .006)
-    this.rotate('chest', breath * .012, -sway * .008, sway * .010)
-    this.rotate('upperChest', breath * .005, -sway * .004, sway * .005)
-    this.rotate('head', -lookY * .10 + breath * .004, lookX * .16 + sway * .010, -sway * .010)
-    this.relaxedArms()
+    // The life state owns only the quiet baseline. Explicit motions below can still
+    // take over, but when they finish NIVA keeps a distinct listening/thinking/speaking
+    // posture instead of snapping back to the same generic idle pose.
+    let swayScale = 1
+    let forwardLean = 0
+    let stateHeadPitch = 0
+    let stateHeadYaw = 0
+    let stateHeadTilt = 0
+    let stateTurn = 0
+    let armBiasL = 0
+    let armBiasR = 0
+
+    switch (lifeState) {
+      case 'attention':
+        swayScale = .55
+        forwardLean = -.010
+        stateHeadPitch = -.010
+        break
+      case 'listening':
+        swayScale = .28
+        forwardLean = -.016
+        stateHeadPitch = -.014
+        break
+      case 'thinking':
+        swayScale = .34
+        forwardLean = .008
+        stateHeadPitch = .035
+        stateHeadYaw = -.055 + micro * .018
+        stateHeadTilt = -.035
+        stateTurn = -.018
+        armBiasR = .012
+        break
+      case 'speaking':
+        swayScale = .48
+        forwardLean = -.008 + talkAccent * .003
+        stateHeadPitch = talk * .010 - .006
+        stateHeadYaw = talkAccent * .018
+        stateHeadTilt = -talk * .008
+        stateTurn = talk * .008
+        armBiasL = .006 + Math.max(0, talk) * .010
+        armBiasR = .006 + Math.max(0, -talk) * .010
+        break
+      case 'backstage':
+        swayScale = .18
+        break
+      case 'idle':
+      default:
+        break
+    }
+
+    const bodySway = sway * swayScale
+    const weightShift = weight * .012 * swayScale
+    this.rotate('hips', forwardLean * .10, bodySway * .010 + stateTurn, -weightShift)
+    this.rotate('spine', forwardLean * .34 + breath * .007, bodySway * .006 + stateTurn * .35, micro * .005 * swayScale)
+    this.rotate('chest', forwardLean * .55 + breath * .011, -bodySway * .007 + stateTurn * .45, bodySway * .008)
+    this.rotate('upperChest', forwardLean * .28 + breath * .005, -bodySway * .003, bodySway * .004)
+    this.rotate(
+      'head',
+      stateHeadPitch - lookY * (lifeState === 'listening' ? .055 : .09) + breath * .003,
+      stateHeadYaw + lookX * (lifeState === 'listening' ? .095 : .15) + bodySway * .008,
+      stateHeadTilt - bodySway * .008,
+    )
+    this.relaxedArms(armBiasL, armBiasR)
+
+    // Tiny alternating leg load makes a long idle feel grounded without looking like
+    // a dance. Listening/backstage reduce it almost to zero so deliberate states read clearly.
+    const legScale = lifeState === 'idle' || lifeState === 'attention' ? 1 : lifeState === 'speaking' ? .55 : .2
+    this.rotate('leftUpperLeg', 0, 0, weightShift * .22 * legScale)
+    this.rotate('rightUpperLeg', 0, 0, -weightShift * .22 * legScale)
+    this.rotate('leftLowerLeg', Math.max(0, weight) * .006 * legScale, 0, 0)
+    this.rotate('rightLowerLeg', Math.max(0, -weight) * .006 * legScale, 0, 0)
 
     const ls = this.sideSign.left
     const rs = this.sideSign.right
