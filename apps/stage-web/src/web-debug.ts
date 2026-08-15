@@ -54,6 +54,7 @@ const emotions: Array<{ value: SemanticExpression; label: string }> = [
 ]
 
 const motions: MotionProfile[] = [
+  { value: 'dance', label: '完整舞蹈', emotion: 'happy', intensity: .42 },
   { value: 'idle', label: '自然站立', emotion: 'neutral', intensity: .25 },
   { value: 'greet', label: '点头回应', emotion: 'neutral', intensity: .25 },
   { value: 'wave', label: '右手挥手', emotion: 'happy', intensity: .42 },
@@ -205,13 +206,13 @@ async function installWebDebugPanel() {
     <div class="web-debug-scroll">
       <section class="web-debug-section web-debug-overview">
         <div class="web-debug-kpi"><span>人物</span><b id="webDebugReady">加载中</b></div>
-        <div class="web-debug-kpi"><span>表情</span><b id="webDebugEmotionState">neutral</b></div>
-        <div class="web-debug-kpi"><span>动作</span><b id="webDebugMotionState">idle</b></div>
+        <div class="web-debug-kpi"><span>表情</span><b id="webDebugEmotionState">happy</b></div>
+        <div class="web-debug-kpi"><span>动作</span><b id="webDebugMotionState">dance</b></div>
       </section>
 
       <section class="web-debug-section">
-        <div class="web-debug-section-head"><h3>表情</h3><output id="webDebugIntensityValue">35%</output></div>
-        <input class="web-debug-range" id="webDebugIntensity" type="range" min="0" max="1" step="0.05" value="0.35" />
+        <div class="web-debug-section-head"><h3>表情</h3><output id="webDebugIntensityValue">42%</output></div>
+        <input class="web-debug-range" id="webDebugIntensity" type="range" min="0" max="1" step="0.05" value="0.42" />
         <div class="web-debug-chips" id="webDebugEmotions">
           ${chipButtons(emotions.map(({ value, label }) => ({ value, label })), 'data-emotion')}
         </div>
@@ -248,7 +249,7 @@ async function installWebDebugPanel() {
         </div>
         <div class="web-debug-inline-actions">
           <button type="button" id="webDebugFront">恢复正面</button>
-          <button type="button" id="webDebugReset">恢复默认状态</button>
+          <button type="button" id="webDebugReset">恢复默认舞蹈</button>
         </div>
       </section>
 
@@ -275,9 +276,9 @@ async function installWebDebugPanel() {
 
   document.querySelector('.shell')?.appendChild(panel)
 
-  let intensity = .35
-  let activeEmotion: SemanticExpression = 'neutral'
-  let activeMotion: MotionName = 'idle'
+  let intensity = .42
+  let activeEmotion: SemanticExpression = 'happy'
+  let activeMotion: MotionName = 'dance'
 
   const live = panel.querySelector<HTMLElement>('#webDebugLive')!
   const ready = panel.querySelector<HTMLElement>('#webDebugReady')!
@@ -375,12 +376,12 @@ async function installWebDebugPanel() {
   })
 
   panel.querySelector<HTMLButtonElement>('#webDebugReset')!.addEventListener('click', () => {
-    activeEmotion = 'neutral'
-    activeMotion = 'idle'
-    setIntensity(.25)
+    activeEmotion = 'happy'
+    activeMotion = 'dance'
+    setIntensity(.42)
     voice.checked = true
     niva.setVoiceOutput(true)
-    niva.act({ emotion: 'neutral', expressionIntensity: .25, motion: 'idle', lookTarget: { x: 0, y: 0 } })
+    niva.act({ emotion: 'happy', expressionIntensity: .42, motion: 'dance', lookTarget: { x: 0, y: 0 } })
     document.querySelector<HTMLElement>('#stage')?.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
     updateSelection()
   })
@@ -405,10 +406,10 @@ async function installWebDebugPanel() {
         console.warn(error)
         note.textContent = `已载入 ${file.name}，但浏览器未能持久保存；本次会话仍可测试。`
       }
-      activeEmotion = 'neutral'
-      activeMotion = 'idle'
-      setIntensity(.25)
-      niva.act({ emotion: 'neutral', expressionIntensity: .25, motion: 'idle' })
+      activeEmotion = 'happy'
+      activeMotion = 'dance'
+      setIntensity(.42)
+      niva.act({ emotion: 'happy', expressionIntensity: .42, motion: 'dance' })
       updateSelection()
     } finally {
       window.setTimeout(() => URL.revokeObjectURL(url), 5000)
@@ -450,7 +451,11 @@ async function installWebDebugPanel() {
         }
         const info = niva.modelInfo
         note.textContent = `已自动恢复 ${stored.name} · VRM${info.version}。这是当前调试模型。`
-        niva.act({ emotion: 'neutral', expressionIntensity: .25, motion: 'idle' })
+        activeEmotion = 'happy'
+        activeMotion = 'dance'
+        setIntensity(.42)
+        niva.act({ emotion: 'happy', expressionIntensity: .42, motion: 'dance' })
+        updateSelection()
       } finally {
         window.setTimeout(() => URL.revokeObjectURL(url), 5000)
       }
