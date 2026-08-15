@@ -9,6 +9,7 @@ export type SemanticExpression =
 
 export type MotionName =
   | 'idle'
+  | 'dance'
   | 'wave'
   | 'greet'
   | 'thinking'
