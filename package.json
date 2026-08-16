@@ -1,0 +1,13 @@
+{
+  "name": "niva-digital-spirit",
+  "version": "0.6.0",
+  "private": true,
+  "description": "NIVA 2D/2.5D Brain MVP",
+  "scripts": {
+    "start": "node server/server.js",
+    "test": "node --test server/server.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

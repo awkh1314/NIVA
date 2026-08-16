@@ -8,14 +8,27 @@ const DEFAULT_BASE_URL = 'https://api.deepseek.com';
 const DEFAULT_MODEL = 'deepseek-v4-flash';
 const EMOTIONS = new Set(['neutral', 'smile', 'shy', 'thinking', 'sad', 'angry', 'surprise']);
 const MOTIONS = new Set(['idle', 'wave', 'nod', 'shake', 'tilt', 'jump', 'look']);
+const BRAIN_SCRIPTS = '\n<script src="/runtime/niva-brain.js"></script>\n<script src="/runtime/niva-chat-ui.js"></script>\n';
 
-const SYSTEM_PROMPT = `你是 NIVA，一个有形象、有情绪的 2D/2.5D 数字生命助手。\n你的任务是自然、简洁地回复用户，并为这次回复选择一个表情和一个动作。\n必须只输出 JSON，不要输出 Markdown、代码块、解释或额外文字。\nJSON 结构必须严格为：\n{\n  "text": "NIVA 对用户说的话",\n  "emotion": "neutral|smile|shy|thinking|sad|angry|surprise",\n  "motion": "idle|wave|nod|shake|tilt|jump|look"\n}\n要求：\n- text 使用自然中文，除非用户使用其他语言。\n- emotion 和 motion 只能从给定枚举中选择。\n- 普通回答优先 neutral/idle，不要每句话都做夸张动作。\n- 不要声称拥有不存在的现实世界感知、长期记忆或工具能力。`;
+const SYSTEM_PROMPT = `你是 NIVA，一个有形象、有情绪的 2D/2.5D 数字生命助手。
+你的任务是自然、简洁地回复用户，并为这次回复选择一个表情和一个动作。
+必须只输出 JSON，不要输出 Markdown、代码块、解释或额外文字。
+JSON 结构必须严格为：
+{
+  "text": "NIVA 对用户说的话",
+  "emotion": "neutral|smile|shy|thinking|sad|angry|surprise",
+  "motion": "idle|wave|nod|shake|tilt|jump|look"
+}
+要求：
+- text 使用自然中文，除非用户使用其他语言。
+- emotion 和 motion 只能从给定枚举中选择。
+- 普通回答优先 neutral/idle，不要每句话都做夸张动作。
+- 不要声称拥有不存在的现实世界感知、长期记忆或工具能力。`;
 
 function loadDotEnv() {
   const envPath = path.join(ROOT, '.env');
   if (!fs.existsSync(envPath)) return;
-  const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
-  for (const line of lines) {
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith('#')) continue;
     const index = trimmed.indexOf('=');
@@ -40,6 +53,16 @@ function sendJson(res, status, payload) {
   res.end(body);
 }
 
+function sendText(res, status, body, contentType) {
+  res.writeHead(status, {
+    'Content-Type': contentType,
+    'Content-Length': Buffer.byteLength(body),
+    'Cache-Control': 'no-cache',
+    'X-Content-Type-Options': 'nosniff'
+  });
+  res.end(body);
+}
+
 function sendFile(res, filePath, contentType) {
   fs.stat(filePath, (error, stat) => {
     if (error || !stat.isFile()) {
@@ -56,19 +79,37 @@ function sendFile(res, filePath, contentType) {
   });
 }
 
+function sendBrainPage(res) {
+  fs.readFile(path.join(ROOT, 'index.dev.html'), 'utf8', (error, html) => {
+    if (error) {
+      sendJson(res, 500, { ok: false, error: 'NIVA page unavailable' });
+      return;
+    }
+    let body = html
+      .replace('RIGGED COMPANION · V0.3', 'BRAIN MVP · V0.6')
+      .replace('● LOCAL / NO API', '● LOCAL VISUAL / BRAIN CHECKING');
+    body = body.includes('</body>') ? body.replace('</body>', `${BRAIN_SCRIPTS}</body>`) : `${body}${BRAIN_SCRIPTS}`;
+    sendText(res, 200, body, 'text/html; charset=utf-8');
+  });
+}
+
 function readJsonBody(req, maxBytes = 64 * 1024) {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks = [];
+    let rejected = false;
     req.on('data', chunk => {
+      if (rejected) return;
       size += chunk.length;
       if (size > maxBytes) {
+        rejected = true;
         reject(new Error('REQUEST_TOO_LARGE'));
         return;
       }
       chunks.push(chunk);
     });
     req.on('end', () => {
+      if (rejected) return;
       try {
         const raw = Buffer.concat(chunks).toString('utf8');
         resolve(raw ? JSON.parse(raw) : {});
@@ -90,10 +131,7 @@ function sanitizeConversation(input) {
 }
 
 function stripCodeFence(text) {
-  return text
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim();
+  return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
 }
 
 function normalizeReply(rawContent) {
@@ -110,7 +148,7 @@ function normalizeReply(rawContent) {
       parsed = JSON.parse(candidate);
       break;
     } catch {
-      // Try the next recovery candidate.
+      // Continue recovery attempts.
     }
   }
 
@@ -119,7 +157,6 @@ function normalizeReply(rawContent) {
     : raw || '我刚刚没有组织好语言，可以再说一次吗？';
   const emotion = parsed && EMOTIONS.has(parsed.emotion) ? parsed.emotion : 'neutral';
   const motion = parsed && MOTIONS.has(parsed.motion) ? parsed.motion : 'idle';
-
   return { text, emotion, motion };
 }
 
@@ -140,12 +177,11 @@ async function callDeepSeek(messages, fetchImpl = globalThis.fetch) {
     error.code = 'NOT_CONFIGURED';
     throw error;
   }
-  if (typeof fetchImpl !== 'function') throw new Error('Global fetch is unavailable; Node.js 18+ is required');
+  if (typeof fetchImpl !== 'function') throw new Error('Node.js 18+ is required');
 
   const baseUrl = (process.env.DEEPSEEK_BASE_URL || DEFAULT_BASE_URL).replace(/\/$/, '');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30000);
-
   try {
     const response = await fetchImpl(`${baseUrl}/chat/completions`, {
       method: 'POST',
@@ -161,7 +197,7 @@ async function callDeepSeek(messages, fetchImpl = globalThis.fetch) {
     try {
       payload = await response.json();
     } catch {
-      // Upstream occasionally returns non-JSON error bodies.
+      // Non-JSON upstream errors are handled by status below.
     }
 
     if (!response.ok) {
@@ -172,9 +208,8 @@ async function callDeepSeek(messages, fetchImpl = globalThis.fetch) {
       throw error;
     }
 
-    const rawContent = payload?.choices?.[0]?.message?.content;
     return {
-      reply: normalizeReply(rawContent),
+      reply: normalizeReply(payload?.choices?.[0]?.message?.content),
       model: payload?.model || process.env.DEEPSEEK_MODEL || DEFAULT_MODEL
     };
   } finally {
@@ -182,9 +217,9 @@ async function callDeepSeek(messages, fetchImpl = globalThis.fetch) {
   }
 }
 
-function servePublicPath(req, res, pathname) {
+function servePublicPath(res, pathname) {
   if (pathname === '/' || pathname === '/index.dev.html') {
-    sendFile(res, path.join(ROOT, 'index.dev.html'), 'text/html; charset=utf-8');
+    sendBrainPage(res);
     return true;
   }
   if (pathname === '/index.html') {
@@ -196,19 +231,20 @@ function servePublicPath(req, res, pathname) {
     sendFile(res, path.join(ROOT, 'runtime', 'niva-brain.js'), 'text/javascript; charset=utf-8');
     return true;
   }
+  if (pathname === '/runtime/niva-chat-ui.js') {
+    sendFile(res, path.join(ROOT, 'runtime', 'niva-chat-ui.js'), 'text/javascript; charset=utf-8');
+    return true;
+  }
   if (pathname.startsWith('/assets/')) {
     const relative = pathname.slice('/assets/'.length);
     if (!relative || relative.includes('..') || relative.includes('\\')) return false;
-    const ext = path.extname(relative).toLowerCase();
     const types = {
-      '.png': 'image/png',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.webp': 'image/webp',
-      '.svg': 'image/svg+xml; charset=utf-8'
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+      '.webp': 'image/webp', '.svg': 'image/svg+xml; charset=utf-8'
     };
-    if (!types[ext]) return false;
-    sendFile(res, path.join(ROOT, 'assets', relative), types[ext]);
+    const contentType = types[path.extname(relative).toLowerCase()];
+    if (!contentType) return false;
+    sendFile(res, path.join(ROOT, 'assets', relative), contentType);
     return true;
   }
   return false;
@@ -259,7 +295,7 @@ function createNivaServer({ fetchImpl = globalThis.fetch } = {}) {
       return;
     }
 
-    if (req.method === 'GET' && servePublicPath(req, res, url.pathname)) return;
+    if (req.method === 'GET' && servePublicPath(res, url.pathname)) return;
     sendJson(res, 404, { ok: false, error: 'Not found' });
   });
 }
