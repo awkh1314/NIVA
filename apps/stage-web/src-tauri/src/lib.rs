@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
+use std::{env, fs, path::PathBuf, time::{SystemTime, UNIX_EPOCH}};
 use tauri::Manager;
 
 const MAX_HISTORY_MESSAGES: usize = 24;
@@ -152,6 +152,21 @@ fn save_config(app: &tauri::AppHandle, config: &AppConfig) -> Result<(), String>
     fs::write(config_path(app)?, raw).map_err(|e| e.to_string())
 }
 
+fn configured_deepseek_api_key(config: &AppConfig) -> String {
+    // Development keys should never be committed to the repository or compiled into
+    // the Windows binary. Prefer a machine-local environment variable, then fall back
+    // to the existing local settings value for BYOK development builds.
+    for name in ["NIVA_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY"] {
+        if let Ok(value) = env::var(name) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+    config.deepseek_api_key.trim().to_string()
+}
+
 fn load_history(app: &tauri::AppHandle) -> Vec<HistoryMessage> {
     let Ok(path) = history_path(app) else { return Vec::new(); };
     if !path.exists() { return Vec::new(); }
@@ -260,9 +275,9 @@ fn get_settings(app: tauri::AppHandle) -> Result<SettingsView, String> {
     Ok(SettingsView {
         interaction_mode: if config.interaction_mode == "text" { "text".into() } else { "voice".into() },
         deepseek_model: normalize_model(&config.deepseek_model),
-        active_model: config.active_model,
+        active_model: config.active_model.clone(),
         voice_output: config.voice_output,
-        has_api_key: !config.deepseek_api_key.trim().is_empty(),
+        has_api_key: !configured_deepseek_api_key(&config).is_empty(),
     })
 }
 
@@ -313,8 +328,9 @@ fn clear_long_term_memory(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn deepseek_chat(app: tauri::AppHandle, message: String) -> Result<NivaAction, String> {
     let config = load_config(&app)?;
-    if config.deepseek_api_key.trim().is_empty() {
-        return Err("尚未配置 DeepSeek API Key。双击 NIVA 打开后台进行配置。".to_string());
+    let api_key = configured_deepseek_api_key(&config);
+    if api_key.is_empty() {
+        return Err("尚未配置 DeepSeek API Key。请设置 NIVA_DEEPSEEK_API_KEY，或双击 NIVA 在开发者设置中配置。".to_string());
     }
 
     let user_text = message.trim().to_string();
@@ -389,7 +405,7 @@ emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。不要每次�
 
     let response = reqwest::Client::new()
         .post("https://api.deepseek.com/chat/completions")
-        .bearer_auth(&config.deepseek_api_key)
+        .bearer_auth(&api_key)
         .json(&payload)
         .send()
         .await
