@@ -1,13 +1,9 @@
 name: Deploy NIVA VRM Stage
 
+# Source privacy and public preview are now separated deliberately.
+# This workflow no longer runs on every push; publish the web stage only when
+# explicitly requested from GitHub Actions.
 on:
-  push:
-    branches:
-      - feat/stage-web-vrm
-    paths:
-      - 'apps/stage-web/**'
-      - 'NIVA.vrm'
-      - '.github/workflows/deploy-stage-web.yml'
   workflow_dispatch:
 
 permissions:
