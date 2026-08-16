@@ -1,4 +1,7 @@
+import { defaultWindowIcon } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
+import { Menu } from '@tauri-apps/api/menu'
+import { TrayIcon } from '@tauri-apps/api/tray'
 import { getCurrentWindow, currentMonitor, PhysicalPosition } from '@tauri-apps/api/window'
 import type { DesktopSettings, InteractionMode, LongTermMemorySnapshot, NivaAction } from './core/types'
 
@@ -32,8 +35,45 @@ export interface SettingsSaveInput {
 }
 
 const DESKTOP_POSITION_KEY = 'niva.desktop.position.v1'
+let trayIcon: TrayIcon | null = null
+let voiceFallbackNoticeShown = false
 
 export const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+
+function showDesktopNotice(text: string): void {
+  const shell = document.querySelector<HTMLElement>('.shell')
+  if (!shell) return
+  document.querySelector('#nivaDesktopNotice')?.remove()
+  const notice = document.createElement('div')
+  notice.id = 'nivaDesktopNotice'
+  notice.textContent = text
+  Object.assign(notice.style, {
+    position: 'absolute',
+    left: '50%',
+    bottom: '86px',
+    transform: 'translateX(-50%)',
+    maxWidth: '82%',
+    padding: '9px 12px',
+    borderRadius: '12px',
+    background: 'rgba(15, 18, 30, .88)',
+    color: 'rgba(255,255,255,.92)',
+    fontSize: '12px',
+    lineHeight: '1.45',
+    textAlign: 'center',
+    boxShadow: '0 8px 30px rgba(0,0,0,.22)',
+    backdropFilter: 'blur(12px)',
+    zIndex: '9999',
+    pointerEvents: 'none',
+  })
+  shell.appendChild(notice)
+  window.setTimeout(() => notice.remove(), 5200)
+}
+
+function notifyVoiceFallback(text: string): void {
+  if (voiceFallbackNoticeShown) return
+  voiceFallbackNoticeShown = true
+  showDesktopNotice(text)
+}
 
 function loadSavedWindowPosition(): SavedWindowPosition | null {
   try {
@@ -55,6 +95,51 @@ function saveWindowPosition(position: SavedWindowPosition): void {
     }))
   } catch {
     // Position memory is optional; a storage failure should never block NIVA startup.
+  }
+}
+
+async function showMainWindow(): Promise<void> {
+  const win = getCurrentWindow()
+  await win.show()
+  await win.setFocus()
+}
+
+async function hideMainWindow(): Promise<void> {
+  await getCurrentWindow().hide()
+}
+
+async function setupDesktopTray(): Promise<void> {
+  if (!isTauri() || trayIcon) return
+  try {
+    const menu = await Menu.new({
+      items: [
+        {
+          id: 'show-niva',
+          text: '显示 NIVA',
+          action: () => { void showMainWindow() },
+        },
+        {
+          id: 'hide-niva',
+          text: '隐藏 NIVA',
+          action: () => { void hideMainWindow() },
+        },
+      ],
+    })
+    const icon = await defaultWindowIcon().catch(() => null)
+    trayIcon = await TrayIcon.new({
+      id: 'niva-main-tray',
+      tooltip: 'NIVA · 数字生命',
+      icon: icon ?? undefined,
+      menu,
+      showMenuOnLeftClick: false,
+      action: (event) => {
+        if (event.type === 'Click' && event.button === 'Left' && event.buttonState === 'Up') {
+          void showMainWindow()
+        }
+      },
+    })
+  } catch (error) {
+    console.warn('[NIVA desktop] tray setup failed', error)
   }
 }
 
@@ -109,6 +194,8 @@ export async function setupDesktopWindow(): Promise<void> {
         })
       }, { capture: true })
     }
+
+    await setupDesktopTray()
   } catch (error) {
     console.warn('[NIVA desktop] window setup failed', error)
   }
@@ -209,6 +296,7 @@ const webSpeechProvider: VoiceInputProvider = {
     const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition
     if (!Ctor) {
       onStatus?.('text')
+      notifyVoiceFallback('这台电脑暂时无法使用语音识别，已经自动切换到文字输入。')
       return () => undefined
     }
 
@@ -266,7 +354,11 @@ const webSpeechProvider: VoiceInputProvider = {
       listening = false
       const fatal = event?.error === 'not-allowed' || event?.error === 'service-not-allowed'
       onStatus?.(fatal ? 'text' : 'offline')
-      if (!fatal) scheduleRestart(520)
+      if (fatal) {
+        notifyVoiceFallback('麦克风权限不可用，已经自动切换到文字输入。你仍然可以正常使用 NIVA。')
+      } else {
+        scheduleRestart(520)
+      }
     }
 
     recognition.onend = () => {
