@@ -20,14 +20,15 @@ $logicalProcessors = [Math]::Max(1, [Environment]::ProcessorCount)
 $startedAt = Get-Date
 $deadline = $startedAt.AddMinutes($Minutes)
 $lastSampleAt = $startedAt
-$lastCpu = [double]($process.CPU ?? 0)
+$lastCpu = [double]$process.CPU
+if ($null -eq $process.CPU) { $lastCpu = 0.0 }
 $initialWorkingSetMb = [Math]::Round($process.WorkingSet64 / 1MB, 2)
 $peakWorkingSetMb = $initialWorkingSetMb
 $peakPrivateMb = [Math]::Round($process.PrivateMemorySize64 / 1MB, 2)
 $sampleCount = 0
 $cpuTotal = 0.0
 
-Write-Host "NIVA MVP soak test" -ForegroundColor Cyan
+Write-Host 'NIVA MVP soak test' -ForegroundColor Cyan
 Write-Host "PID: $($process.Id)"
 Write-Host "Duration: $Minutes minutes"
 Write-Host "Interval: $IntervalSeconds seconds"
@@ -46,7 +47,8 @@ while ((Get-Date) -lt $deadline) {
         exit 2
     }
 
-    $currentCpu = [double]($current.CPU ?? 0)
+    $currentCpu = [double]$current.CPU
+    if ($null -eq $current.CPU) { $currentCpu = $lastCpu }
     $elapsedSeconds = [Math]::Max(0.1, ($now - $lastSampleAt).TotalSeconds)
     $cpuDelta = [Math]::Max(0, $currentCpu - $lastCpu)
     $cpuPercent = [Math]::Round(($cpuDelta / $elapsedSeconds / $logicalProcessors) * 100, 2)
@@ -59,8 +61,7 @@ while ((Get-Date) -lt $deadline) {
     $sampleCount += 1
     $cpuTotal += $cpuPercent
 
-    $line = '{0},{1},{2},{3},{4},{5},{6}' -f \
-        $now.ToString('s'), $elapsedMin, $cpuPercent, $workingSetMb, $privateMb, $current.Handles, $current.Threads.Count
+    $line = '{0},{1},{2},{3},{4},{5},{6}' -f $now.ToString('s'), $elapsedMin, $cpuPercent, $workingSetMb, $privateMb, $current.Handles, $current.Threads.Count
     Add-Content -Path $Output -Value $line -Encoding UTF8
 
     Write-Host ("[{0,6} min] CPU {1,6}% | WS {2,8} MB | Private {3,8} MB" -f $elapsedMin, $cpuPercent, $workingSetMb, $privateMb)
@@ -69,8 +70,14 @@ while ((Get-Date) -lt $deadline) {
     $lastSampleAt = $now
 }
 
-$averageCpu = if ($sampleCount -gt 0) { [Math]::Round($cpuTotal / $sampleCount, 2) } else { 0 }
-$growthRatio = if ($initialWorkingSetMb -gt 0) { [Math]::Round($peakWorkingSetMb / $initialWorkingSetMb, 2) } else { 0 }
+$averageCpu = 0.0
+if ($sampleCount -gt 0) {
+    $averageCpu = [Math]::Round($cpuTotal / $sampleCount, 2)
+}
+$growthRatio = 0.0
+if ($initialWorkingSetMb -gt 0) {
+    $growthRatio = [Math]::Round($peakWorkingSetMb / $initialWorkingSetMb, 2)
+}
 
 Write-Host ''
 Write-Host 'PASS: NIVA remained alive for the requested soak duration.' -ForegroundColor Green
