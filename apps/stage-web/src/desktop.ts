@@ -1,8 +1,9 @@
 import { defaultWindowIcon } from '@tauri-apps/api/app'
 import { invoke } from '@tauri-apps/api/core'
-import { Menu } from '@tauri-apps/api/menu'
+import { CheckMenuItem, Menu } from '@tauri-apps/api/menu'
 import { TrayIcon } from '@tauri-apps/api/tray'
 import { getCurrentWindow, currentMonitor, PhysicalPosition } from '@tauri-apps/api/window'
+import { disable as disableAutostart, enable as enableAutostart, isEnabled as isAutostartEnabled } from '@tauri-apps/plugin-autostart'
 import type { DesktopSettings, InteractionMode, LongTermMemorySnapshot, NivaAction } from './core/types'
 
 type SpeechRecognitionCtor = new () => {
@@ -111,6 +112,25 @@ async function hideMainWindow(): Promise<void> {
 async function setupDesktopTray(): Promise<void> {
   if (!isTauri() || trayIcon) return
   try {
+    const autostartItem = await CheckMenuItem.new({
+      id: 'autostart-niva',
+      text: '开机自动启动',
+      checked: await isAutostartEnabled().catch(() => false),
+      action: async () => {
+        try {
+          const currentlyEnabled = await isAutostartEnabled()
+          if (currentlyEnabled) await disableAutostart()
+          else await enableAutostart()
+          const next = !currentlyEnabled
+          await autostartItem.setChecked(next)
+          showDesktopNotice(next ? '已开启开机自动启动。' : '已关闭开机自动启动。')
+        } catch (error) {
+          console.warn('[NIVA desktop] autostart toggle failed', error)
+          showDesktopNotice('开机启动设置失败，请稍后重试。')
+        }
+      },
+    })
+
     const menu = await Menu.new({
       items: [
         {
@@ -122,6 +142,12 @@ async function setupDesktopTray(): Promise<void> {
           id: 'hide-niva',
           text: '隐藏 NIVA',
           action: () => { void hideMainWindow() },
+        },
+        autostartItem,
+        {
+          id: 'exit-niva',
+          text: '退出 NIVA',
+          action: () => { void invoke('quit_app') },
         },
       ],
     })
@@ -156,8 +182,6 @@ export async function setupDesktopWindow(): Promise<void> {
 
     if (saved) {
       await win.setPosition(new PhysicalPosition(Math.round(saved.x), Math.round(saved.y)))
-      // If a monitor was unplugged and the saved point is no longer reachable,
-      // fall back to the bottom-right of the monitor NIVA started on.
       const restoredMonitor = await currentMonitor()
       if (!restoredMonitor && initialMonitor) {
         const area = initialMonitor.workArea
@@ -180,8 +204,6 @@ export async function setupDesktopWindow(): Promise<void> {
       saveWindowPosition({ x: payload.x, y: payload.y })
     })
 
-    // Left-drag remains reserved for rotating the VRM body. Right-drag moves the
-    // entire desktop companion window, so the two interactions never fight.
     const stage = document.querySelector<HTMLElement>('#stage')
     if (stage) {
       stage.addEventListener('contextmenu', (event) => event.preventDefault())
@@ -266,10 +288,10 @@ export function installTextModeToggle(): void {
   closeButton.className = 'desktop-control desktop-close'
   closeButton.type = 'button'
   closeButton.textContent = '×'
-  closeButton.title = '退出 NIVA'
+  closeButton.title = '隐藏 NIVA（可从托盘恢复）'
   closeButton.addEventListener('click', async (event) => {
     event.stopPropagation()
-    await getCurrentWindow().close()
+    await hideMainWindow()
   })
   topbar.appendChild(closeButton)
 
@@ -366,8 +388,6 @@ const webSpeechProvider: VoiceInputProvider = {
       scheduleRestart()
     }
 
-    // WebView speech recognition can hear NIVA's own TTS. While NIVA is speaking,
-    // actively stop recognition and wait briefly after playback before listening again.
     guardTimer = window.setInterval(() => {
       if (stopped) return
       if (speechOutputActive()) {
