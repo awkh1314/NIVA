@@ -44,6 +44,35 @@ jobs:
         working-directory: apps/stage-web
         run: npm run tauri build -- --bundles nsis
 
+      - name: Smoke test launch and single instance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = (Resolve-Path 'apps/stage-web/src-tauri/target/release/niva.exe').Path
+          Get-Process -Name 'niva' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          try {
+            $first = Start-Process -FilePath $exe -PassThru
+            Start-Sleep -Seconds 8
+            if (-not (Get-Process -Id $first.Id -ErrorAction SilentlyContinue)) {
+              throw 'NIVA exited during the initial launch smoke test.'
+            }
+
+            $second = Start-Process -FilePath $exe -PassThru
+            Start-Sleep -Seconds 4
+            $running = @(Get-Process -Name 'niva' -ErrorAction SilentlyContinue)
+            if ($running.Count -ne 1) {
+              throw "Single-instance smoke test failed: expected 1 NIVA process, found $($running.Count)."
+            }
+            if ($running[0].Id -ne $first.Id) {
+              throw "Single-instance smoke test failed: the original NIVA process was replaced."
+            }
+
+            Write-Host "NIVA launch/single-instance smoke test passed. PID=$($first.Id)"
+          }
+          finally {
+            Get-Process -Name 'niva' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          }
+
       - name: Upload Windows EXE
         uses: actions/upload-artifact@v4
         with:
