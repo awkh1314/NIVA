@@ -18,11 +18,7 @@ try {
         Authorization = "Bearer $key"
         Accept = 'application/json'
     }
-    $balance = Invoke-RestMethod \
-        -Method Get \
-        -Uri 'https://api.deepseek.com/user/balance' \
-        -Headers $headers \
-        -TimeoutSec 20
+    $balance = Invoke-RestMethod -Method Get -Uri 'https://api.deepseek.com/user/balance' -Headers $headers -TimeoutSec 20
 
     [Environment]::SetEnvironmentVariable('NIVA_DEEPSEEK_API_KEY', $key, 'User')
 
