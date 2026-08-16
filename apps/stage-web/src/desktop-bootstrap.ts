@@ -34,6 +34,7 @@ type NivaRuntime = {
 
 type ModelEntry = { id: string; name: string; local?: boolean }
 type StoredModel = { id: string; name: string; blob: Blob; updatedAt: number }
+type HealthKind = 'model' | 'voice' | 'network' | 'storage'
 
 const BASE = import.meta.env.BASE_URL
 const LEARNED_KEY = 'niva.learned-reactions.v1'
@@ -113,7 +114,11 @@ function loadLearned(): Record<string, CustomReaction> {
 }
 
 function saveLearned(map: Record<string, CustomReaction>) {
-  localStorage.setItem(LEARNED_KEY, JSON.stringify(map))
+  try {
+    localStorage.setItem(LEARNED_KEY, JSON.stringify(map))
+  } catch {
+    // Learned reactions are optional. A storage failure must not break interaction.
+  }
 }
 
 function learnedCount(): number {
@@ -342,13 +347,17 @@ async function bootDesktop() {
   if (!niva) return
 
   installTextModeToggle()
-  let settings = await getSettings().catch((): DesktopSettings => ({
-    interactionMode: 'voice',
-    deepseekModel: 'deepseek-v4-flash',
-    activeModel: 'NIVA.vrm',
-    voiceOutput: true,
-    hasApiKey: false,
-  }))
+  let settingsLoadFailed = false
+  let settings = await getSettings().catch((): DesktopSettings => {
+    settingsLoadFailed = true
+    return {
+      interactionMode: 'voice',
+      deepseekModel: 'deepseek-v4-flash',
+      activeModel: 'NIVA.vrm',
+      voiceOutput: true,
+      hasApiKey: false,
+    }
+  })
 
   const shell = document.querySelector<HTMLElement>('.shell')!
   const stage = document.querySelector<HTMLElement>('#stage')!
@@ -358,10 +367,16 @@ async function bootDesktop() {
   const statusText = document.querySelector<HTMLElement>('#statusText')!
   const modelFile = document.querySelector<HTMLInputElement>('#modelFile')!
   const backstage = createBackstage(settings)
+  const healthIssues = new Map<HealthKind, string>()
+
+  let memorySnapshot: LongTermMemorySnapshot = await getLongTermMemory().catch((error) => {
+    console.warn('[NIVA] memory storage unavailable', error)
+    healthIssues.set('storage', '本地记忆暂不可用')
+    return { count: 0, capacity: 32, items: [] }
+  })
   let models = await allModels()
   fillModelSelect(backstage.activeModel, models, settings.activeModel)
 
-  let memorySnapshot: LongTermMemorySnapshot = await getLongTermMemory().catch(() => ({ count: 0, capacity: 32, items: [] }))
   let currentMode: InteractionMode = settings.interactionMode
   let stopVoice: (() => void) | null = null
   let backstageOpen = false
@@ -370,19 +385,55 @@ async function bootDesktop() {
   let interactionEpoch = 0
   const pendingInputs: string[] = []
 
+  const syncHealth = () => {
+    const kinds = [...healthIssues.keys()]
+    shell.dataset.health = kinds.length ? 'degraded' : 'ok'
+    shell.dataset.healthIssues = kinds.join(',')
+  }
+  const setHealthIssue = (kind: HealthKind, message?: string) => {
+    if (message) healthIssues.set(kind, message)
+    else healthIssues.delete(kind)
+    syncHealth()
+  }
+  const healthSuffix = () => {
+    if (!healthIssues.size) return ''
+    const first = healthIssues.values().next().value as string | undefined
+    return first ? ` · 运行降级：${first}` : ' · 运行降级'
+  }
   const setStatus = (text: string) => { statusText.textContent = text }
   const setBackstageSummary = (lead = '固定人格') => {
-    backstage.status.textContent = `${lead} · 长期记忆 ${memorySnapshot.count}/${memorySnapshot.capacity} · 已学习 ${learnedCount()} 个动作`
+    backstage.status.textContent = `${lead} · 长期记忆 ${memorySnapshot.count}/${memorySnapshot.capacity} · 已学习 ${learnedCount()} 个动作${healthSuffix()}`
   }
   const refreshMemorySnapshot = async () => {
-    memorySnapshot = await getLongTermMemory().catch(() => memorySnapshot)
+    try {
+      memorySnapshot = await getLongTermMemory()
+      setHealthIssue('storage')
+    } catch (error) {
+      console.warn('[NIVA] memory refresh failed', error)
+      setHealthIssue('storage', '本地记忆暂不可用')
+    }
     return memorySnapshot
   }
-  const idleStatus = () => currentMode === 'voice'
-    ? (settings.hasApiKey ? 'ALIVE · VOICE' : 'VOICE · LOCAL')
-    : (settings.hasApiKey ? 'ALIVE · TEXT' : 'TEXT · LOCAL')
+  const idleStatus = () => {
+    if (healthIssues.has('model')) return 'ALIVE · MODEL ISSUE'
+    if (healthIssues.has('network') && settings.hasApiKey) return 'ALIVE · LOCAL'
+    if (healthIssues.has('voice') && currentMode === 'text') return 'ALIVE · TEXT'
+    return currentMode === 'voice'
+      ? (settings.hasApiKey ? 'ALIVE · VOICE' : 'VOICE · LOCAL')
+      : (settings.hasApiKey ? 'ALIVE · TEXT' : 'TEXT · LOCAL')
+  }
 
+  if (settingsLoadFailed) setHealthIssue('storage', '本地设置读取失败，已使用安全默认值')
+  syncHealth()
   setBackstageSummary()
+
+  window.setTimeout(() => {
+    if (!niva.ready) {
+      setHealthIssue('model', '人物模型未就绪')
+      if (!brainBusy && !backstageOpen) setStatus(idleStatus())
+      setBackstageSummary()
+    }
+  }, 8000)
 
   const waitUntilSpeechEnds = async (epoch: number) => {
     const started = performance.now()
@@ -410,6 +461,7 @@ async function bootDesktop() {
 
         try {
           const reply = safeAction(await askDeepSeek(text))
+          setHealthIssue('network')
           if (epoch !== interactionEpoch) continue
           if (!backstageOpen) {
             niva.act(reply)
@@ -425,9 +477,11 @@ async function bootDesktop() {
         } catch (error) {
           if (epoch !== interactionEpoch) continue
           console.warn('[NIVA] DeepSeek unavailable, using local behavior', error)
+          if (settings.hasApiKey) setHealthIssue('network', 'AI 网络暂不可用，已切到本地模式')
           if (!backstageOpen) {
             niva.send(text)
             setStatus(settings.hasApiKey ? 'ALIVE · LOCAL' : 'LOCAL · 双击配置 AI')
+            setBackstageSummary()
             await sleep(450)
             await waitUntilSpeechEnds(epoch)
           }
@@ -458,13 +512,20 @@ async function bootDesktop() {
     stopVoice = startDefaultVoiceInput(
       enqueueBrain,
       (status) => {
-        if (brainBusy) return
-        if (status === 'voice') setStatus(settings.hasApiKey ? 'ALIVE · VOICE' : 'VOICE · LOCAL')
-        else if (status === 'text') {
+        if (status === 'voice') {
+          setHealthIssue('voice')
+          if (!brainBusy) setStatus(settings.hasApiKey ? 'ALIVE · VOICE' : 'VOICE · LOCAL')
+          return
+        }
+        if (status === 'text') {
+          setHealthIssue('voice', '语音不可用，已自动切到文字模式')
           currentMode = 'text'
           shell.classList.add('text-open')
-          setStatus('ALIVE · TEXT')
-        } else setStatus('ALIVE · LISTENING')
+          if (!brainBusy) setStatus('ALIVE · TEXT')
+          setBackstageSummary()
+          return
+        }
+        if (!brainBusy) setStatus('ALIVE · LISTENING')
       },
     )
   }
@@ -538,12 +599,14 @@ async function bootDesktop() {
     backstage.status.textContent = '正在清除近期对话…'
     try {
       await clearConversation()
+      setHealthIssue('storage')
       userLine.hidden = true
       userLine.textContent = ''
       setBackstageSummary('近期对话已清除，长期记忆保留')
     } catch (error) {
       console.error(error)
-      backstage.status.textContent = '清除近期对话失败。'
+      setHealthIssue('storage', '本地数据操作失败')
+      setBackstageSummary('清除近期对话失败')
     }
   }
   backstage.panel.querySelector<HTMLButtonElement>('#clearLongTermMemory')!.onclick = async () => {
@@ -552,16 +615,24 @@ async function bootDesktop() {
     backstage.status.textContent = '正在清除长期记忆…'
     try {
       await clearLongTermMemory()
+      setHealthIssue('storage')
       memorySnapshot = { count: 0, capacity: memorySnapshot.capacity || 32, items: [] }
       setBackstageSummary('长期记忆已清除')
     } catch (error) {
       console.error(error)
-      backstage.status.textContent = '清除长期记忆失败。'
+      setHealthIssue('storage', '本地数据操作失败')
+      setBackstageSummary('清除长期记忆失败')
     }
   }
   backstage.panel.querySelector<HTMLButtonElement>('#resetLearned')!.onclick = () => {
-    localStorage.removeItem(LEARNED_KEY)
-    setBackstageSummary('已清空学习动作')
+    try {
+      localStorage.removeItem(LEARNED_KEY)
+      setBackstageSummary('已清空学习动作')
+    } catch (error) {
+      console.error(error)
+      setHealthIssue('storage', '本地动作存储不可用')
+      setBackstageSummary('清空学习动作失败')
+    }
   }
 
   modelFile.addEventListener('change', async () => {
@@ -573,12 +644,18 @@ async function bootDesktop() {
       models = await allModels()
       fillModelSelect(backstage.activeModel, models, entry.id)
       const ok = await loadModelById(niva, entry.id)
-      backstage.status.textContent = ok
-        ? `已导入并切换到 ${entry.name}；点击保存后下次启动继续使用。`
-        : '模型已保存，但载入失败，请确认是有效 VRM。'
+      if (ok) {
+        setHealthIssue('model')
+        setHealthIssue('storage')
+        backstage.status.textContent = `已导入并切换到 ${entry.name}；点击保存后下次启动继续使用。`
+      } else {
+        setHealthIssue('model', '人物模型载入失败')
+        setBackstageSummary('模型已保存，但载入失败')
+      }
     } catch (error) {
       console.error(error)
-      backstage.status.textContent = '导入失败，请检查 VRM 文件。'
+      setHealthIssue('storage', '本地模型存储不可用')
+      setBackstageSummary('导入失败，请检查 VRM 文件')
     } finally {
       modelFile.value = ''
     }
@@ -587,7 +664,13 @@ async function bootDesktop() {
   backstage.activeModel.addEventListener('change', async () => {
     backstage.status.textContent = '正在切换人物模型…'
     const ok = await loadModelById(niva, backstage.activeModel.value)
-    backstage.status.textContent = ok ? `已切换：${backstage.activeModel.selectedOptions[0]?.textContent ?? backstage.activeModel.value}` : '模型切换失败。'
+    if (ok) {
+      setHealthIssue('model')
+      backstage.status.textContent = `已切换：${backstage.activeModel.selectedOptions[0]?.textContent ?? backstage.activeModel.value}`
+    } else {
+      setHealthIssue('model', '人物模型载入失败')
+      setBackstageSummary('模型切换失败')
+    }
   })
 
   backstage.panel.querySelector<HTMLButtonElement>('#saveBackstage')!.onclick = async () => {
@@ -600,24 +683,31 @@ async function bootDesktop() {
         voiceOutput: backstage.voiceOutput.checked,
         apiKey: backstage.apiKey.value.trim() || undefined,
       })
+      setHealthIssue('storage')
       backstage.apiKey.value = ''
       backstage.apiKey.placeholder = settings.hasApiKey ? '已保存；留空表示不修改' : '粘贴 API Key'
       niva.setVoiceOutput(settings.voiceOutput)
       currentMode = settings.interactionMode
       setBackstageSummary(`已保存 · ${settings.deepseekModel}`)
-      await loadModelById(niva, settings.activeModel)
+      const modelOk = await loadModelById(niva, settings.activeModel)
+      if (modelOk) setHealthIssue('model')
+      else setHealthIssue('model', '人物模型载入失败')
       setTimeout(closeBackstage, 350)
     } catch (error) {
       console.error(error)
-      backstage.status.textContent = '保存失败，请检查配置。'
+      setHealthIssue('storage', '设置保存失败')
+      setBackstageSummary('保存失败，请检查配置')
     }
   }
 
   niva.setVoiceOutput(settings.voiceOutput)
   if (settings.activeModel !== 'NIVA.vrm' && models.some((entry) => entry.id === settings.activeModel)) {
-    await loadModelById(niva, settings.activeModel)
+    const ok = await loadModelById(niva, settings.activeModel)
+    if (ok) setHealthIssue('model')
+    else setHealthIssue('model', '上次使用的人物模型无法载入')
   }
   if (!settings.hasApiKey) setStatus('LOCAL · 双击配置 AI')
+  setBackstageSummary()
   applyMode(settings.interactionMode)
 }
 
