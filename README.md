@@ -1,58 +1,135 @@
 # NIVA · 数字生命精灵
 
-> A digital life spirit —— 一个会在屏幕上陪你呼吸、眨眼、说话的数字生命。
+> 一个有形象、有情绪、能对话，并逐步形成记忆与工具能力的 2D/2.5D 数字生命助手。
 
-NIVA 是一个「数字生命精灵」项目：目标是打造一个**有形象、有情绪、能对话、能记住你**的数字生命体。这个仓库记录它的可视化演进（v2.0 → v3.0），并作为后续接入「大脑」（LLM）、记忆与多端触达的**工程起点**。
+NIVA 当前主线已经确定为 **2D/2.5D**。3D / VRM 仅保留历史技术验证，不作为当前 MVP 的阻塞项。
 
-## 演进路线（本仓库历史）
+## 当前版本
 
-| 版本 | 代号 | 说明 |
+| 版本 | 状态 | 说明 |
 | --- | --- | --- |
-| **v2.0** | Companion Sprite MVP | 单张身体底图 + 多表情帧（neutral / smile / shy / thinking）切换的离线原型 |
-| **v3.0** | Rigged Web MVP | 独立透明分层形象（body / head / hair / arms / holographic skirt）+ SVG 面部绑定（眨眼、嘴形、腮红、眉毛）+ 环境动效（呼吸、发丝/裙摆摆动、手臂微动） |
+| v2.0 | ✅ | 单图 + 多表情原型 |
+| v3.0 | ✅ | 分层 PNG + SVG 面部 + 骨架式微动 |
+| **v0.6 Brain MVP** | **✅** | DeepSeek 对话 → `text/emotion/motion` → `NIVA.play()` |
 
-> **打开方式**：浏览器直接打开 `index.html`（自包含、离线可用）；`index.dev.html` 引用 `assets/` 目录，便于二次开发。
+V0.6 已实现：
+
+- 页面聊天输入、发送按钮、Enter 发送；
+- 当前页面内的临时会话上下文；
+- DeepSeek 后端代理，API Key 不进入浏览器；
+- 默认 `deepseek-v4-flash`，关闭 thinking 以优先低延迟；
+- 严格 JSON 输出：`text + emotion + motion`；
+- 模型输出异常时自动回退 `neutral + idle`；
+- 请求期间自动进入 `thinking + tilt`；
+- DeepSeek 不可用时仍保留原角色、表情、动作与离线页面；
+- 所有模型结果统一通过 `NIVA.play()` 驱动表现层；
+- 已移除旧的随机行为 runtime，避免多套控制器冲突。
+
+## 控制契约
+
+```js
+NIVA.play({
+  text: "你好，我是 NIVA。",
+  emotion: "smile",
+  motion: "wave"
+});
+```
+
+支持：
+
+- emotion：`neutral | smile | shy | thinking | sad | angry | surprise`
+- motion：`idle | wave | nod | shake | tilt | jump | look`
+
+LLM 不直接操作 DOM。模型只决定三个字段，视觉层只接受 `NIVA.play()`。
+
+## V0.6 架构
+
+```text
+Browser
+  ├─ 原 NIVA 2D/2.5D 表现层
+  ├─ runtime/niva-brain.js      # 当前页面会话 + /api/chat 客户端
+  └─ runtime/niva-chat-ui.js    # 聊天 UI → NIVA.play()
+          │
+          ▼
+POST /api/chat
+          │
+          ▼
+server/server.js
+          │  DEEPSEEK_API_KEY only here
+          ▼
+DeepSeek V4 Flash
+          │
+          ▼
+{ text, emotion, motion }
+```
+
+## 启动
+
+要求 Node.js 18+。
+
+第一次配置：
+
+```bash
+cp .env.example .env
+```
+
+然后在 `.env` 中填写：
+
+```env
+DEEPSEEK_API_KEY=你的_key
+```
+
+启动只需要一条命令：
+
+```bash
+npm start
+```
+
+访问：`http://localhost:3000`
+
+## 离线模式
+
+网络能力不是视觉运行的前提：
+
+- 直接打开 `index.html`：完整自包含离线视觉版；
+- 直接打开 `index.dev.html`：引用 `assets/` 的开发版；
+- `npm start`：在原开发页基础上注入 V0.6 Brain UI。
+
+没有配置 `DEEPSEEK_API_KEY` 时，聊天会显示 Brain 离线，但表情、动作、眨眼和固定演示仍可使用。
+
+## 测试
+
+```bash
+npm test
+```
+
+测试覆盖：结构化输出容错、DeepSeek V4 请求参数、页面 Brain 注入、`/api/chat` HTTP 闭环、API Key 不出现在前端，以及无 Key 时的离线降级。
 
 ## 项目结构
 
-```
+```text
 niva-digital-spirit/
-├─ index.html            # v3.0 自包含运行版（离线）
-├─ index.dev.html        # v3.0 开发版（引用 assets/）
-├─ assets/               # 分层 PNG 素材（body / head / hair / arms / skirt）
-├─ recomposite.png       # 合成参考图
-├─ README.md             # 本文件
-├─ ROADMAP.md            # 数字生命精灵演进路线
+├─ index.html                  # 自包含离线视觉版
+├─ index.dev.html              # 原始 2D/2.5D 开发页
+├─ assets/                     # 分层 PNG 素材
+├─ runtime/
+│  ├─ niva-brain.js            # 会话 / API 客户端，不控制角色 DOM
+│  └─ niva-chat-ui.js          # 聊天 UI 与 NIVA.play() 适配层
+├─ server/
+│  ├─ server.js                # 静态服务 + DeepSeek 安全代理
+│  └─ server.test.js           # Node 内置测试
+├─ .env.example
+├─ package.json
+├─ ROADMAP.md
 └─ docs/
-   └─ ARCHITECTURE.md    # 形象分层 + 控制契约说明
+   └─ ARCHITECTURE.md
 ```
 
-## 运行
+## 当前边界
 
-纯静态、零依赖、零构建。任选其一：
+V0.6 **没有**实现长期记忆、数据库、TTS、ASR、桌面常驻或 3D。刷新页面后会话上下文清空。
 
-- 双击 `index.html`；
-- 或本地起静态服务：`python -m http.server` 后访问 `http://localhost:8000`。
-
-## 控制契约（v3.0）
-
-```js
-NIVA.play({ text: "你好呀", emotion: "happy", motion: "wave" });
-```
-
-让 NIVA 说话并切换表情 / 动作 —— 这是后续由外部「大脑」驱动它的统一接口。
-
-## 下一步：给 NIVA 装上「大脑」
-
-当前 v3.0 是纯前端、离线的「躯壳」。项目启动阶段的目标是让 NIVA 真正「活」起来：
-
-1. 接入 LLM（DeepSeek）作为对话与情绪理解的大脑；
-2. 持久化记忆与人格设定，让 NIVA 认识你、记住你；
-3. 语音（TTS / ASR）让交互更自然；
-4. 多端触达（Web + 企业微信等），让 NIVA 无处不在；
-5. 本地优先 / 隐私优先的运行时。
-
-详见 [ROADMAP.md](ROADMAP.md)。
+下一阶段见 [ROADMAP.md](ROADMAP.md)。
 
 ## License
 
