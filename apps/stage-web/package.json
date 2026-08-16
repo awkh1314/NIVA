@@ -13,6 +13,7 @@
   "dependencies": {
     "@pixiv/three-vrm": "3.5.3",
     "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-autostart": "^2.5.1",
     "three": "0.180.0"
   },
   "devDependencies": {
