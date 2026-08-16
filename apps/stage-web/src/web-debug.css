@@ -1,0 +1,423 @@
+html.niva-web-debug .topbar {
+  right: 342px;
+}
+
+html.niva-web-debug .stage {
+  right: 324px;
+}
+
+html.niva-web-debug .conversation {
+  left: calc(50% - 162px);
+  width: min(760px, calc(100% - 382px));
+}
+
+html.niva-web-debug .conversation .dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+html.niva-web-debug .conversation .user-line {
+  align-self: flex-end;
+}
+
+html.niva-web-debug .conversation .niva-line {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: #e9f7ff;
+  font-size: 12px;
+  line-height: 1.5;
+  min-height: 22px;
+}
+
+html.niva-web-debug .conversation .niva-line b {
+  color: #8eeeff;
+  font-size: 10px;
+  letter-spacing: .12em;
+}
+
+.web-debug-panel {
+  position: absolute;
+  z-index: 70;
+  top: 70px;
+  right: 14px;
+  bottom: 14px;
+  width: 294px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(119, 229, 255, .18);
+  border-radius: 20px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(9, 17, 34, .92), rgba(5, 10, 22, .90)),
+    radial-gradient(circle at 80% 4%, rgba(164, 105, 255, .16), transparent 38%);
+  box-shadow: 0 26px 70px rgba(0, 0, 0, .28), inset 0 1px 0 rgba(255,255,255,.04);
+  backdrop-filter: blur(24px) saturate(125%);
+  color: #eaf8ff;
+  transition: width .18s ease, height .18s ease, border-radius .18s ease;
+}
+
+.web-debug-head {
+  flex: 0 0 auto;
+  min-height: 61px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 13px 11px 15px;
+  border-bottom: 1px solid rgba(255,255,255,.065);
+  background: rgba(255,255,255,.018);
+}
+
+.web-debug-title {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.web-debug-title b {
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: .17em;
+  background: linear-gradient(90deg, #8fefff, #fff, #b79dff);
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+.web-debug-title span {
+  color: rgba(209, 231, 245, .48);
+  font-size: 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.web-debug-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.web-debug-live {
+  position: relative;
+  padding-left: 10px;
+  color: rgba(207, 241, 250, .72);
+  font-size: 8px;
+  letter-spacing: .12em;
+}
+
+.web-debug-live::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: #7defff;
+  box-shadow: 0 0 12px rgba(125,239,255,.8);
+}
+
+.web-debug-live[data-state='speaking']::before {
+  background: #bd9cff;
+  box-shadow: 0 0 12px rgba(189,156,255,.9);
+}
+
+.web-debug-head button {
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(132, 226, 255, .13);
+  border-radius: 9px;
+  background: rgba(255,255,255,.035);
+  color: rgba(235, 249, 255, .72);
+  cursor: pointer;
+}
+
+.web-debug-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 11px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(116, 219, 255, .18) transparent;
+}
+
+.web-debug-section {
+  margin-bottom: 10px;
+  padding: 11px;
+  border: 1px solid rgba(115, 223, 255, .095);
+  border-radius: 14px;
+  background: rgba(8, 16, 31, .48);
+}
+
+.web-debug-overview {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  padding: 8px;
+}
+
+.web-debug-kpi {
+  min-width: 0;
+  padding: 8px 7px;
+  border-radius: 10px;
+  background: rgba(255,255,255,.025);
+  text-align: center;
+}
+
+.web-debug-kpi span,
+.web-debug-kpi b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-debug-kpi span {
+  margin-bottom: 4px;
+  color: rgba(198, 222, 239, .45);
+  font-size: 8px;
+}
+
+.web-debug-kpi b {
+  color: rgba(232, 248, 255, .9);
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.web-debug-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 9px;
+}
+
+.web-debug-section h3 {
+  margin: 0;
+  color: rgba(233, 248, 255, .9);
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .06em;
+}
+
+.web-debug-section-head > span,
+.web-debug-section-head output {
+  color: rgba(199, 222, 239, .45);
+  font-size: 8px;
+}
+
+.web-debug-range {
+  width: 100%;
+  height: 16px;
+  margin: 0 0 8px;
+  accent-color: #7defff;
+}
+
+.web-debug-chips {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.web-debug-chips button,
+.web-debug-inline-actions button,
+.web-debug-speak-row button,
+.web-debug-lookpad button {
+  min-width: 0;
+  min-height: 30px;
+  border: 1px solid rgba(119, 224, 255, .11);
+  border-radius: 9px;
+  background: rgba(255,255,255,.025);
+  color: rgba(207, 229, 243, .66);
+  cursor: pointer;
+  font-size: 9px;
+  transition: background .14s ease, border-color .14s ease, color .14s ease, transform .14s ease;
+}
+
+.web-debug-chips button:hover,
+.web-debug-inline-actions button:hover,
+.web-debug-speak-row button:hover,
+.web-debug-lookpad button:hover {
+  color: #effaff;
+  border-color: rgba(124, 231, 255, .28);
+  background: rgba(104, 214, 255, .075);
+}
+
+.web-debug-chips button:active,
+.web-debug-inline-actions button:active,
+.web-debug-speak-row button:active,
+.web-debug-lookpad button:active {
+  transform: translateY(1px);
+}
+
+.web-debug-chips button.active {
+  color: #f4fbff;
+  border-color: rgba(125, 233, 255, .38);
+  background: linear-gradient(135deg, rgba(95, 224, 255, .16), rgba(163, 112, 255, .13));
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.025);
+}
+
+.web-debug-lookpad {
+  width: 126px;
+  margin: 0 auto 9px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+
+.web-debug-lookpad button {
+  min-height: 34px;
+  font-size: 13px;
+}
+
+.web-debug-lookpad button.center {
+  color: #a7efff;
+  background: rgba(91, 219, 255, .07);
+}
+
+.web-debug-inline-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.web-debug-switch {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: rgba(213, 234, 247, .62);
+  font-size: 8px;
+  cursor: pointer;
+}
+
+.web-debug-switch input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #7defff;
+}
+
+.web-debug-speak-row {
+  display: grid;
+  grid-template-columns: 1fr 64px;
+  gap: 6px;
+}
+
+.web-debug-speak-row input {
+  min-width: 0;
+  height: 32px;
+  border: 1px solid rgba(119, 224, 255, .12);
+  border-radius: 9px;
+  outline: none;
+  background: rgba(5, 11, 23, .75);
+  color: #eefaff;
+  padding: 0 9px;
+  font-size: 9px;
+}
+
+.web-debug-speak-row input:focus {
+  border-color: rgba(125, 233, 255, .36);
+  box-shadow: 0 0 0 3px rgba(92, 220, 255, .06);
+}
+
+.web-debug-note {
+  margin: 8px 1px 0;
+  color: rgba(189, 214, 231, .42);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+html.niva-web-debug-collapsed .web-debug-panel {
+  top: 14px;
+  bottom: auto;
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+}
+
+html.niva-web-debug-collapsed .web-debug-head {
+  min-height: 54px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-bottom: 0;
+}
+
+html.niva-web-debug-collapsed .web-debug-title,
+html.niva-web-debug-collapsed .web-debug-live,
+html.niva-web-debug-collapsed .web-debug-scroll {
+  display: none;
+}
+
+html.niva-web-debug-collapsed .web-debug-head-actions {
+  display: block;
+}
+
+html.niva-web-debug-collapsed .web-debug-head button {
+  width: 34px;
+  height: 34px;
+  font-size: 16px;
+}
+
+html.niva-web-debug-collapsed .topbar {
+  right: 22px;
+}
+
+html.niva-web-debug-collapsed .stage {
+  right: 0;
+}
+
+html.niva-web-debug-collapsed .conversation {
+  left: 50%;
+  width: min(760px, calc(100% - 28px));
+}
+
+@media (max-width: 1080px) {
+  html.niva-web-debug .topbar { right: 302px; }
+  html.niva-web-debug .stage { right: 286px; }
+  html.niva-web-debug .conversation {
+    left: calc(50% - 143px);
+    width: min(680px, calc(100% - 330px));
+  }
+  .web-debug-panel { width: 260px; }
+  .web-debug-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 760px) {
+  html.niva-web-debug .topbar { right: 12px; }
+  html.niva-web-debug .stage { right: 0; bottom: 48vh; }
+  html.niva-web-debug .conversation {
+    left: 50%;
+    bottom: calc(44vh + 8px);
+    width: calc(100% - 18px);
+  }
+  .web-debug-panel {
+    left: 9px;
+    right: 9px;
+    top: auto;
+    bottom: 9px;
+    width: auto;
+    height: 42vh;
+  }
+  .web-debug-scroll { padding: 8px; }
+  .web-debug-section { padding: 9px; }
+  .web-debug-chips { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+  html.niva-web-debug-collapsed .web-debug-panel {
+    left: auto;
+    right: 9px;
+    top: 9px;
+    bottom: auto;
+    width: 54px;
+    height: 54px;
+  }
+
+  html.niva-web-debug-collapsed .stage { bottom: 218px; }
+  html.niva-web-debug-collapsed .conversation { bottom: 10px; }
+}

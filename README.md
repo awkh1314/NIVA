@@ -1,59 +1,64 @@
-# NIVA · 数字生命精灵
+# NIVA · 数字生命
 
-> A digital life spirit —— 一个会在屏幕上陪你呼吸、眨眼、说话的数字生命。
+NIVA 是一个 Windows 桌面数字生命 MVP。当前阶段的目标不是堆功能或追求动画质量，而是让陌生用户安装后可以直接使用、长期挂在桌面，并且在语音、模型或网络不可用时仍能正常退化运行。
 
-NIVA 是一个「数字生命精灵」项目：目标是打造一个**有形象、有情绪、能对话、能记住你**的数字生命体。这个仓库记录它的可视化演进（v2.0 → v3.0），并作为后续接入「大脑」（LLM）、记忆与多端触达的**工程起点**。
+## 当前产品形态
 
-## 演进路线（本仓库历史）
+- Windows 桌面应用：Tauri 2 + Vite + TypeScript
+- 3D 角色：Three.js + `@pixiv/three-vrm`
+- 默认状态：自然站立，持续呼吸、视线、重心与状态微动
+- 桌面交互：点击反馈、右键拖动窗口、双击打开设置、文字输入
+- 语音：WebView Speech Recognition 输入 + Windows/WebView Speech Synthesis 输出；不可用时自动降级到文字
+- AI：DeepSeek 接口已预留；未配置或请求失败时可继续使用本地行为
+- 记忆：近期对话 + 有限长期记忆，均可清除
+- 模型：支持导入并持久化本地 VRM
+- Windows 安装：GitHub Actions 构建 NSIS 安装包
+- 桌面托盘：支持显示/隐藏 NIVA
 
-| 版本 | 代号 | 说明 |
-| --- | --- | --- |
-| **v2.0** | Companion Sprite MVP | 单张身体底图 + 多表情帧（neutral / smile / shy / thinking）切换的离线原型 |
-| **v3.0** | Rigged Web MVP | 独立透明分层形象（body / head / hair / arms / holographic skirt）+ SVG 面部绑定（眨眼、嘴形、腮红、眉毛）+ 环境动效（呼吸、发丝/裙摆摆动、手臂微动） |
+## MVP 原则
 
-> **打开方式**：浏览器直接打开 `index.html`（自包含、离线可用）；`index.dev.html` 引用 `assets/` 目录，便于二次开发。
+当前冻结新增能力，优先解决：
 
-## 项目结构
+1. 首次安装和第一次互动能否独立完成；
+2. 长时间挂桌面是否稳定、不过度打扰；
+3. 麦克风、语音、模型、网络失败时是否能继续使用；
+4. Windows 安装、启动、窗口和托盘行为是否符合普通软件预期；
+5. 发布给测试用户后是否能快速定位问题并迭代。
 
+不在当前 MVP 范围：高级 Agent、插件生态、屏幕理解、动作商城、复杂长期记忆、专业动画质量与完整商业后端。
+
+## 目录
+
+```text
+apps/stage-web/
+├─ src/main-v2.ts                 # Three.js / VRM 主运行时
+├─ src/avatar/RawMotionController.ts
+├─ src/desktop.ts                 # Windows 桌面桥、语音输入、托盘
+├─ src/desktop-bootstrap.ts       # 设置、对话队列、模型导入、降级逻辑
+├─ src/desktop-product.ts         # 首次使用与桌面陪伴产品层
+├─ src/voice-output.ts            # 语音输出 provider
+└─ src-tauri/                     # Tauri / Rust / NSIS
 ```
-niva-digital-spirit/
-├─ index.html            # v3.0 自包含运行版（离线）
-├─ index.dev.html        # v3.0 开发版（引用 assets/）
-├─ assets/               # 分层 PNG 素材（body / head / hair / arms / skirt）
-├─ recomposite.png       # 合成参考图
-├─ README.md             # 本文件
-├─ ROADMAP.md            # 数字生命精灵演进路线
-└─ docs/
-   └─ ARCHITECTURE.md    # 形象分层 + 控制契约说明
+
+## 本地运行
+
+```bash
+cd apps/stage-web
+npm install
+npm run tauri dev
 ```
 
-## 运行
+构建 Windows 安装包：
 
-纯静态、零依赖、零构建。任选其一：
-
-- 双击 `index.html`；
-- 或本地起静态服务：`python -m http.server` 后访问 `http://localhost:8000`。
-
-## 控制契约（v3.0）
-
-```js
-NIVA.play({ text: "你好呀", emotion: "happy", motion: "wave" });
+```bash
+cd apps/stage-web
+npm run tauri build -- --bundles nsis
 ```
 
-让 NIVA 说话并切换表情 / 动作 —— 这是后续由外部「大脑」驱动它的统一接口。
+## 产品验收
 
-## 下一步：给 NIVA 装上「大脑」
-
-当前 v3.0 是纯前端、离线的「躯壳」。项目启动阶段的目标是让 NIVA 真正「活」起来：
-
-1. 接入 LLM（DeepSeek）作为对话与情绪理解的大脑；
-2. 持久化记忆与人格设定，让 NIVA 认识你、记住你；
-3. 语音（TTS / ASR）让交互更自然；
-4. 多端触达（Web + 企业微信等），让 NIVA 无处不在；
-5. 本地优先 / 隐私优先的运行时。
-
-详见 [ROADMAP.md](ROADMAP.md)。
+MVP 发布门槛记录在 [`docs/MVP-RELEASE-GATE.md`](docs/MVP-RELEASE-GATE.md)。
 
 ## License
 
-保留作者版权。商用或二次开发请先联系作者。
+保留作者版权。未经授权不得将项目源码、角色资产或产品整体用于二次分发或商业化。

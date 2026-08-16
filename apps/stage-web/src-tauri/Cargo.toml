@@ -1,0 +1,21 @@
+[package]
+name = "niva"
+version = "0.1.0"
+description = "NIVA digital life companion"
+authors = ["NIVA"]
+edition = "2021"
+
+[lib]
+name = "niva_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

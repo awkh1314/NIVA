@@ -1,0 +1,67 @@
+name: Deploy NIVA VRM Stage
+
+# Source privacy and public preview are now separated deliberately.
+# This workflow no longer runs on every push; publish the web stage only when
+# explicitly requested from GitHub Actions.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use AvatarSample_A as web default body
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -L --fail --retry 3 --retry-delay 2 \
+            -o NIVA.vrm \
+            'https://raw.githubusercontent.com/hirokazuniimoto/virtual-avatar-sdk/114d4336e0ac36bf9c2297b0a93ad7604b13704b/assets/avatars/AvatarSample_A.vrm'
+          test "$(wc -c < NIVA.vrm)" -gt 20000000
+          echo "AvatarSample_A prepared: $(wc -c < NIVA.vrm) bytes"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/stage-web/package.json
+
+      - name: Install dependencies
+        working-directory: apps/stage-web
+        run: npm install
+
+      - name: Build NIVA
+        working-directory: apps/stage-web
+        run: npm run build
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/stage-web/dist
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
