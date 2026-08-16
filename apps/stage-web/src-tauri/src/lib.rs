@@ -153,9 +153,6 @@ fn save_config(app: &tauri::AppHandle, config: &AppConfig) -> Result<(), String>
 }
 
 fn configured_deepseek_api_key(config: &AppConfig) -> String {
-    // Development keys should never be committed to the repository or compiled into
-    // the Windows binary. Prefer a machine-local environment variable, then fall back
-    // to the existing local settings value for BYOK development builds.
     for name in ["NIVA_DEEPSEEK_API_KEY", "DEEPSEEK_API_KEY"] {
         if let Ok(value) = env::var(name) {
             let trimmed = value.trim();
@@ -317,12 +314,15 @@ fn get_long_term_memory(app: tauri::AppHandle) -> Result<MemoryView, String> {
 
 #[tauri::command]
 fn clear_long_term_memory(app: tauri::AppHandle) -> Result<(), String> {
-    // Invalidate any in-flight request so an old response cannot repopulate memory
-    // immediately after the user explicitly clears it.
     bump_history_epoch(&app)?;
     let path = memory_path(&app)?;
     if path.exists() { fs::remove_file(path).map_err(|e| e.to_string())?; }
     Ok(())
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+    app.exit(0);
 }
 
 #[tauri::command]
@@ -475,13 +475,31 @@ emotion 只能是 neutral/happy/shy/sad/angry/surprised/thinking。不要每次�
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    {
+        builder = builder
+            .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }))
+            .plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                None,
+            ));
+    }
+
+    builder
         .invoke_handler(tauri::generate_handler![
             get_settings,
             save_settings,
             clear_conversation,
             get_long_term_memory,
             clear_long_term_memory,
+            quit_app,
             deepseek_chat
         ])
         .run(tauri::generate_context!())
