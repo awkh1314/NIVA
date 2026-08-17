@@ -51,37 +51,37 @@ NIVA Body
 - [x] Brain 离线时视觉与本地动作继续运行
 - [x] 移除旧随机 behavior/runtime，统一控制路径
 
-## 阶段 1.5 — NIVA Control Protocol MVP（当前下一步）
+## 阶段 1.5 — NIVA Control Protocol MVP（已完成 ✅）
 
 目标：从“播放 emotion/motion”升级到“身体控制数据驱动”。
 
 ### V0.7 Control Protocol MVP
 
-- [ ] 新增统一 `NivaControlState`
-- [ ] 新增 `/control` 调试页面
-- [ ] 新增手动控制面板
-- [ ] 实时显示当前 Control JSON
-- [ ] Face 控制：`eyeOpen / gazeX / gazeY / browRaise / mouthOpen / mouthSmile`
-- [ ] Head 控制：`yaw / pitch / tilt`
-- [ ] Torso 控制：`bodyLean / chestLift / waistTwist / breath`
-- [ ] Arms 控制：`leftArmPose / rightArmPose`
-- [ ] Legs 控制：`stance / weightShift`
-- [ ] Emotion 控制：`mood / intensity`
-- [ ] Preset：`Neutral / Happy / Thinking / Proud / Calm / Reset`
-- [ ] Offline Demo 返回 `text + control`
-- [ ] Renderer 从固定动画播放改为执行 Control State
-- [ ] 保留旧 `NIVA.play({ text, emotion, motion })` 作为兼容层
+- [x] 新增统一 `NivaControlState`
+- [x] 新增 `/control.html` 调试页面
+- [x] 新增手动控制面板
+- [x] 实时显示当前 Control JSON
+- [x] Face 控制：`eyeOpen / gazeX / gazeY / browRaise / mouthOpen / mouthSmile`
+- [x] Head 控制：`yaw / pitch / tilt`
+- [x] Torso 控制：`bodyLean / chestLift / waistTwist / breath`
+- [x] Arms 控制：`leftArmPose / rightArmPose`
+- [x] Legs 控制：`stance / weightShift`
+- [x] Emotion 控制：`mood / intensity`
+- [x] Preset：`Neutral / Happy / Thinking / Proud / Calm / Reset`
+- [x] Offline Demo 返回 `text + control`
+- [x] Renderer 从固定动画播放改为执行 Control State
+- [x] 保留旧 `NIVA.play({ text, emotion, motion })` 作为兼容方向
 
 ### V0.7 验收标准
 
-- [ ] 手动拖动控制面板，角色能实时变化
-- [ ] 控制 JSON 实时更新
-- [ ] 同一句话，三种人格输出不同控制数据
-- [ ] LLM / Offline Demo 不直接操作 DOM
-- [ ] Main Page 和 Control Page 都能正常运行
-- [ ] 不引入 3D / WebGL / Live2D / PPT 动画核心方案
+- [x] 手动拖动控制面板，角色能实时变化
+- [x] 控制 JSON 实时更新
+- [x] 同一句话，三种人格输出不同控制数据
+- [x] LLM / Offline Demo 不直接操作 DOM
+- [x] Main Page 和 Control Page 都能正常运行
+- [x] 不引入 3D / WebGL / Live2D / PPT 动画核心方案
 
-## 阶段 1.6 — 精致 2D/2.5D 主角色重建
+## 阶段 1.6 — 精致 2D/2.5D 主角色重建（下一步）
 
 在 Control Protocol 稳定后，再重做视觉质量。
 
@@ -125,17 +125,6 @@ NIVA Body
 - [ ] 用户数据自托管
 - [ ] 敏感数据尽可能不离端
 
-## 阶段 X — 3D / VRM 重新评估（暂停中）
-
-当前暂停继续更新。
-
-只有满足以下条件后，才重新评估 3D：
-
-- [ ] 2D/2.5D Control Protocol 已经稳定
-- [ ] NIVA 的人格、对话、表演闭环已经成立
-- [ ] 3D 能复用同一套 Control Protocol，而不是另开一套割裂系统
-- [ ] 3D 不明显破坏轻量、低成本、多端可达的原则
-
 ---
 
-> 原则：**先控制协议，后精致角色；先轻量闭环，后多身体渲染；先让 NIVA 会被控制，再让她变得更漂亮。**
+> 原则：**形象先行，大脑闭环，控制协议成形，记忆增强，多端触达，隐私兜底。**
