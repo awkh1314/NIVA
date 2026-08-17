@@ -3,11 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NIVA · 2D Companion</title>
-<meta http-equiv="refresh" content="0; url=./index.dev.html">
-<script>location.replace('./index.dev.html');</script>
+<title>NIVA · Digital Spirit</title>
+<style>
+:root{--bg:#070b12;--panel:#0d1422;--line:#21334a;--cyan:#76e7f2;--violet:#b69aff;--text:#eef7ff;--muted:#8ea1b7}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 40% 0,#192744 0,#080d16 42%,#05070b 100%);color:var(--text);font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}.card{width:min(760px,calc(100% - 32px));border:1px solid var(--line);background:linear-gradient(180deg,rgba(13,20,34,.92),rgba(7,11,18,.9));border-radius:28px;padding:34px;box-shadow:0 24px 80px rgba(0,0,0,.32)}h1{margin:0 0 10px;font-size:42px;letter-spacing:.14em}h1 span{letter-spacing:.02em;color:var(--violet);font-weight:400}p{color:var(--muted);line-height:1.7;margin:0 0 24px}.actions{display:grid;grid-template-columns:1fr 1fr;gap:12px}a{display:block;text-decoration:none;color:var(--text);border:1px solid rgba(118,231,242,.18);border-radius:18px;padding:18px;background:rgba(12,20,34,.76);transition:.16s}a:hover{transform:translateY(-2px);border-color:rgba(118,231,242,.58)}b{display:block;color:var(--cyan);margin-bottom:6px}.note{margin-top:18px;font-size:13px}@media(max-width:620px){.actions{grid-template-columns:1fr}.card{padding:24px}h1{font-size:32px}}
+</style>
 </head>
 <body>
-<p>正在进入 NIVA 2D 版本… <a href="./index.dev.html">点击进入</a></p>
+<main class="card">
+  <h1>NIVA <span>Life</span></h1>
+  <p>当前公开体验入口。3D / VRM 已暂停更新；新主线是 2D/2.5D + Control Protocol。</p>
+  <div class="actions">
+    <a href="./control.html"><b>V0.7 Control Protocol MVP</b>手动拖动眼睛、嘴巴、头部、躯干、四肢参数，实时查看 Control JSON。</a>
+    <a href="./index.dev.html"><b>V0.6 2D Companion</b>保留原有 2D/2.5D 角色、表情、动作与 Brain MVP 页面。</a>
+  </div>
+  <p class="note">推荐先进入 V0.7 控制面板。它是下一阶段让大模型像“玩家”一样控制 NIVA 身体的基础。</p>
+</main>
 </body>
 </html>
