@@ -2,7 +2,9 @@
 
 > 一个有形象、有情绪、能对话，并逐步形成记忆与工具能力的 2D/2.5D 数字生命助手。
 
-NIVA 当前主线已经确定为 **2D/2.5D**。3D / VRM 仅保留历史技术验证，不作为当前 MVP 的阻塞项。
+NIVA 当前主线已经确定为 **2D/2.5D + Control Protocol**。
+
+3D / VRM 现在进入 **暂停更新版（Legacy / Paused）**：仓库保留 `NIVA.vrm`、`AvatarSample_A.vrm` 等历史技术验证资产，但它们不再作为当前 MVP 的开发主线，也不阻塞新版本迭代。后续只有当 2D/2.5D 控制协议稳定后，才重新评估 3D 作为可选身体渲染器。
 
 ## 当前版本
 
@@ -11,6 +13,8 @@ NIVA 当前主线已经确定为 **2D/2.5D**。3D / VRM 仅保留历史技术验
 | v2.0 | ✅ | 单图 + 多表情原型 |
 | v3.0 | ✅ | 分层 PNG + SVG 面部 + 骨架式微动 |
 | **v0.6 Brain MVP** | **✅** | DeepSeek 对话 → `text/emotion/motion` → `NIVA.play()` |
+| **3D / VRM Track** | **⏸️ Paused** | 保留历史验证资产，暂停继续更新 |
+| **v0.7 Control Protocol MVP** | **Planned** | 从 `emotion/motion` 扩展为五官、头部、躯干、四肢的数据化控制 |
 
 V0.6 已实现：
 
@@ -25,7 +29,7 @@ V0.6 已实现：
 - 所有模型结果统一通过 `NIVA.play()` 驱动表现层；
 - 已移除旧的随机行为 runtime，避免多套控制器冲突。
 
-## 控制契约
+## 当前控制契约
 
 ```js
 NIVA.play({
@@ -40,7 +44,34 @@ NIVA.play({
 - emotion：`neutral | smile | shy | thinking | sad | angry | surprise`
 - motion：`idle | wave | nod | shake | tilt | jump | look`
 
-LLM 不直接操作 DOM。模型只决定三个字段，视觉层只接受 `NIVA.play()`。
+LLM 不直接操作 DOM。模型只决定结构化字段，视觉层只接受统一控制契约。
+
+## 下一阶段控制契约方向
+
+V0.7 的目标不是增加更多固定动画，而是建立 **NIVA Control Protocol**：
+
+```text
+LLM / Manual Control Panel
+        ↓
+NIVA Control Data
+        ↓
+Character Controller
+        ↓
+2D/2.5D Layered Runtime
+        ↓
+NIVA Body
+```
+
+第一版只做简化维度：
+
+- Face：`eyeOpen / gazeX / gazeY / browRaise / mouthOpen / mouthSmile`
+- Head：`yaw / pitch / tilt`
+- Torso：`bodyLean / chestLift / waistTwist / breath`
+- Arms：`leftArmPose / rightArmPose`
+- Legs：`stance / weightShift`
+- Emotion：`mood / intensity`
+
+这条路线不是 PPT 动画，也不是 LLM 逐帧生成像素，而是让大模型像“玩家”一样输出身体控制数据，由本地 Runtime 执行角色表现。
 
 ## V0.6 架构
 
@@ -118,16 +149,18 @@ niva-digital-spirit/
 ├─ server/
 │  ├─ server.js                # 静态服务 + DeepSeek 安全代理
 │  └─ server.test.js           # Node 内置测试
+├─ docs/
+│  ├─ ARCHITECTURE.md
+│  ├─ 3D_PAUSED.md             # 3D/VRM 暂停更新说明
+│  └─ ITERATION_WORKFLOW.md    # 后续迭代创建规范
 ├─ .env.example
 ├─ package.json
-├─ ROADMAP.md
-└─ docs/
-   └─ ARCHITECTURE.md
+└─ ROADMAP.md
 ```
 
 ## 当前边界
 
-V0.6 **没有**实现长期记忆、数据库、TTS、ASR、桌面常驻或 3D。刷新页面后会话上下文清空。
+V0.6 **没有**实现长期记忆、数据库、TTS、ASR、桌面常驻或 3D 新开发。刷新页面后会话上下文清空。
 
 下一阶段见 [ROADMAP.md](ROADMAP.md)。
 
