@@ -1,47 +1,55 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>NIVA · 3D Safe Motion</title>
-<meta name="description" content="NIVA VRM 1.0 全身安全活动展示：正常人体 ROM 随机运动 + 角度/速度/加速度限制 + V0.82 模型外轮廓碰撞安全壳。">
-<style>
-:root{--bg:#050912;--panel:#0a1220e8;--line:#20344d;--cyan:#76e7f2;--violet:#b69aff;--text:#eef7ff;--muted:#91a4ba;--ok:#8fffcf;--bad:#ff9ca8}*{box-sizing:border-box}html,body{margin:0;width:100%;min-height:100%;background:radial-gradient(circle at 35% 0,#172746 0,#080d17 45%,#04070c 100%);color:var(--text);font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}body{overflow:hidden}.app{height:100vh;height:100dvh;display:grid;grid-template-columns:minmax(0,1fr) 390px}.stage{position:relative;min-width:0;overflow:hidden;background:radial-gradient(circle at 50% 36%,rgba(71,142,180,.12),transparent 34%),linear-gradient(180deg,rgba(7,14,25,.2),rgba(2,5,9,.72))}.stage:before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(118,231,242,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(118,231,242,.04) 1px,transparent 1px);background-size:52px 52px;mask-image:linear-gradient(to bottom,#000 35%,transparent 88%)}#niva3d{display:block;width:100%;height:100%;position:relative}.brand{position:absolute;top:22px;left:24px;z-index:3}.brand h1{font-size:24px;letter-spacing:.18em;margin:0}.brand h1 span{color:var(--violet);font-weight:400;letter-spacing:.03em}.brand p{margin:7px 0 0;color:var(--muted);font-size:12px}.stage-status{position:absolute;left:24px;bottom:22px;z-index:3;display:flex;gap:8px;flex-wrap:wrap}.pill{border:1px solid rgba(118,231,242,.18);background:rgba(6,12,21,.76);backdrop-filter:blur(12px);border-radius:999px;padding:8px 11px;font-size:12px;color:var(--muted)}#status.ok,.pill.ok{color:var(--ok)}#status.bad,.pill.bad{color:var(--bad)}.panel{height:100%;overflow:auto;padding:18px;border-left:1px solid var(--line);background:linear-gradient(180deg,rgba(10,18,32,.96),rgba(5,9,16,.95));box-shadow:-20px 0 60px rgba(0,0,0,.18)}.topline{display:flex;align-items:center;justify-content:space-between;gap:10px}.topline b{font-size:13px;color:var(--cyan);letter-spacing:.12em}.badge{font-size:11px;border:1px solid rgba(143,255,207,.2);color:var(--ok);padding:6px 8px;border-radius:999px}.lead{color:var(--muted);font-size:13px;line-height:1.65;margin:12px 0 16px}.card{border:1px solid var(--line);border-radius:16px;background:rgba(7,13,23,.65);padding:13px;margin-bottom:12px}.row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:8px 0;font-size:12px;color:var(--muted)}.row strong{color:var(--text);font-size:13px}input[type=range]{width:150px;accent-color:var(--cyan)}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px}.buttons button,.links a{border:1px solid rgba(118,231,242,.2);background:#0c1726;color:var(--text);border-radius:11px;padding:9px 10px;font:inherit;font-size:12px;text-align:center;text-decoration:none;cursor:pointer}.buttons button:hover,.links a:hover{border-color:rgba(118,231,242,.58)}.links{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.section-title{margin:16px 0 8px;color:var(--violet);font-size:12px;letter-spacing:.15em;text-transform:uppercase}.limits details{border-top:1px solid rgba(255,255,255,.07)}.limits details:first-child{border-top:0}.limits summary{display:flex;justify-content:space-between;cursor:pointer;padding:10px 0;color:#dcecff;font-size:12px}.limits summary span{color:var(--muted)}.limit-grid{display:grid;gap:6px;padding:0 0 10px}.limit-item{border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:8px;background:rgba(2,6,11,.42)}.limit-item b{font-size:11px}.limit-item code{display:block;color:var(--cyan);font-size:10px;margin:3px 0}.limit-item small{display:block;color:var(--muted);font-size:9px;line-height:1.45}.foot{color:var(--muted);font-size:10px;line-height:1.55;margin:12px 0}.foot a{color:var(--cyan)}@media(max-width:900px){body{overflow:auto}.app{height:auto;min-height:100dvh;grid-template-columns:1fr}.stage{height:68vh;min-height:520px}.panel{border-left:0;border-top:1px solid var(--line);height:auto;overflow:visible}.stage-status{bottom:14px;left:14px}.brand{top:14px;left:14px}}
-</style>
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
-    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
-  }
-}
-</script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NIVA</title>
 </head>
 <body>
-<main class="app">
-  <section class="stage" id="stageShell">
-    <div class="brand"><h1>NIVA <span>Safe Motion</span></h1><p>V0.82 · Conservative Body Shell · BUILD 2026.08.19-1952</p></div>
-    <canvas id="niva3d" aria-label="NIVA 3D VRM 安全运动与穿模防护展示"></canvas>
-    <div class="stage-status"><span class="pill" id="status">● 正在载入</span><span class="pill" id="collisionStatus">基础碰撞层：等待校准</span><span class="pill" id="collisionShellStatus">V0.82 外部安全壳：等待模型</span><span class="pill" id="progress">准备当前 NIVA.vrm</span><span class="pill">骨骼 <b id="jointCount">0/54</b></span></div>
-  </section>
-  <aside class="panel">
-    <div class="topline"><b>HUMAN MOTION + V0.82 COLLISION SHELL</b><span class="badge">HARD CLAMP ON</span></div>
-    <p class="lead">V0.82 不再只按骨骼中心线判断穿模。躯干被拆成胸腔、腹部、骨盆三个更宽的模型安全壳，并增加上臂↔躯干、前臂↔骨盆、手↔骨盆、手脚/双腿交叉等关系。系统会在视觉表面真正相交前提前回滚相关运动链，再重新随机目标。</p>
-    <div class="card">
-      <div class="row"><span>当前状态</span><strong id="currentMotion">全范围随机安全活动 + V0.82 外壳防护</strong></div>
-      <div class="row"><label for="intensity">范围覆盖</label><input id="intensity" type="range" min="0" max="1" step="0.05" value="1"></div>
-      <div class="row"><label for="speed">目标更新速度</label><input id="speed" type="range" min="0.25" max="1.5" step="0.05" value="0.85"></div>
-      <div class="buttons"><button id="pauseBtn">暂停随机活动</button><button id="resetBtn">回安全中立姿态</button></div>
-      <div class="links"><a href="./index.dev.html">2D 主线</a><a href="./control.html">Control Protocol</a></div>
+  <div id="app">
+    <div id="avatarStage" title="双击 NIVA 打开控制界面">
+      <canvas id="nivaCanvas"></canvas>
+      <div id="speechBubble" class="speech-bubble hidden"></div>
+      <div id="statusDot" class="status-dot" title="NIVA 状态"></div>
     </div>
-    <div class="section-title">运行时限制表</div>
-    <div class="card limits" id="limitsList"></div>
-    <p class="foot">V0.82 当前检查 32 组关键人体关系，并采用“中立姿态基线 + 仅允许约几毫米额外靠近”的保守阈值。ROM 本身仍保留最大到最小完整探索；被拒绝的是会造成模型表面相交的组合。头发、裙摆和飘动物件继续由 VRM SpringBone Collider 处理。</p>
-  </aside>
-</main>
-<script type="module" src="./runtime/niva-vrm-showcase.mjs?v=20260819-1952"></script>
-<script type="module" src="./runtime/niva-vrm-random-driver.mjs?v=20260819-1952"></script>
-<script type="module" src="./runtime/niva-vrm-v082-guard.mjs?v=20260819-1952"></script>
+    <aside id="panel" class="panel hidden" aria-hidden="true">
+      <div class="panel-head">
+        <div>
+          <strong>NIVA</strong>
+          <small>V0.83 · Safe Pose Planner</small>
+        </div>
+        <button id="closePanel" class="icon-btn">×</button>
+      </div>
+      <div class="status-line"><span id="modeBadge">体验模式</span><span id="plannerBadge">安全姿态计算中</span></div>
+      <div id="firstRun" class="first-run">
+        <div class="section-title">DeepSeek API</div>
+        <p>接入后由 DeepSeek 输出精简的「回答 + 情绪 + 必要动作」JSON。API Key 仅保存在本次运行内。</p>
+        <input id="apiKey" type="password" autocomplete="off" placeholder="sk-...（可留空使用体验模式）" />
+        <div class="row-buttons"><button id="saveApi">接入 DeepSeek</button><button id="useDemo">体验模式</button></div>
+      </div>
+      <div class="section-title">输入</div>
+      <div class="input-row">
+        <button id="micBtn" class="mic-btn" title="语音输入">🎙</button>
+        <textarea id="inputBox" rows="2" placeholder="直接输入，或点击麦克风说话…"></textarea>
+        <button id="sendBtn">发送</button>
+      </div>
+      <div id="queueInfo" class="queue-info">空闲</div>
+      <div class="section-title">体验预设</div>
+      <div id="presetGrid" class="preset-grid"></div>
+      <div class="section-title">声音</div>
+      <div class="voice-card">
+        <div><b>默认：Qwen3-TTS Serena</b><small>本地情感 TTS 服务可用时自动使用；否则回退 Windows/WebView 系统语音。</small></div>
+        <span id="voiceBadge">检测中</span>
+      </div>
+      <div class="section-title">运行状态</div>
+      <div class="stats">
+        <span>安全姿态库 <b id="bankCount">0</b></span>
+        <span>路径预检 <b id="pathCount">0</b></span>
+        <span>拒绝候选 <b id="rejectCount">0</b></span>
+      </div>
+      <p class="hint">双击模型可再次收起界面。运行中的回答不会被打断；新输入会排队，并从当前动作自然过渡。</p>
+    </aside>
+  </div>
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>

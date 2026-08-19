@@ -1,13 +1,23 @@
 {
   "name": "niva-digital-spirit",
-  "version": "0.8.1",
+  "version": "0.83.0",
   "private": true,
-  "description": "NIVA digital spirit: VRM safe motion with anatomical self-collision guard",
+  "type": "module",
   "scripts": {
-    "start": "node server/server.js",
-    "test": "node --test server/server.test.js runtime/niva-vrm-limits.test.mjs runtime/niva-vrm-collision-guard.test.mjs"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test runtime/niva-vrm-limits.test.mjs runtime/niva-vrm-collision-guard.test.mjs src/safe-pose-planner.test.mjs src/orchestrator.test.mjs",
+    "tauri": "tauri",
+    "desktop": "tauri build --no-bundle"
   },
-  "engines": {
-    "node": ">=18"
+  "dependencies": {
+    "@pixiv/three-vrm": "3.5.5",
+    "@tauri-apps/api": "^2.0.0",
+    "three": "0.180.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "vite": "^7.0.0"
   }
 }

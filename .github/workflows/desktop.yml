@@ -1,0 +1,49 @@
+name: Build NIVA Windows EXE
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install frontend dependencies
+        run: npm install
+      - name: Test planner and runtime safety
+        run: npm test
+      - name: Build portable EXE
+        run: npm run desktop
+      - name: Assemble portable package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release\voice | Out-Null
+          Copy-Item src-tauri\target\release\niva.exe release\NIVA.exe
+          Copy-Item tools\voice\* release\voice\
+          @"
+          NIVA V0.83 Portable
+          1. 直接运行 NIVA.exe；不配置 API 时可使用内置体验预设。
+          2. 双击模型打开/收起界面。
+          3. 可选：运行 voice\install-and-start.ps1 安装 Qwen3-TTS Serena 情感语音服务；首次约下载 2.5GB 模型。
+          4. DeepSeek API Key 仅保存在当前运行会话。
+          "@ | Set-Content -Encoding UTF8 release\README.txt
+          Compress-Archive -Path release\* -DestinationPath NIVA-Windows-x64.zip -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NIVA-Windows-x64
+          path: NIVA-Windows-x64.zip
+          retention-days: 30
+      - name: Publish rolling prerelease
+        if: github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete v0.83-latest --yes --cleanup-tag 2>$null
+          gh release create v0.83-latest NIVA-Windows-x64.zip --title "NIVA V0.83 Latest" --notes "Constraint-based Safe Pose Generator + Collision-free Path Planner desktop preview."
