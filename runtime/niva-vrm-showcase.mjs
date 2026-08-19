@@ -11,9 +11,13 @@ import {
   neutralPose,
   randomSafePose,
   validateLimitTable,
-} from './niva-vrm-limits.mjs?v=20260819-1924';
+} from './niva-vrm-limits.mjs?v=20260819-1940';
+import {
+  NIVA_COLLISION_PAIRS,
+  createAnatomicalCollisionGuard,
+} from './niva-vrm-collision-guard.mjs?v=20260819-1940';
 
-const NIVA_BUILD = '2026.08.19-1924';
+const NIVA_BUILD = '2026.08.19-1940';
 const NIVA_MODEL_BLOB = 'cac284d2fe68c0f29c53f0367b5ad5fc1dc96a21';
 const NIVA_MODEL_URL = `./NIVA.vrm?v=${NIVA_MODEL_BLOB}`;
 
@@ -28,6 +32,7 @@ const speedEl = document.querySelector('#speed');
 const pauseBtn = document.querySelector('#pauseBtn');
 const resetBtn = document.querySelector('#resetBtn');
 const limitsEl = document.querySelector('#limitsList');
+const collisionEl = document.querySelector('#collisionStatus');
 
 const validation = validateLimitTable();
 if (!validation.ok) throw new Error(`NIVA limit table invalid: ${JSON.stringify(validation)}`);
@@ -72,6 +77,9 @@ let manualPose = neutralPose();
 let randomTargetPose = neutralPose();
 let nextRandomTargetAt = 0;
 let randomTargetIndex = 0;
+let modelHeight = 1;
+let collisionGuard = null;
+let lastCollisionResult = { safe: true, collisions: [], blocked: 0 };
 const state = new Map();
 const clock = new THREE.Clock();
 let blinkClock = 0;
@@ -96,6 +104,25 @@ function stepAxis(s, target, limit, dt, speedScale) {
     s.velocity *= 0.35;
   }
   return next;
+}
+
+function writeBoneRotation(name, rotation, resetVelocity = false) {
+  if (!vrm) return;
+  const limits = NIVA_VRM_BONE_LIMITS[name];
+  const node = vrm.humanoid.getNormalizedBoneNode(name);
+  if (!limits || !node) return;
+  const safe = clampBoneRotation(name, rotation);
+  for (const axisName of ['x', 'y', 'z']) {
+    const s = stateFor(name, axisName, limits[axisName].neutral);
+    s.angle = safe[axisName];
+    if (resetVelocity) s.velocity = 0;
+  }
+  node.rotation.set(
+    THREE.MathUtils.degToRad(safe.x),
+    THREE.MathUtils.degToRad(safe.y),
+    THREE.MathUtils.degToRad(safe.z),
+    'XYZ',
+  );
 }
 
 function applyPose(targetPose, dt, speedScale) {
@@ -146,6 +173,65 @@ function captureCurrentPose() {
   }));
 }
 
+function getWorldBonePoints() {
+  const points = {};
+  if (!vrm) return points;
+  vrm.scene.updateMatrixWorld(true);
+  for (const name of NIVA_VRM_EXPECTED_BONES) {
+    const node = vrm.humanoid.getNormalizedBoneNode(name);
+    if (!node) continue;
+    const p = new THREE.Vector3();
+    node.getWorldPosition(p);
+    points[name] = { x: p.x, y: p.y, z: p.z };
+  }
+  return points;
+}
+
+function rollbackToPose(snapshot, bones) {
+  if (!vrm || !snapshot) return;
+  for (const name of bones) {
+    if (!snapshot[name] || !NIVA_VRM_BONE_LIMITS[name]) continue;
+    const safe = clampBoneRotation(name, snapshot[name]);
+    writeBoneRotation(name, safe, true);
+    manualPose = { ...manualPose, [name]: { ...safe } };
+    randomTargetPose = { ...randomTargetPose, [name]: { ...safe } };
+  }
+  vrm.update(0);
+  vrm.scene.updateMatrixWorld(true);
+}
+
+function updateCollisionUi(result = lastCollisionResult) {
+  if (!collisionEl) return;
+  if (!collisionGuard) {
+    collisionEl.textContent = '碰撞防护：等待校准';
+    return;
+  }
+  if (result.safe) {
+    collisionEl.textContent = `碰撞防护 ON · 已拦截 ${collisionGuard.blocked}`;
+    collisionEl.classList.remove('bad');
+    collisionEl.classList.add('ok');
+  } else {
+    collisionEl.textContent = `已拦截穿模 ${result.collisions.length} 处 · 总计 ${collisionGuard.blocked}`;
+    collisionEl.classList.remove('ok');
+    collisionEl.classList.add('bad');
+  }
+}
+
+function initCollisionGuard() {
+  collisionGuard = createAnatomicalCollisionGuard({
+    getPoints: getWorldBonePoints,
+    getHeight: () => modelHeight,
+    capturePose: captureCurrentPose,
+    rollbackPose: rollbackToPose,
+    onCollision: (detail) => {
+      updateCollisionUi({ safe: false, ...detail });
+      window.dispatchEvent(new CustomEvent('niva:collision', { detail }));
+    },
+  });
+  const calibration = collisionGuard.calibrate();
+  if (collisionEl) collisionEl.textContent = `碰撞防护 ON · ${calibration.pairCount} 对`;
+}
+
 function setBlink(value) {
   if (!vrm?.expressionManager) return;
   vrm.expressionManager.setValue('blink', clamp(value, 0, 1));
@@ -174,6 +260,7 @@ function fitModel() {
   const size = box.getSize(new THREE.Vector3());
   const center = box.getCenter(new THREE.Vector3());
   const height = Math.max(size.y, 0.5);
+  modelHeight = height;
   ground.position.y = box.min.y - 0.012;
   ground.scale.setScalar(Math.max(size.x, size.z, 0.6) * 0.85);
   controls.target.set(center.x, box.min.y + height * 0.5, center.z);
@@ -184,6 +271,7 @@ function fitModel() {
   controls.minDistance = height * 0.75;
   controls.maxDistance = height * 5;
   controls.update();
+  return height;
 }
 
 function resize() {
@@ -241,12 +329,17 @@ loader.load(
     const available = NIVA_VRM_EXPECTED_BONES.filter((name) => vrm.humanoid.getNormalizedBoneNode(name));
     const missing = NIVA_VRM_EXPECTED_BONES.filter((name) => !vrm.humanoid.getNormalizedBoneNode(name));
     jointCountEl.textContent = `${available.length}/${NIVA_VRM_EXPECTED_BONES.length}`;
-    statusEl.textContent = missing.length ? `● 已载入 · 缺 ${missing.length} 骨骼` : '● 已载入 · 安全限制开启';
+    statusEl.textContent = missing.length ? `● 已载入 · 缺 ${missing.length} 骨骼` : '● ROM + Collision Guard 已开启';
     statusEl.classList.add('ok');
-    progressEl.textContent = `MODEL ${NIVA_MODEL_BLOB.slice(0, 8)} · BUILD ${NIVA_BUILD}`;
-    fitModel();
+
     resetLimiterToNeutral();
+    applyPose(neutralPose(), 1 / 60, 1);
+    vrm.update(0);
+    vrm.scene.updateMatrixWorld(true);
+    fitModel();
+    initCollisionGuard();
     refreshRandomTarget(true);
+    progressEl.textContent = `MODEL ${NIVA_MODEL_BLOB.slice(0, 8)} · BUILD ${NIVA_BUILD}`;
   },
   (event) => {
     if (event.total) {
@@ -298,6 +391,12 @@ function animate() {
     updateBlink(dt);
     updateExpression(demoTime);
     vrm.update(dt);
+    vrm.scene.updateMatrixWorld(true);
+
+    if (collisionGuard) {
+      lastCollisionResult = collisionGuard.inspect(performance.now());
+      updateCollisionUi(lastCollisionResult);
+    }
   }
   controls.update();
   renderer.render(scene, camera);
@@ -308,6 +407,14 @@ window.NIVA3D = Object.freeze({
   build: NIVA_BUILD,
   modelBlob: NIVA_MODEL_BLOB,
   get limits() { return NIVA_VRM_BONE_LIMITS; },
+  get collisionPairs() { return NIVA_COLLISION_PAIRS; },
+  get collision() {
+    return collisionGuard ? {
+      enabled: collisionGuard.enabled,
+      blocked: collisionGuard.blocked,
+      lastCollisions: collisionGuard.lastCollisions,
+    } : { enabled: false, blocked: 0, lastCollisions: [] };
+  },
   get autoDemo() { return autoDemo; },
   get randomTarget() { return randomTargetPose; },
   setAutoDemo(enabled) {
@@ -334,6 +441,18 @@ window.NIVA3D = Object.freeze({
       y: stateFor(name, 'y', l.y.neutral).angle,
       z: stateFor(name, 'z', l.z.neutral).angle,
     };
+  },
+  getBoneWorldPosition(name) {
+    return getWorldBonePoints()[name] || null;
+  },
+  setCollisionGuard(enabled) {
+    if (!collisionGuard) return false;
+    if (enabled) collisionGuard.enable(); else collisionGuard.disable();
+    updateCollisionUi();
+    return collisionGuard.enabled;
+  },
+  recalibrateCollisionGuard() {
+    return collisionGuard?.calibrate() || null;
   },
   reset() {
     autoDemo = false;
