@@ -1,4 +1,4 @@
-import { NIVA_VRM_BONE_LIMITS, NIVA_VRM_EXPECTED_BONES, clamp } from './niva-vrm-limits.mjs';
+import { NIVA_VRM_BONE_LIMITS, NIVA_VRM_EXPECTED_BONES, clamp } from './niva-vrm-limits.mjs?v=20260819-1924';
 
 const AXES = ['x', 'y', 'z'];
 const schedules = new Map();
@@ -12,7 +12,7 @@ const progressEl = document.querySelector('#progress');
 const intensityEl = document.querySelector('#intensity');
 const speedEl = document.querySelector('#speed');
 
-// V0.8.1 default: use the complete configured human-safe envelope.
+// Default mode: cover the complete configured human-safe envelope.
 if (intensityEl) intensityEl.value = '1';
 if (speedEl) speedEl.value = '0.85';
 
@@ -27,7 +27,8 @@ function randomInside(axis, factor, preferBoundary = false) {
   const { min, max } = scaledBounds(axis, factor);
   if (min === max) return min;
   const r = Math.random();
-  // On the primary axis, deliberately visit real configured endpoints often.
+  // The primary axis deliberately reaches exact configured MIN/MAX often,
+  // so the default page demonstrates the full safe range instead of idle motion.
   if (preferBoundary && r < 0.28) return min;
   if (preferBoundary && r < 0.56) return max;
   return min + Math.random() * (max - min);
@@ -42,9 +43,9 @@ function nextBoneTarget(name) {
 
   const target = {};
   for (const axisName of AXES) {
-    // Explore one axis through the full human-safe envelope at a time.
-    // The other two axes still move, but at 40% of their envelope to avoid
-    // combining three simultaneous anatomical extremes on the same joint.
+    // One axis explores the full safe ROM at a time. The other two remain active
+    // at 40% of their envelope. This avoids combining three anatomical extremes
+    // on one joint while still allowing every axis to reach MIN and MAX in turn.
     const axisFactor = axisName === primary ? factor : factor * 0.4;
     target[axisName] = randomInside(limit[axisName], axisFactor, axisName === primary);
   }
@@ -120,7 +121,7 @@ function waitForModel() {
   window.NIVA3D.setAutoDemo(false);
   installControls();
   const now = performance.now();
-  // Stagger the first targets so the body does not snap into one synchronized pose.
+  // Stagger the first targets so the whole body never snaps synchronously.
   for (const name of NIVA_VRM_EXPECTED_BONES) schedules.set(name, now + Math.random() * 2200);
   if (currentEl) currentEl.textContent = '全范围随机安全活动';
   timer = setInterval(tick, 90);
