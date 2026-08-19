@@ -49,15 +49,21 @@ test('neutral-pose calibration never reports the calibration pose itself', () =>
   assert.deepEqual(collisions, []);
 });
 
-test('v0.82 thresholds permit only a tiny approach beyond neutral', () => {
+test('v0.82 thresholds follow visual-gap and neutral-slack calibration', () => {
   const points = neutralPoints();
   const height = 1.7;
   const measurements = measureCollisionPairs(points, height);
   const thresholds = calibrateCollisionThresholds(points, height);
   const handTorso = measurements.find((item) => item.id === 'left-hand-torso');
   assert.ok(handTorso);
+
+  const expected = Math.min(
+    height * handTorso.marginScale,
+    handTorso.clearance - height * handTorso.neutralSlackScale,
+  );
+
   assert.ok(thresholds['left-hand-torso'] < handTorso.clearance);
-  assert.ok(handTorso.clearance - thresholds['left-hand-torso'] <= height * 0.0031);
+  assert.ok(Math.abs(thresholds['left-hand-torso'] - expected) < 1e-12);
 });
 
 test('hand entering torso is detected after neutral calibration', () => {
