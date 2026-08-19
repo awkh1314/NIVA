@@ -45,5 +45,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release delete v0.83-latest --yes --cleanup-tag 2>$null
+          gh release view v0.83-latest *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release delete v0.83-latest --yes --cleanup-tag
+          }
           gh release create v0.83-latest NIVA-Windows-x64.zip --title "NIVA V0.83 Latest" --notes "Constraint-based Safe Pose Generator + Collision-free Path Planner desktop preview."
