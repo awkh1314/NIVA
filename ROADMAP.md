@@ -10,7 +10,7 @@
 - 不让 LLM 逐帧生成像素；这会慢、贵、不稳定。
 - 不再维护多套 VRM 模型；`NIVA.vrm` 是唯一 3D 本体。
 - 不让 2D 与 3D 各自发展一套控制逻辑。
-- 任何 3D 骨骼动作必须经过人体工程活动限制、角速度限制和角加速度限制。
+- 任何 3D 骨骼动作必须经过人体工程活动限制、角速度限制、角加速度限制和人体自碰撞限制。
 
 统一目标架构：
 
@@ -67,25 +67,44 @@ Motion / Safety Layer
 
 - [x] `NIVA.vrm` 固定为唯一 3D 模型
 - [x] 读取并控制 54 个 VRM Humanoid bones
-- [x] 使用 three-vrm normalized human bones，吸收模型局部轴差异
+- [x] 使用 three-vrm normalized human bones
 - [x] 建立全身关节工程活动范围
 - [x] 头颈 / 躯干 / 肩 / 肘 / 腕 / 手指 / 髋 / 膝 / 踝 / 足趾全部限制
 - [x] 目标角度 Hard Clamp
 - [x] 每骨骼最大角速度限制
 - [x] 每骨骼最大角加速度限制
-- [x] 自动活动连续长期运行不越界测试
 - [x] Pages 首页默认加载全身 3D 模型
-- [x] 默认让全身可控骨骼以肉眼可见的低速持续活动
+- [x] 默认全身各骨骼异步探索正常人体安全 ROM
+- [x] 每个关节主轴可长期覆盖最小值到最大值
 - [x] 眨眼与轻微表情活动
 - [x] 鼠标旋转 / 缩放观察全身
 - [x] 公开 `NIVA3D.setBoneRotation()` 安全接口，不公开 raw bone node
 - [x] 完整限制文档 `docs/HUMAN_MOTION_LIMITS.md`
 
-> V0.8 的意义不是“重新把 3D 变成当前产品主线”，而是提前确定未来 3D 身体绝不能突破的运动底座。
+### V0.81 Anatomical Collision Guard
+
+单个关节合法不代表组合姿态合法。V0.81 解决 Humanoid 骨骼随机组合产生的明显人体自穿模。
+
+- [x] 建立按模型身高缩放的 Sphere / Capsule 人体碰撞代理
+- [x] 躯干 / 头 / 上臂 / 前臂 / 手 / 大腿 / 小腿纳入碰撞层
+- [x] 当前检查 19 组关键自碰撞关系
+- [x] 模型中立姿态自动校准碰撞间距，减少静态误报
+- [x] 每个安全帧保存 `lastSafePose`
+- [x] 碰撞时只回滚相关运动链，不重置全身
+- [x] 回滚时清零相关骨骼角速度，避免继续冲入碰撞体
+- [x] `niva:collision` 事件通知 Random Driver
+- [x] Random Driver 对造成碰撞的运动链重新随机目标
+- [x] ROM 不因碰撞而永久缩小；拒绝的是非法组合姿态
+- [x] VRM SpringBone Collider 继续负责头发 / 裙摆 / 飘带 / 饰品
+- [x] 公开 `NIVA3D.collision` / `setCollisionGuard()` / `recalibrateCollisionGuard()`
+- [x] 增加碰撞几何、中立校准、手穿胸、回滚自动测试
+- [x] 完整文档 `docs/ANATOMICAL_COLLISION_GUARD.md`
+
+> V0.8/V0.81 的意义不是重新把 3D 变成当前产品主线，而是提前确定未来 3D 身体必须遵守的 ROM、动态和碰撞底座。
 
 ## 阶段 1.8 — 2.5D Motion Engine（当前下一步）
 
-目标：让当前低成本 2D 角色拥有接近 3D 的动态生命感。
+目标：让当前低成本 2D 角色拥有接近 3D 的动态生命感，同时逐步与 3D 共用行为和安全规则。
 
 - [ ] 所有动作从瞬时切换改为连续插值
 - [ ] anticipation：动作前摇
@@ -105,6 +124,17 @@ Motion / Safety Layer
 - [ ] 头、眼、发、躯干、手臂不同时启动/停止
 - [ ] 用户肉眼能明显感受到角色的重量、惯性和空间感
 - [ ] 2D 主线无需增加大量新美术资源即可提升生命感
+
+## 3D 后续校准项
+
+V0.81 已经建立通用防护，但针对唯一 `NIVA.vrm` 还需要持续视觉校准：
+
+- [ ] 针对实际网格调整胸部 / 骨盆 Capsule 半径
+- [ ] 手掌和手指增加更细碰撞代理
+- [ ] 脚与地面接触约束 / 足底锁定
+- [ ] 快速动作增加 swept / continuous collision detection
+- [ ] 针对裙摆 / 头发检查并调整现有 SpringBone Collider
+- [ ] 记录高频碰撞组合，形成 Pose Coupling Rules 预过滤层
 
 ## 阶段 2 — 记忆与人格
 
