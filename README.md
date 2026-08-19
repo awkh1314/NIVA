@@ -39,9 +39,9 @@ Desktop 首次运行提示输入 DeepSeek API Key；Key 只在当前运行会话
 
 本地语音包由两部分组成：
 - 输入：**Vosk `vosk-model-small-cn-0.22`**，离线中文 ASR；
-- 输出：**Qwen3-TTS Serena**，支持情绪/语气指令。
+- 输出：**Qwen3-TTS 1.7B CustomVoice / Serena**，支持情绪和语气 instruction。
 
-仓库附带 `tools/voice/install-and-start.ps1`。首次安装会下载约 40MB 的 Vosk 中文模型；Qwen3-TTS 0.6B CustomVoice 首次运行另需下载约 2.5GB。语音包不可用时 NIVA 自动回退系统输入/输出能力。
+仓库附带 `tools/voice/install-and-start.ps1`。首次安装会下载约 40MB 的 Vosk 中文模型；Qwen3-TTS 1.7B CustomVoice 首次运行另需下载约 4.52GB。之所以不用更小的 0.6B 作为默认，是因为官方实现中 0.6B CustomVoice 不使用 `instruct`，不能满足 NIVA 的情绪语音要求。语音包不可用时 NIVA 自动回退系统输入/输出能力。
 
 开发：
 ```bash
