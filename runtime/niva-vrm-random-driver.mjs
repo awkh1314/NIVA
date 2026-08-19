@@ -1,4 +1,4 @@
-import { NIVA_VRM_BONE_LIMITS, NIVA_VRM_EXPECTED_BONES, clamp } from './niva-vrm-limits.mjs?v=20260819-1924';
+import { NIVA_VRM_BONE_LIMITS, NIVA_VRM_EXPECTED_BONES, clamp } from './niva-vrm-limits.mjs?v=20260819-1940';
 
 const AXES = ['x', 'y', 'z'];
 const schedules = new Map();
@@ -6,6 +6,7 @@ const axisCursor = new Map();
 let active = true;
 let timer = null;
 let targetCount = 0;
+let collisionRejectCount = 0;
 
 const currentEl = document.querySelector('#currentMotion');
 const progressEl = document.querySelector('#progress');
@@ -27,8 +28,6 @@ function randomInside(axis, factor, preferBoundary = false) {
   const { min, max } = scaledBounds(axis, factor);
   if (min === max) return min;
   const r = Math.random();
-  // The primary axis deliberately reaches exact configured MIN/MAX often,
-  // so the default page demonstrates the full safe range instead of idle motion.
   if (preferBoundary && r < 0.28) return min;
   if (preferBoundary && r < 0.56) return max;
   return min + Math.random() * (max - min);
@@ -43,9 +42,8 @@ function nextBoneTarget(name) {
 
   const target = {};
   for (const axisName of AXES) {
-    // One axis explores the full safe ROM at a time. The other two remain active
-    // at 40% of their envelope. This avoids combining three anatomical extremes
-    // on one joint while still allowing every axis to reach MIN and MAX in turn.
+    // One axis may explore the complete ROM. The other axes remain active but
+    // narrower so a single joint does not stack three independent extremes.
     const axisFactor = axisName === primary ? factor : factor * 0.4;
     target[axisName] = randomInside(limit[axisName], axisFactor, axisName === primary);
   }
@@ -57,15 +55,18 @@ function nextDelayMs() {
   return (4200 + Math.random() * 5200) / speed;
 }
 
-function retargetBone(name, now) {
+function retargetBone(name, now, afterCollision = false) {
+  if (!NIVA_VRM_BONE_LIMITS[name] || !window.NIVA3D) return;
   window.NIVA3D.setBoneRotation(name, nextBoneTarget(name));
-  schedules.set(name, now + nextDelayMs());
+  schedules.set(name, now + (afterCollision ? 900 + Math.random() * 1800 : nextDelayMs()));
   targetCount += 1;
 }
 
 function updateUi() {
-  if (currentEl) currentEl.textContent = active ? '全范围随机安全活动' : '保持当前姿态';
-  if (progressEl && active) progressEl.textContent = `全人体范围随机目标 · ${targetCount} 次 · HARD CLAMP`;
+  if (currentEl) currentEl.textContent = active ? '全范围随机安全活动 + 穿模防护' : '保持当前姿态';
+  if (progressEl && active) {
+    progressEl.textContent = `随机目标 ${targetCount} 次 · 穿模拒绝 ${collisionRejectCount} 次 · HARD CLAMP`;
+  }
 }
 
 function tick() {
@@ -109,9 +110,21 @@ function installControls() {
     window.NIVA3D?.reset();
     if (pauseBtn) pauseBtn.textContent = '继续随机活动';
     if (currentEl) currentEl.textContent = '安全中立姿态';
-    if (progressEl) progressEl.textContent = '已回到安全中立姿态';
+    if (progressEl) progressEl.textContent = `已回安全中立姿态 · 穿模共拦截 ${collisionRejectCount} 次`;
   });
 }
+
+window.addEventListener('niva:collision', (event) => {
+  collisionRejectCount += 1;
+  if (!active || !window.NIVA3D) return updateUi();
+  const now = performance.now();
+  const bones = [...new Set(event.detail?.bones || [])];
+  // The renderer has already rolled these drivers back to the last safe frame.
+  // Give only the offending chains a new target so the rest of the body keeps
+  // moving naturally instead of resetting the whole pose.
+  for (const name of bones) retargetBone(name, now, true);
+  updateUi();
+});
 
 function waitForModel() {
   if (!window.NIVA3D) return setTimeout(waitForModel, 80);
@@ -121,9 +134,8 @@ function waitForModel() {
   window.NIVA3D.setAutoDemo(false);
   installControls();
   const now = performance.now();
-  // Stagger the first targets so the whole body never snaps synchronously.
   for (const name of NIVA_VRM_EXPECTED_BONES) schedules.set(name, now + Math.random() * 2200);
-  if (currentEl) currentEl.textContent = '全范围随机安全活动';
+  if (currentEl) currentEl.textContent = '全范围随机安全活动 + 穿模防护';
   timer = setInterval(tick, 90);
   tick();
 }
@@ -132,6 +144,7 @@ waitForModel();
 
 window.NIVA3DRandom = Object.freeze({
   get active() { return active; },
+  get collisionRejectCount() { return collisionRejectCount; },
   pause() { active = false; updateUi(); },
   resume() {
     active = true;
