@@ -2,21 +2,44 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>NIVA · Digital Spirit</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>NIVA · 3D Safe Motion</title>
+<meta name="description" content="NIVA VRM 1.0 全身安全活动展示：所有人体骨骼由统一关节范围、角速度与角加速度限制保护。">
 <style>
-:root{--bg:#070b12;--panel:#0d1422;--line:#21334a;--cyan:#76e7f2;--violet:#b69aff;--text:#eef7ff;--muted:#8ea1b7}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 40% 0,#192744 0,#080d16 42%,#05070b 100%);color:var(--text);font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}.card{width:min(760px,calc(100% - 32px));border:1px solid var(--line);background:linear-gradient(180deg,rgba(13,20,34,.92),rgba(7,11,18,.9));border-radius:28px;padding:34px;box-shadow:0 24px 80px rgba(0,0,0,.32)}h1{margin:0 0 10px;font-size:42px;letter-spacing:.14em}h1 span{letter-spacing:.02em;color:var(--violet);font-weight:400}p{color:var(--muted);line-height:1.7;margin:0 0 24px}.actions{display:grid;grid-template-columns:1fr 1fr;gap:12px}a{display:block;text-decoration:none;color:var(--text);border:1px solid rgba(118,231,242,.18);border-radius:18px;padding:18px;background:rgba(12,20,34,.76);transition:.16s}a:hover{transform:translateY(-2px);border-color:rgba(118,231,242,.58)}b{display:block;color:var(--cyan);margin-bottom:6px}.note{margin-top:18px;font-size:13px}@media(max-width:620px){.actions{grid-template-columns:1fr}.card{padding:24px}h1{font-size:32px}}
+:root{--bg:#050912;--panel:#0a1220e8;--line:#20344d;--cyan:#76e7f2;--violet:#b69aff;--text:#eef7ff;--muted:#91a4ba;--ok:#8fffcf;--bad:#ff9ca8}*{box-sizing:border-box}html,body{margin:0;width:100%;min-height:100%;background:radial-gradient(circle at 35% 0,#172746 0,#080d17 45%,#04070c 100%);color:var(--text);font-family:Inter,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}body{overflow:hidden}.app{height:100vh;height:100dvh;display:grid;grid-template-columns:minmax(0,1fr) 390px}.stage{position:relative;min-width:0;overflow:hidden;background:radial-gradient(circle at 50% 36%,rgba(71,142,180,.12),transparent 34%),linear-gradient(180deg,rgba(7,14,25,.2),rgba(2,5,9,.72))}.stage:before{content:"";position:absolute;inset:0;pointer-events:none;background-image:linear-gradient(rgba(118,231,242,.05) 1px,transparent 1px),linear-gradient(90deg,rgba(118,231,242,.04) 1px,transparent 1px);background-size:52px 52px;mask-image:linear-gradient(to bottom,#000 35%,transparent 88%)}#niva3d{display:block;width:100%;height:100%;position:relative}.brand{position:absolute;top:22px;left:24px;z-index:3}.brand h1{font-size:24px;letter-spacing:.18em;margin:0}.brand h1 span{color:var(--violet);font-weight:400;letter-spacing:.03em}.brand p{margin:7px 0 0;color:var(--muted);font-size:12px}.stage-status{position:absolute;left:24px;bottom:22px;z-index:3;display:flex;gap:8px;flex-wrap:wrap}.pill{border:1px solid rgba(118,231,242,.18);background:rgba(6,12,21,.76);backdrop-filter:blur(12px);border-radius:999px;padding:8px 11px;font-size:12px;color:var(--muted)}#status.ok{color:var(--ok)}#status.bad{color:var(--bad)}.panel{height:100%;overflow:auto;padding:18px;border-left:1px solid var(--line);background:linear-gradient(180deg,rgba(10,18,32,.96),rgba(5,9,16,.95));box-shadow:-20px 0 60px rgba(0,0,0,.18)}.topline{display:flex;align-items:center;justify-content:space-between;gap:10px}.topline b{font-size:13px;color:var(--cyan);letter-spacing:.12em}.badge{font-size:11px;border:1px solid rgba(143,255,207,.2);color:var(--ok);padding:6px 8px;border-radius:999px}.lead{color:var(--muted);font-size:13px;line-height:1.65;margin:12px 0 16px}.card{border:1px solid var(--line);border-radius:16px;background:rgba(7,13,23,.65);padding:13px;margin-bottom:12px}.row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:8px 0;font-size:12px;color:var(--muted)}.row strong{color:var(--text);font-size:13px}input[type=range]{width:150px;accent-color:var(--cyan)}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px}.buttons button,.links a{border:1px solid rgba(118,231,242,.2);background:#0c1726;color:var(--text);border-radius:11px;padding:9px 10px;font:inherit;font-size:12px;text-align:center;text-decoration:none;cursor:pointer}.buttons button:hover,.links a:hover{border-color:rgba(118,231,242,.58)}.links{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}.section-title{margin:16px 0 8px;color:var(--violet);font-size:12px;letter-spacing:.15em;text-transform:uppercase}.limits details{border-top:1px solid rgba(255,255,255,.07)}.limits details:first-child{border-top:0}.limits summary{display:flex;justify-content:space-between;cursor:pointer;padding:10px 0;color:#dcecff;font-size:12px}.limits summary span{color:var(--muted)}.limit-grid{display:grid;gap:6px;padding:0 0 10px}.limit-item{border:1px solid rgba(255,255,255,.06);border-radius:10px;padding:8px;background:rgba(2,6,11,.42)}.limit-item b{font-size:11px}.limit-item code{display:block;color:var(--cyan);font-size:10px;margin:3px 0}.limit-item small{display:block;color:var(--muted);font-size:9px;line-height:1.45}.foot{color:var(--muted);font-size:10px;line-height:1.55;margin:12px 0}.foot a{color:var(--cyan)}@media(max-width:900px){body{overflow:auto}.app{height:auto;min-height:100dvh;grid-template-columns:1fr}.stage{height:68vh;min-height:520px}.panel{border-left:0;border-top:1px solid var(--line);height:auto;overflow:visible}.stage-status{bottom:14px;left:14px}.brand{top:14px;left:14px}}
 </style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+    "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3.5.5/lib/three-vrm.module.min.js"
+  }
+}
+</script>
 </head>
 <body>
-<main class="card">
-  <h1>NIVA <span>Life</span></h1>
-  <p>当前公开体验入口。3D / VRM 已暂停更新；新主线是 2D/2.5D + Control Protocol。</p>
-  <div class="actions">
-    <a href="./control.html"><b>V0.7 Control Protocol MVP</b>手动拖动眼睛、嘴巴、头部、躯干、四肢参数，实时查看 Control JSON。</a>
-    <a href="./index.dev.html"><b>V0.6 2D Companion</b>保留原有 2D/2.5D 角色、表情、动作与 Brain MVP 页面。</a>
-  </div>
-  <p class="note">推荐先进入 V0.7 控制面板。它是下一阶段让大模型像“玩家”一样控制 NIVA 身体的基础。</p>
+<main class="app">
+  <section class="stage" id="stageShell">
+    <div class="brand"><h1>NIVA <span>Safe Motion</span></h1><p>VRM 1.0 · 全身工程活动限制 · 鼠标可旋转/缩放观察</p></div>
+    <canvas id="niva3d" aria-label="NIVA 3D VRM 安全运动展示"></canvas>
+    <div class="stage-status"><span class="pill" id="status">● 正在载入</span><span class="pill" id="progress">准备 NIVA.vrm</span><span class="pill">骨骼 <b id="jointCount">0/54</b></span></div>
+  </section>
+  <aside class="panel">
+    <div class="topline"><b>HUMAN MOTION GUARD</b><span class="badge">HARD CLAMP ON</span></div>
+    <p class="lead">所有 54 个 VRM Humanoid 骨骼都经过统一限制层。目标姿态先限制角度，再限制角速度和角加速度，最终才写入模型，避免关节反折、瞬移和异常高速。</p>
+    <div class="card">
+      <div class="row"><span>当前状态</span><strong id="currentMotion">全身安全自动活动</strong></div>
+      <div class="row"><label for="intensity">活动幅度</label><input id="intensity" type="range" min="0" max="1" step="0.05" value="0.72"></div>
+      <div class="row"><label for="speed">活动速度</label><input id="speed" type="range" min="0.25" max="1.5" step="0.05" value="0.72"></div>
+      <div class="buttons"><button id="pauseBtn">暂停自动活动</button><button id="resetBtn">回安全中立姿态</button></div>
+      <div class="links"><a href="./index.dev.html">2D 主线</a><a href="./control.html">Control Protocol</a></div>
+    </div>
+    <div class="section-title">运行时限制表</div>
+    <div class="card limits" id="limitsList"></div>
+    <p class="foot">这里是角色动画的工程安全范围，不是医学诊断标准。完整的人体 ROM 参考值与 NIVA 实际收紧后的限制见 <a href="./docs/HUMAN_MOTION_LIMITS.md">HUMAN_MOTION_LIMITS.md</a>。</p>
+  </aside>
 </main>
+<script type="module" src="./runtime/niva-vrm-showcase.mjs"></script>
 </body>
 </html>
