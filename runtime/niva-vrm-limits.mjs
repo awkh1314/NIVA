@@ -87,6 +87,32 @@ export function neutralPose() {
   }]));
 }
 
+function randomAxisTarget(a, intensity, random, edgeChance) {
+  if (a.min === a.max) return a.min;
+  const safeIntensity = clamp(intensity, 0, 1);
+  const lo = a.neutral + (a.min - a.neutral) * safeIntensity;
+  const hi = a.neutral + (a.max - a.neutral) * safeIntensity;
+  const r = clamp(random(), 0, 1);
+  const edge = clamp(edgeChance, 0, 0.8);
+  if (r < edge / 2) return lo;
+  if (r < edge) return hi;
+  const u = edge >= 1 ? 0.5 : (r - edge) / (1 - edge);
+  return lo + (hi - lo) * u;
+}
+
+export function randomSafePose(intensity = 1, random = Math.random, edgeChance = 0.36) {
+  const safeIntensity = clamp(intensity, 0, 1);
+  const pose = {};
+  for (const [name, l] of Object.entries(NIVA_VRM_BONE_LIMITS)) {
+    pose[name] = clampBoneRotation(name, {
+      x: randomAxisTarget(l.x, safeIntensity, random, edgeChance),
+      y: randomAxisTarget(l.y, safeIntensity, random, edgeChance),
+      z: randomAxisTarget(l.z, safeIntensity, random, edgeChance),
+    });
+  }
+  return pose;
+}
+
 export function safeDemoPose(timeSeconds, intensity = 1) {
   const safeIntensity = clamp(intensity, 0, 1);
   const pose = {};
