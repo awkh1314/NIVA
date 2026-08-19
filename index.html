@@ -38,7 +38,7 @@
       <div id="presetGrid" class="preset-grid"></div>
       <div class="section-title">声音</div>
       <div class="voice-card">
-        <div><b>默认：Qwen3-TTS Serena</b><small>本地情感 TTS 服务可用时自动使用；否则回退 Windows/WebView 系统语音。</small></div>
+        <div><b>默认：Qwen3-TTS Serena</b><small>本地语音包同时提供 Vosk 离线中文输入与 Qwen3-TTS 情感输出；不可用时自动回退系统能力。</small></div>
         <span id="voiceBadge">检测中</span>
       </div>
       <div class="section-title">运行状态</div>
@@ -51,5 +51,6 @@
     </aside>
   </div>
   <script type="module" src="/src/main.js"></script>
+  <script type="module" src="/src/local-asr.mjs"></script>
 </body>
 </html>
