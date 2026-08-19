@@ -2,9 +2,25 @@
 
 > 一个有形象、有情绪、能对话，并逐步形成记忆与工具能力的 2D/2.5D 数字生命助手。
 
-NIVA 当前主线已经确定为 **2D/2.5D + Control Protocol**。
+NIVA 当前产品主线确定为 **2D/2.5D + Control Protocol**，先完成产品 0→1；3D / VRM 暂停功能迭代，未来作为最终身体渲染方向重新接入同一套控制协议。
 
-3D / VRM 现在进入 **暂停更新版（Legacy / Paused）**：仓库保留 `NIVA.vrm`、`AvatarSample_A.vrm` 等历史技术验证资产，但它们不再作为当前 MVP 的开发主线，也不阻塞新版本迭代。后续只有当 2D/2.5D 控制协议稳定后，才重新评估 3D 作为可选身体渲染器。
+## 3D 模型资产规则
+
+仓库只允许存在一个正式 VRM 模型：
+
+```text
+NIVA.vrm
+```
+
+`NIVA.vrm` 当前内容就是用户上传的 `自创形象.vrm`，仅进行了仓库文件名统一，没有更换模型内容。
+
+规则：
+
+- `NIVA.vrm` 是唯一允许被产品代码引用的 VRM 模型入口；
+- 不再保留 `AvatarSample_A.vrm`、旧版 `NIVA.vrm` 或其他示例 / 占位 VRM；
+- 后续不得为了测试直接提交第二个 `.vrm` 到主线；
+- 需要做 3D 实验时，也必须围绕当前 `NIVA.vrm` 进行，或在独立实验分支完成后再决定是否替换唯一正式模型；
+- 当前 2D/2.5D 产品主线不依赖 VRM，因此 3D 暂停不会阻塞 MVP。
 
 ## 在线体验
 
@@ -16,8 +32,9 @@ https://awkh1314.github.io/niva-digital-spirit/
 
 入口：
 
-- `control.html`：V0.7 Control Protocol MVP，可手动控制眼睛、嘴巴、头部、躯干、手臂、腿部和情绪，并实时查看 Control JSON。
-- `index.dev.html`：V0.6 2D/2.5D Companion，保留原角色、表情、动作和 Brain MVP 页面。
+- `index.html`：公开入口，当前指向 2D/2.5D 主线；
+- `index.dev.html`：2D/2.5D Companion，保留原角色、表情、动作；
+- `control.html`：Control Protocol MVP，可手动控制眼睛、嘴巴、头部、躯干、手臂、腿部和情绪，并实时查看 Control JSON。
 
 ## 当前版本
 
@@ -25,22 +42,9 @@ https://awkh1314.github.io/niva-digital-spirit/
 | --- | --- | --- |
 | v2.0 | ✅ | 单图 + 多表情原型 |
 | v3.0 | ✅ | 分层 PNG + SVG 面部 + 骨架式微动 |
-| **v0.6 Brain MVP** | **✅** | DeepSeek 对话 → `text/emotion/motion` → `NIVA.play()` |
-| **3D / VRM Track** | **⏸️ Paused** | 保留历史验证资产，暂停继续更新 |
-| **v0.7 Control Protocol MVP** | **✅** | `/control.html`：五官、头部、躯干、四肢的数据化控制面板 |
-
-V0.6 已实现：
-
-- 页面聊天输入、发送按钮、Enter 发送；
-- 当前页面内的临时会话上下文；
-- DeepSeek 后端代理，API Key 不进入浏览器；
-- 默认 `deepseek-v4-flash`，关闭 thinking 以优先低延迟；
-- 严格 JSON 输出：`text + emotion + motion`；
-- 模型输出异常时自动回退 `neutral + idle`；
-- 请求期间自动进入 `thinking + tilt`；
-- DeepSeek 不可用时仍保留原角色、表情、动作与离线页面；
-- 所有模型结果统一通过 `NIVA.play()` 驱动表现层；
-- 已移除旧的随机行为 runtime，避免多套控制器冲突。
+| v0.6 Brain MVP | ✅ | DeepSeek 对话 → `text/emotion/motion` → `NIVA.play()` |
+| 3D / VRM Track | ⏸️ Paused | 只保留唯一正式模型 `NIVA.vrm`，暂停功能迭代 |
+| v0.7 Control Protocol MVP | ✅ | `/control.html`：五官、头部、躯干、四肢的数据化控制面板 |
 
 ## 当前控制契约
 
@@ -59,9 +63,9 @@ NIVA.play({
 
 LLM 不直接操作 DOM。模型只决定结构化字段，视觉层只接受统一控制契约。
 
-## V0.7 控制协议方向
+## Control Protocol 方向
 
-V0.7 的目标不是增加更多固定动画，而是建立 **NIVA Control Protocol**：
+目标不是不断增加固定动画，而是建立统一的 NIVA Control Protocol：
 
 ```text
 LLM / Manual Control Panel
@@ -70,12 +74,12 @@ NIVA Control Data
         ↓
 Character Controller
         ↓
-2D/2.5D Layered Runtime
+2D/2.5D Runtime（当前）
         ↓
-NIVA Body
+3D / VRM Runtime（未来）
 ```
 
-第一版只做简化维度：
+第一版控制维度：
 
 ```text
 face:  eyeOpen / gazeX / gazeY / browRaise / mouthOpen / mouthSmile / blush
@@ -86,15 +90,15 @@ legs:  stance / weightShift
 emotion: mood / intensity
 ```
 
-这个阶段的重点是证明：**手动控制面板、Offline Demo 和未来 LLM 都可以输出同一种 Control JSON 来驱动 NIVA。**
+核心原则：同一套控制数据先把 2D/2.5D 做出生命感，未来再把渲染层替换或扩展为唯一的 `NIVA.vrm`，而不是重新设计一套 3D 控制系统。
 
 ## V0.6 架构
 
 ```text
 Browser
-  ├─ 原 NIVA 2D/2.5D 表现层
-  ├─ runtime/niva-brain.js      # 当前页面会话 + /api/chat 客户端
-  └─ runtime/niva-chat-ui.js    # 聊天 UI → NIVA.play()
+  ├─ NIVA 2D/2.5D 表现层
+  ├─ runtime/niva-brain.js
+  └─ runtime/niva-chat-ui.js
           │
           ▼
 POST /api/chat
@@ -103,7 +107,7 @@ POST /api/chat
 server/server.js
           │  DEEPSEEK_API_KEY only here
           ▼
-DeepSeek V4 Flash
+DeepSeek
           │
           ▼
 { text, emotion, motion }
@@ -119,13 +123,13 @@ DeepSeek V4 Flash
 cp .env.example .env
 ```
 
-然后在 `.env` 中填写：
+在 `.env` 中填写：
 
 ```env
 DEEPSEEK_API_KEY=你的_key
 ```
 
-启动只需要一条命令：
+启动：
 
 ```bash
 npm start
@@ -135,37 +139,28 @@ npm start
 
 ## 离线模式
 
-网络能力不是视觉运行的前提：
+- `index.html`：GitHub Pages 公开入口；
+- `index.dev.html`：2D/2.5D 开发页；
+- `control.html`：Control Protocol 调试页；
+- `npm start`：2D 页面 + Brain 后端。
 
-- 直接打开 `index.html`：公开体验入口；
-- 直接打开 `control.html`：V0.7 Control Protocol MVP；
-- 直接打开 `index.dev.html`：引用 `assets/` 的开发版；
-- `npm start`：在原开发页基础上注入 V0.6 Brain UI。
-
-没有配置 `DEEPSEEK_API_KEY` 时，聊天会显示 Brain 离线，但表情、动作、眨眼和固定演示仍可使用。
-
-## 测试
-
-```bash
-npm test
-```
-
-测试覆盖：结构化输出容错、DeepSeek V4 请求参数、页面 Brain 注入、`/api/chat` HTTP 闭环、API Key 不出现在前端，以及无 Key 时的离线降级。
+没有配置 `DEEPSEEK_API_KEY` 时，视觉、表情、动作和固定演示仍可使用。
 
 ## 项目结构
 
 ```text
 niva-digital-spirit/
-├─ index.html                  # 公开体验入口
-├─ control.html                # V0.7 Control Protocol MVP
-├─ index.dev.html              # 原始 2D/2.5D 开发页
-├─ assets/                     # 分层 PNG 素材
+├─ NIVA.vrm                    # 唯一正式 3D 模型（当前暂停功能迭代）
+├─ index.html                  # 公开 2D/2.5D 入口
+├─ control.html                # Control Protocol MVP
+├─ index.dev.html              # 2D/2.5D 开发页
+├─ assets/                     # 2D 分层 PNG 素材
 ├─ runtime/
-│  ├─ niva-brain.js            # 会话 / API 客户端，不控制角色 DOM
-│  └─ niva-chat-ui.js          # 聊天 UI 与 NIVA.play() 适配层
+│  ├─ niva-brain.js
+│  └─ niva-chat-ui.js
 ├─ server/
-│  ├─ server.js                # 静态服务 + DeepSeek 安全代理
-│  └─ server.test.js           # Node 内置测试
+│  ├─ server.js
+│  └─ server.test.js
 ├─ .env.example
 ├─ package.json
 ├─ ROADMAP.md
@@ -175,9 +170,9 @@ niva-digital-spirit/
    └─ ITERATION_WORKFLOW.md
 ```
 
-## 当前边界
+## 当前产品边界
 
-V0.7 **没有**实现长期记忆、数据库、TTS、ASR、桌面常驻、3D 或真实大模型实时身体控制。它先提供前端可体验的 Control Protocol 调试面板。
+当前重点是把 2D/2.5D 的动作、状态过渡和控制协议做成熟，而不是继续扩张 3D 功能。3D 最终必须复用同一套控制数据，并且只能加载仓库中的唯一正式模型 `NIVA.vrm`。
 
 下一阶段见 [ROADMAP.md](ROADMAP.md)。
 
