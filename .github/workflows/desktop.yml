@@ -29,9 +29,10 @@ jobs:
           @"
           NIVA V0.83 Portable
           1. 直接运行 NIVA.exe；不配置 API 时可使用内置体验预设。
-          2. 双击模型打开/收起界面。
-          3. 可选：运行 voice\install-and-start.ps1 安装 Qwen3-TTS Serena 情感语音服务；首次约下载 2.5GB 模型。
-          4. DeepSeek API Key 仅保存在当前运行会话。
+          2. 双击模型打开/收起界面；运行中的回答/动作不会被新输入瞬移打断。
+          3. 可选：运行 voice\install-and-start.ps1 安装本地语音包：Vosk 中文离线 ASR + Qwen3-TTS 1.7B Serena 情感语音。
+          4. Vosk 中文模型约 40MB；Qwen3-TTS 1.7B CustomVoice 首次约下载 4.52GB。
+          5. DeepSeek API Key 仅保存在当前运行会话。
           "@ | Set-Content -Encoding UTF8 release\README.txt
           Compress-Archive -Path release\* -DestinationPath NIVA-Windows-x64.zip -Force
       - uses: actions/upload-artifact@v4
