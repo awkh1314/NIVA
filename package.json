@@ -1,11 +1,11 @@
 {
   "name": "niva-digital-spirit",
-  "version": "0.6.0",
+  "version": "0.8.0",
   "private": true,
-  "description": "NIVA 2D/2.5D Brain MVP",
+  "description": "NIVA digital spirit: 2D mainline plus VRM safe-motion renderer",
   "scripts": {
     "start": "node server/server.js",
-    "test": "node --test server/server.test.js"
+    "test": "node --test server/server.test.js runtime/niva-vrm-limits.test.mjs"
   },
   "engines": {
     "node": ">=18"
