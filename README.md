@@ -1,26 +1,24 @@
 # NIVA · 数字生命精灵
 
-> 一个有形象、有情绪、能对话，并逐步形成记忆与工具能力的 2D/2.5D 数字生命助手。
+> 一个有形象、有情绪、能对话，并逐步形成记忆与工具能力的数字生命助手。
 
-NIVA 当前产品主线确定为 **2D/2.5D + Control Protocol**，先完成产品 0→1；3D / VRM 暂停功能迭代，未来作为最终身体渲染方向重新接入同一套控制协议。
+NIVA 当前产品策略：**2D/2.5D 负责低成本完成 0→1，唯一的 `NIVA.vrm` 作为最终 3D 身体方向逐步验证。** 两条表现层必须复用同一套 Control Protocol，不允许形成两套割裂的控制系统。
 
-## 3D 模型资产规则
+## 唯一 3D 模型
 
-仓库只允许存在一个正式 VRM 模型：
+仓库只允许一个正式 VRM：
 
 ```text
 NIVA.vrm
 ```
 
-`NIVA.vrm` 当前内容就是用户上传的 `自创形象.vrm`，仅进行了仓库文件名统一，没有更换模型内容。
-
 规则：
 
-- `NIVA.vrm` 是唯一允许被产品代码引用的 VRM 模型入口；
-- 不再保留 `AvatarSample_A.vrm`、旧版 `NIVA.vrm` 或其他示例 / 占位 VRM；
-- 后续不得为了测试直接提交第二个 `.vrm` 到主线；
-- 需要做 3D 实验时，也必须围绕当前 `NIVA.vrm` 进行，或在独立实验分支完成后再决定是否替换唯一正式模型；
-- 当前 2D/2.5D 产品主线不依赖 VRM，因此 3D 暂停不会阻塞 MVP。
+- `NIVA.vrm` 是唯一允许被产品代码引用的 VRM 模型；
+- 不提交第二个示例、占位或测试 `.vrm` 到 `main`；
+- 当前模型为 VRM 1.0，54 个 Humanoid bones；
+- 所有 3D 骨骼控制必须先经过 `runtime/niva-vrm-limits.mjs`；
+- 禁止业务代码直接绕过安全层写入原始 bone node。
 
 ## 在线体验
 
@@ -32,9 +30,9 @@ https://awkh1314.github.io/niva-digital-spirit/
 
 入口：
 
-- `index.html`：公开入口，当前指向 2D/2.5D 主线；
-- `index.dev.html`：2D/2.5D Companion，保留原角色、表情、动作；
-- `control.html`：Control Protocol MVP，可手动控制眼睛、嘴巴、头部、躯干、手臂、腿部和情绪，并实时查看 Control JSON。
+- `index.html`：**V0.8 3D Safe Motion**。默认全身持续低速活动，54 个 VRM Humanoid 骨骼全部受角度、角速度和角加速度限制；
+- `index.dev.html`：2D/2.5D Companion 主线；
+- `control.html`：Control Protocol 调试页。
 
 ## 当前版本
 
@@ -43,10 +41,57 @@ https://awkh1314.github.io/niva-digital-spirit/
 | v2.0 | ✅ | 单图 + 多表情原型 |
 | v3.0 | ✅ | 分层 PNG + SVG 面部 + 骨架式微动 |
 | v0.6 Brain MVP | ✅ | DeepSeek 对话 → `text/emotion/motion` → `NIVA.play()` |
-| 3D / VRM Track | ⏸️ Paused | 只保留唯一正式模型 `NIVA.vrm`，暂停功能迭代 |
-| v0.7 Control Protocol MVP | ✅ | `/control.html`：五官、头部、躯干、四肢的数据化控制面板 |
+| v0.7 Control Protocol MVP | ✅ | 五官、头部、躯干、四肢的数据化控制协议 |
+| **v0.8 VRM Safe Motion** | **✅** | 唯一 `NIVA.vrm` + 54 骨骼硬限制 + 速度/加速度限制 + Pages 全身展示 |
 
-## 当前控制契约
+## V0.8 运动安全层
+
+人体临床 ROM 只作为参考上界，NIVA 实际执行范围进一步收紧。主要参考包括肩、肘、腕、髋、膝、踝、颈椎、躯干和手指活动范围。
+
+运行时采用三层限制：
+
+```text
+目标姿态
+  ↓
+角度 Hard Clamp
+  ↓
+最大角速度
+  ↓
+最大角加速度
+  ↓
+three-vrm normalized human bones
+  ↓
+NIVA.vrm
+```
+
+即使未来 LLM 或动作系统输出异常值：
+
+```js
+NIVA3D.setBoneRotation('head', { x: 10, y: 999, z: 0 });
+```
+
+也只会执行 `head.y` 的安全上限，不会让头部无限旋转。
+
+完整限制表：[docs/HUMAN_MOTION_LIMITS.md](docs/HUMAN_MOTION_LIMITS.md)
+
+## 2D / 3D 的关系
+
+当前不是重新把产品主线改成“先做完整 3D”。产品仍然先用 2D/2.5D 降低成本完成 0→1；但 3D 不再完全冻结，而是只做 **未来必需的底层验证**：
+
+```text
+LLM / Manual / Behavior
+        ↓
+NIVA Control Data
+        ↓
+Character Controller
+        ↓
+Safety / Motion Layer
+        ↓
+├─ 2D/2.5D Runtime（0→1 主线）
+└─ NIVA.vrm Runtime（最终身体方向）
+```
+
+## 当前 2D 控制契约
 
 ```js
 NIVA.play({
@@ -61,120 +106,61 @@ NIVA.play({
 - emotion：`neutral | smile | shy | thinking | sad | angry | surprise`
 - motion：`idle | wave | nod | shake | tilt | jump | look`
 
-LLM 不直接操作 DOM。模型只决定结构化字段，视觉层只接受统一控制契约。
-
-## Control Protocol 方向
-
-目标不是不断增加固定动画，而是建立统一的 NIVA Control Protocol：
-
-```text
-LLM / Manual Control Panel
-        ↓
-NIVA Control Data
-        ↓
-Character Controller
-        ↓
-2D/2.5D Runtime（当前）
-        ↓
-3D / VRM Runtime（未来）
-```
-
-第一版控制维度：
-
-```text
-face:  eyeOpen / gazeX / gazeY / browRaise / mouthOpen / mouthSmile / blush
-head:  yaw / pitch / tilt
-torso: bodyLean / chestLift / waistTwist / breath
-arms:  leftArmPose / rightArmPose / leftHandOpen / rightHandOpen
-legs:  stance / weightShift
-emotion: mood / intensity
-```
-
-核心原则：同一套控制数据先把 2D/2.5D 做出生命感，未来再把渲染层替换或扩展为唯一的 `NIVA.vrm`，而不是重新设计一套 3D 控制系统。
-
-## V0.6 架构
-
-```text
-Browser
-  ├─ NIVA 2D/2.5D 表现层
-  ├─ runtime/niva-brain.js
-  └─ runtime/niva-chat-ui.js
-          │
-          ▼
-POST /api/chat
-          │
-          ▼
-server/server.js
-          │  DEEPSEEK_API_KEY only here
-          ▼
-DeepSeek
-          │
-          ▼
-{ text, emotion, motion }
-```
+LLM 不直接操作 DOM 或 3D bone。模型只输出结构化控制数据，表现层负责执行。
 
 ## 启动
 
 要求 Node.js 18+。
 
-第一次配置：
-
 ```bash
 cp .env.example .env
+npm start
 ```
 
-在 `.env` 中填写：
+如需 Brain，在 `.env` 中填写：
 
 ```env
 DEEPSEEK_API_KEY=你的_key
 ```
 
-启动：
+测试：
 
 ```bash
-npm start
+npm test
 ```
 
-访问：`http://localhost:3000`
-
-## 离线模式
-
-- `index.html`：GitHub Pages 公开入口；
-- `index.dev.html`：2D/2.5D 开发页；
-- `control.html`：Control Protocol 调试页；
-- `npm start`：2D 页面 + Brain 后端。
-
-没有配置 `DEEPSEEK_API_KEY` 时，视觉、表情、动作和固定演示仍可使用。
+测试包含原 Brain HTTP 闭环，以及 VRM 54 骨骼覆盖、异常角度 clamp、自动活动长期不越界。
 
 ## 项目结构
 
 ```text
 niva-digital-spirit/
-├─ NIVA.vrm                    # 唯一正式 3D 模型（当前暂停功能迭代）
-├─ index.html                  # 公开 2D/2.5D 入口
-├─ control.html                # Control Protocol MVP
-├─ index.dev.html              # 2D/2.5D 开发页
-├─ assets/                     # 2D 分层 PNG 素材
+├─ NIVA.vrm                         # 唯一正式 3D 模型
+├─ index.html                       # V0.8 3D Safe Motion Pages 首页
+├─ index.dev.html                   # 2D/2.5D 主线
+├─ control.html                     # Control Protocol
+├─ assets/                          # 2D 分层素材
 ├─ runtime/
 │  ├─ niva-brain.js
-│  └─ niva-chat-ui.js
+│  ├─ niva-chat-ui.js
+│  ├─ niva-vrm-limits.mjs           # 54 骨骼角度/速度/加速度限制
+│  ├─ niva-vrm-showcase.mjs         # 3D Pages 展示运行时
+│  └─ niva-vrm-limits.test.mjs
 ├─ server/
-│  ├─ server.js
-│  └─ server.test.js
-├─ .env.example
+├─ docs/
+│  ├─ HUMAN_MOTION_LIMITS.md
+│  ├─ ARCHITECTURE.md
+│  └─ ITERATION_WORKFLOW.md
 ├─ package.json
-├─ ROADMAP.md
-└─ docs/
-   ├─ ARCHITECTURE.md
-   ├─ 3D_PAUSED.md
-   └─ ITERATION_WORKFLOW.md
+└─ ROADMAP.md
 ```
 
-## 当前产品边界
+## 当前优先级
 
-当前重点是把 2D/2.5D 的动作、状态过渡和控制协议做成熟，而不是继续扩张 3D 功能。3D 最终必须复用同一套控制数据，并且只能加载仓库中的唯一正式模型 `NIVA.vrm`。
-
-下一阶段见 [ROADMAP.md](ROADMAP.md)。
+1. 用 2D/2.5D 完成产品 0→1；
+2. 把动作从固定动画升级为连续、可打断、带惯性和过渡的 Motion Engine；
+3. 让 2D 与 3D 共用同一个安全 Control Protocol；
+4. 以后替换身体渲染器时，不重写 Brain、人格、记忆和行为层。
 
 ## License
 
