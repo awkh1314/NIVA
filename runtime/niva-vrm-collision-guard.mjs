@@ -147,11 +147,15 @@ export function measureCollisionPairs(points, height = 1) {
 export function calibrateCollisionThresholds(points, height = 1) {
   const h = Math.max(0.1, Number(height) || 1);
   const baseline = measureCollisionPairs(points, h);
-  const hardFloor = -h * 0.006;
-  const warningMargin = h * 0.008;
+  const desiredWarning = h * 0.008;
+  const baselineSafetyGap = h * 0.008;
   return Object.fromEntries(baseline.map((item) => {
-    const baselineGuard = Math.max(hardFloor, item.clearance * 0.72);
-    return [item.id, Math.min(baselineGuard, warningMargin)];
+    // A model may have very close body parts in its neutral pose. The threshold
+    // must always sit *inside* that neutral clearance, otherwise calibration
+    // itself would be treated as a collision. For roomy pairs we still keep an
+    // 0.8% body-height warning shell to stop motion before visible penetration.
+    const neutralSafeThreshold = item.clearance - baselineSafetyGap;
+    return [item.id, Math.min(desiredWarning, neutralSafeThreshold)];
   }));
 }
 
