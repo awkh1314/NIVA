@@ -9,11 +9,11 @@ import {
   clamp,
   clampBoneRotation,
   neutralPose,
-  safeDemoPose,
+  randomSafePose,
   validateLimitTable,
-} from './niva-vrm-limits.mjs?v=20260819-1905';
+} from './niva-vrm-limits.mjs?v=20260819-1924';
 
-const NIVA_BUILD = '2026.08.19-1905';
+const NIVA_BUILD = '2026.08.19-1924';
 const NIVA_MODEL_BLOB = 'cac284d2fe68c0f29c53f0367b5ad5fc1dc96a21';
 const NIVA_MODEL_URL = `./NIVA.vrm?v=${NIVA_MODEL_BLOB}`;
 
@@ -69,6 +69,9 @@ let vrm = null;
 let autoDemo = true;
 let demoTime = 0;
 let manualPose = neutralPose();
+let randomTargetPose = neutralPose();
+let nextRandomTargetAt = 0;
+let randomTargetIndex = 0;
 const state = new Map();
 const clock = new THREE.Clock();
 let blinkClock = 0;
@@ -80,11 +83,13 @@ function stateFor(name, axisName, neutral) {
   return state.get(key);
 }
 
-function stepAxis(s, target, limit, dt) {
+function stepAxis(s, target, limit, dt, speedScale) {
   const error = target - s.angle;
-  const desiredVelocity = clamp(error * 7.5, -limit.maxSpeed, limit.maxSpeed);
-  const dv = clamp(desiredVelocity - s.velocity, -limit.maxAccel * dt, limit.maxAccel * dt);
-  s.velocity = clamp(s.velocity + dv, -limit.maxSpeed, limit.maxSpeed);
+  const maxSpeed = limit.maxSpeed * speedScale;
+  const maxAccel = limit.maxAccel * speedScale;
+  const desiredVelocity = clamp(error * 7.5 * speedScale, -maxSpeed, maxSpeed);
+  const dv = clamp(desiredVelocity - s.velocity, -maxAccel * dt, maxAccel * dt);
+  s.velocity = clamp(s.velocity + dv, -maxSpeed, maxSpeed);
   let next = s.angle + s.velocity * dt;
   if ((error > 0 && next > target) || (error < 0 && next < target)) {
     next = target;
@@ -93,7 +98,7 @@ function stepAxis(s, target, limit, dt) {
   return next;
 }
 
-function applyPose(targetPose, dt) {
+function applyPose(targetPose, dt, speedScale) {
   if (!vrm) return;
   for (const name of NIVA_VRM_EXPECTED_BONES) {
     const limits = NIVA_VRM_BONE_LIMITS[name];
@@ -103,9 +108,9 @@ function applyPose(targetPose, dt) {
     const xState = stateFor(name, 'x', limits.x.neutral);
     const yState = stateFor(name, 'y', limits.y.neutral);
     const zState = stateFor(name, 'z', limits.z.neutral);
-    xState.angle = clamp(stepAxis(xState, target.x, limits, dt), limits.x.min, limits.x.max);
-    yState.angle = clamp(stepAxis(yState, target.y, limits, dt), limits.y.min, limits.y.max);
-    zState.angle = clamp(stepAxis(zState, target.z, limits, dt), limits.z.min, limits.z.max);
+    xState.angle = clamp(stepAxis(xState, target.x, limits, dt, speedScale), limits.x.min, limits.x.max);
+    yState.angle = clamp(stepAxis(yState, target.y, limits, dt, speedScale), limits.y.min, limits.y.max);
+    zState.angle = clamp(stepAxis(zState, target.z, limits, dt, speedScale), limits.z.min, limits.z.max);
     node.rotation.set(
       THREE.MathUtils.degToRad(xState.angle),
       THREE.MathUtils.degToRad(yState.angle),
@@ -118,6 +123,27 @@ function applyPose(targetPose, dt) {
 function resetLimiterToNeutral() {
   state.clear();
   manualPose = neutralPose();
+}
+
+function refreshRandomTarget(force = false) {
+  if (!autoDemo && !force) return;
+  const intensity = clamp(Number(intensityEl.value), 0, 1);
+  const speed = clamp(Number(speedEl.value), 0.25, 1);
+  randomTargetPose = randomSafePose(intensity, Math.random, 0.36);
+  randomTargetIndex += 1;
+  nextRandomTargetAt = demoTime + (6.5 + Math.random() * 4.5) / speed;
+  currentEl.textContent = `完整 ROM 随机目标 #${randomTargetIndex}`;
+}
+
+function captureCurrentPose() {
+  return Object.fromEntries(NIVA_VRM_EXPECTED_BONES.map((name) => {
+    const l = NIVA_VRM_BONE_LIMITS[name];
+    return [name, {
+      x: stateFor(name, 'x', l.x.neutral).angle,
+      y: stateFor(name, 'y', l.y.neutral).angle,
+      z: stateFor(name, 'z', l.z.neutral).angle,
+    }];
+  }));
 }
 
 function setBlink(value) {
@@ -139,8 +165,8 @@ function updateBlink(dt) {
 
 function updateExpression(t) {
   if (!vrm?.expressionManager) return;
-  const happy = 0.08 + 0.04 * Math.sin(t * 0.55);
-  vrm.expressionManager.setValue('happy', clamp(happy, 0, 0.14));
+  const happy = 0.06 + 0.04 * Math.sin(t * 0.55);
+  vrm.expressionManager.setValue('happy', clamp(happy, 0, 0.12));
 }
 
 function fitModel() {
@@ -220,6 +246,7 @@ loader.load(
     progressEl.textContent = `MODEL ${NIVA_MODEL_BLOB.slice(0, 8)} · BUILD ${NIVA_BUILD}`;
     fitModel();
     resetLimiterToNeutral();
+    refreshRandomTarget(true);
   },
   (event) => {
     if (event.total) {
@@ -237,23 +264,24 @@ loader.load(
   },
 );
 
+intensityEl.addEventListener('input', () => {
+  if (autoDemo) refreshRandomTarget(true);
+});
+
 pauseBtn.addEventListener('click', () => {
   autoDemo = !autoDemo;
-  pauseBtn.textContent = autoDemo ? '暂停自动活动' : '继续自动活动';
-  currentEl.textContent = autoDemo ? '全身安全自动活动' : '保持当前姿态';
-  if (!autoDemo) manualPose = Object.fromEntries(NIVA_VRM_EXPECTED_BONES.map((name) => {
-    const l = NIVA_VRM_BONE_LIMITS[name];
-    return [name, {
-      x: stateFor(name, 'x', l.x.neutral).angle,
-      y: stateFor(name, 'y', l.y.neutral).angle,
-      z: stateFor(name, 'z', l.z.neutral).angle,
-    }];
-  }));
+  pauseBtn.textContent = autoDemo ? '暂停随机活动' : '继续随机活动';
+  if (autoDemo) {
+    refreshRandomTarget(true);
+  } else {
+    currentEl.textContent = '保持当前姿态';
+    manualPose = captureCurrentPose();
+  }
 });
 
 resetBtn.addEventListener('click', () => {
   autoDemo = false;
-  pauseBtn.textContent = '继续自动活动';
+  pauseBtn.textContent = '继续随机活动';
   currentEl.textContent = '安全中立姿态';
   manualPose = neutralPose();
 });
@@ -261,12 +289,12 @@ resetBtn.addEventListener('click', () => {
 function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 1 / 20);
-  const speed = clamp(Number(speedEl.value), 0.25, 1.5);
-  const intensity = clamp(Number(intensityEl.value), 0, 1);
-  demoTime += dt * speed;
+  const speed = clamp(Number(speedEl.value), 0.25, 1);
+  demoTime += dt;
   if (vrm) {
-    const target = autoDemo ? safeDemoPose(demoTime, intensity) : manualPose;
-    applyPose(target, dt);
+    if (autoDemo && demoTime >= nextRandomTargetAt) refreshRandomTarget();
+    const target = autoDemo ? randomTargetPose : manualPose;
+    applyPose(target, dt, speed);
     updateBlink(dt);
     updateExpression(demoTime);
     vrm.update(dt);
@@ -281,9 +309,16 @@ window.NIVA3D = Object.freeze({
   modelBlob: NIVA_MODEL_BLOB,
   get limits() { return NIVA_VRM_BONE_LIMITS; },
   get autoDemo() { return autoDemo; },
+  get randomTarget() { return randomTargetPose; },
   setAutoDemo(enabled) {
     autoDemo = Boolean(enabled);
-    pauseBtn.textContent = autoDemo ? '暂停自动活动' : '继续自动活动';
+    pauseBtn.textContent = autoDemo ? '暂停随机活动' : '继续随机活动';
+    if (autoDemo) refreshRandomTarget(true);
+  },
+  randomize() {
+    autoDemo = true;
+    refreshRandomTarget(true);
+    return randomTargetPose;
   },
   setBoneRotation(name, rotation) {
     if (!NIVA_VRM_BONE_LIMITS[name]) throw new Error(`Unsupported NIVA bone: ${name}`);
