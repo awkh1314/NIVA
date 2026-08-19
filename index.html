@@ -21,9 +21,9 @@
 <body>
 <main class="app">
   <section class="stage" id="stageShell">
-    <div class="brand"><h1>NIVA <span>Safe Motion</span></h1><p>VRM 1.0 · 全身工程活动限制 · 鼠标可旋转/缩放观察</p></div>
+    <div class="brand"><h1>NIVA <span>Safe Motion</span></h1><p>VRM 1.0 · 全身工程活动限制 · BUILD 2026.08.19-1905</p></div>
     <canvas id="niva3d" aria-label="NIVA 3D VRM 安全运动展示"></canvas>
-    <div class="stage-status"><span class="pill" id="status">● 正在载入</span><span class="pill" id="progress">准备 NIVA.vrm</span><span class="pill">骨骼 <b id="jointCount">0/54</b></span></div>
+    <div class="stage-status"><span class="pill" id="status">● 正在载入</span><span class="pill" id="progress">准备当前 NIVA.vrm</span><span class="pill">骨骼 <b id="jointCount">0/54</b></span></div>
   </section>
   <aside class="panel">
     <div class="topline"><b>HUMAN MOTION GUARD</b><span class="badge">HARD CLAMP ON</span></div>
@@ -40,6 +40,6 @@
     <p class="foot">这里是角色动画的工程安全范围，不是医学诊断标准。完整的人体 ROM 参考值与 NIVA 实际收紧后的限制见 <a href="./docs/HUMAN_MOTION_LIMITS.md">HUMAN_MOTION_LIMITS.md</a>。</p>
   </aside>
 </main>
-<script type="module" src="./runtime/niva-vrm-showcase.mjs"></script>
+<script type="module" src="./runtime/niva-vrm-showcase.mjs?v=20260819-1905"></script>
 </body>
 </html>
