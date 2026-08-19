@@ -10,7 +10,7 @@ from qwen_tts import Qwen3TTSModel
 from vosk import KaldiRecognizer, Model as VoskModel
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-QWEN_MODEL = os.environ.get('NIVA_QWEN_TTS_MODEL', 'Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice')
+QWEN_MODEL = os.environ.get('NIVA_QWEN_TTS_MODEL', 'Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice')
 VOSK_MODEL = os.environ.get('NIVA_VOSK_MODEL', os.path.join(ROOT, 'vosk-model-small-cn-0.22'))
 DEVICE = 'cuda:0' if torch.cuda.is_available() else 'cpu'
 DTYPE = torch.bfloat16 if torch.cuda.is_available() else torch.float32
@@ -54,7 +54,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path == '/health':
-            return self._send(200, json_bytes({'ok': True, 'tts': True, 'asr': asr is not None}))
+            return self._send(200, json_bytes({'ok': True, 'tts': True, 'asr': asr is not None, 'voice': 'Serena', 'model': QWEN_MODEL}))
         if self.path == '/asr-health':
             return self._send(200 if asr is not None else 503, json_bytes({'ok': asr is not None}))
         return self._send(404, b'{}')
