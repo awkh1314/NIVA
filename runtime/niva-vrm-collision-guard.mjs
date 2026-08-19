@@ -76,8 +76,29 @@ function sphere(points, bone, radius = 0) {
   return { type: 'sphere', center: points[bone], radius };
 }
 
+function sphereAt(center, radius = 0) {
+  return center ? { type: 'sphere', center, radius } : null;
+}
+
+function compound(parts) {
+  return { type: 'compound', parts: parts.filter(Boolean) };
+}
+
+function limbOrSphere(points, from, to, radius, t0 = 0.05, t1 = 0.96) {
+  return segment(points, from, to, t0, t1, radius) || sphere(points, from, radius);
+}
+
 function primitiveDistance(a, b) {
   if (!a || !b) return Infinity;
+  if (a.type === 'compound') {
+    if (!a.parts.length) return Infinity;
+    return Math.min(...a.parts.map((part) => primitiveDistance(part, b)));
+  }
+  if (b.type === 'compound') {
+    if (!b.parts.length) return Infinity;
+    return Math.min(...b.parts.map((part) => primitiveDistance(a, part)));
+  }
+
   let centerDistance;
   if (a.type === 'sphere' && b.type === 'sphere') centerDistance = dist(a.center, b.center);
   else if (a.type === 'sphere' && b.type === 'segment') centerDistance = pointSegmentDistance(a.center, b.a, b.b);
@@ -88,74 +109,129 @@ function primitiveDistance(a, b) {
 
 export function buildAnatomyProxies(points, height = 1) {
   const h = Math.max(0.1, Number(height) || 1);
+  const torsoAxisReady = required(points, ['hips', 'upperChest']);
+  const torsoPoint = (t) => torsoAxisReady ? lerp(points.hips, points.upperChest, t) : null;
+
+  // V0.82 uses a compound garment/body shell instead of one narrow torso capsule.
+  // These radii are intentionally conservative for the current NIVA model's
+  // loose upper garment and hips. Neutral-pose calibration below prevents the
+  // larger shells from classifying the authored rest pose as a collision.
+  const chest = torsoAxisReady
+    ? { type: 'segment', a: torsoPoint(0.56), b: torsoPoint(0.97), radius: h * 0.118 }
+    : null;
+  const abdomen = torsoAxisReady
+    ? { type: 'segment', a: torsoPoint(0.25), b: torsoPoint(0.66), radius: h * 0.102 }
+    : null;
+  const pelvis = compound([
+    sphereAt(torsoPoint(0.08), h * 0.108),
+    sphere(points, 'hips', h * 0.112),
+  ]);
+  const torso = compound([chest, abdomen, pelvis]);
+
   return {
-    torso: segment(points, 'hips', 'upperChest', 0.12, 0.96, h * 0.09),
-    head: sphere(points, 'head', h * 0.075),
+    torso,
+    chest,
+    abdomen,
+    pelvis,
+    head: sphere(points, 'head', h * 0.082),
 
-    leftUpperArm: segment(points, 'leftUpperArm', 'leftLowerArm', 0.08, 0.96, h * 0.028),
-    rightUpperArm: segment(points, 'rightUpperArm', 'rightLowerArm', 0.08, 0.96, h * 0.028),
-    leftForearm: segment(points, 'leftLowerArm', 'leftHand', 0.05, 0.96, h * 0.024),
-    rightForearm: segment(points, 'rightLowerArm', 'rightHand', 0.05, 0.96, h * 0.024),
-    leftHand: sphere(points, 'leftHand', h * 0.028),
-    rightHand: sphere(points, 'rightHand', h * 0.028),
+    // Start upper-arm capsules away from the shoulder joint so normal shoulder
+    // attachment is not treated as torso penetration.
+    leftUpperArm: segment(points, 'leftUpperArm', 'leftLowerArm', 0.24, 0.96, h * 0.034),
+    rightUpperArm: segment(points, 'rightUpperArm', 'rightLowerArm', 0.24, 0.96, h * 0.034),
+    leftForearm: segment(points, 'leftLowerArm', 'leftHand', 0.06, 0.96, h * 0.030),
+    rightForearm: segment(points, 'rightLowerArm', 'rightHand', 0.06, 0.96, h * 0.030),
+    leftHand: sphere(points, 'leftHand', h * 0.034),
+    rightHand: sphere(points, 'rightHand', h * 0.034),
 
-    leftThigh: segment(points, 'leftUpperLeg', 'leftLowerLeg', 0.16, 0.97, h * 0.036),
-    rightThigh: segment(points, 'rightUpperLeg', 'rightLowerLeg', 0.16, 0.97, h * 0.036),
-    leftShin: segment(points, 'leftLowerLeg', 'leftFoot', 0.05, 0.96, h * 0.03),
-    rightShin: segment(points, 'rightLowerLeg', 'rightFoot', 0.05, 0.96, h * 0.03),
+    leftThigh: segment(points, 'leftUpperLeg', 'leftLowerLeg', 0.14, 0.97, h * 0.043),
+    rightThigh: segment(points, 'rightUpperLeg', 'rightLowerLeg', 0.14, 0.97, h * 0.043),
+    leftShin: segment(points, 'leftLowerLeg', 'leftFoot', 0.05, 0.96, h * 0.034),
+    rightShin: segment(points, 'rightLowerLeg', 'rightFoot', 0.05, 0.96, h * 0.034),
+    leftFoot: limbOrSphere(points, 'leftFoot', 'leftToes', h * 0.036, 0, 1),
+    rightFoot: limbOrSphere(points, 'rightFoot', 'rightToes', h * 0.036, 0, 1),
   };
 }
 
 const L_ARM = Object.freeze(['leftUpperArm', 'leftLowerArm', 'leftHand']);
 const R_ARM = Object.freeze(['rightUpperArm', 'rightLowerArm', 'rightHand']);
 const BOTH_ARMS = Object.freeze([...L_ARM, ...R_ARM]);
-const BOTH_LEGS = Object.freeze(['leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot']);
+const L_LEG = Object.freeze(['leftUpperLeg', 'leftLowerLeg', 'leftFoot']);
+const R_LEG = Object.freeze(['rightUpperLeg', 'rightLowerLeg', 'rightFoot']);
+const BOTH_LEGS = Object.freeze([...L_LEG, ...R_LEG]);
+
+const pair = (id, a, b, drivers, marginScale = 0.010, neutralSlackScale = 0.003) => Object.freeze({
+  id, a, b, drivers, marginScale, neutralSlackScale,
+});
 
 export const NIVA_COLLISION_PAIRS = Object.freeze([
-  { id: 'left-hand-torso', a: 'leftHand', b: 'torso', drivers: L_ARM },
-  { id: 'right-hand-torso', a: 'rightHand', b: 'torso', drivers: R_ARM },
-  { id: 'left-forearm-torso', a: 'leftForearm', b: 'torso', drivers: L_ARM },
-  { id: 'right-forearm-torso', a: 'rightForearm', b: 'torso', drivers: R_ARM },
-  { id: 'left-hand-head', a: 'leftHand', b: 'head', drivers: L_ARM },
-  { id: 'right-hand-head', a: 'rightHand', b: 'head', drivers: R_ARM },
-  { id: 'left-forearm-head', a: 'leftForearm', b: 'head', drivers: L_ARM },
-  { id: 'right-forearm-head', a: 'rightForearm', b: 'head', drivers: R_ARM },
+  // Arms vs garment/body shell.
+  pair('left-upperarm-torso', 'leftUpperArm', 'torso', L_ARM, 0.010),
+  pair('right-upperarm-torso', 'rightUpperArm', 'torso', R_ARM, 0.010),
+  pair('left-forearm-torso', 'leftForearm', 'torso', L_ARM, 0.012),
+  pair('right-forearm-torso', 'rightForearm', 'torso', R_ARM, 0.012),
+  pair('left-hand-torso', 'leftHand', 'torso', L_ARM, 0.014),
+  pair('right-hand-torso', 'rightHand', 'torso', R_ARM, 0.014),
+  pair('left-hand-pelvis', 'leftHand', 'pelvis', L_ARM, 0.012),
+  pair('right-hand-pelvis', 'rightHand', 'pelvis', R_ARM, 0.012),
 
-  { id: 'forearm-cross', a: 'leftForearm', b: 'rightForearm', drivers: BOTH_ARMS },
-  { id: 'left-forearm-right-upperarm', a: 'leftForearm', b: 'rightUpperArm', drivers: BOTH_ARMS },
-  { id: 'right-forearm-left-upperarm', a: 'rightForearm', b: 'leftUpperArm', drivers: BOTH_ARMS },
+  // Arms vs head.
+  pair('left-hand-head', 'leftHand', 'head', L_ARM, 0.010),
+  pair('right-hand-head', 'rightHand', 'head', R_ARM, 0.010),
+  pair('left-forearm-head', 'leftForearm', 'head', L_ARM, 0.009),
+  pair('right-forearm-head', 'rightForearm', 'head', R_ARM, 0.009),
 
-  { id: 'thigh-cross', a: 'leftThigh', b: 'rightThigh', drivers: BOTH_LEGS },
-  { id: 'shin-cross', a: 'leftShin', b: 'rightShin', drivers: BOTH_LEGS },
-  { id: 'left-thigh-right-shin', a: 'leftThigh', b: 'rightShin', drivers: BOTH_LEGS },
-  { id: 'right-thigh-left-shin', a: 'rightThigh', b: 'leftShin', drivers: BOTH_LEGS },
+  // Upper-body self collision.
+  pair('hand-cross', 'leftHand', 'rightHand', BOTH_ARMS, 0.007),
+  pair('forearm-cross', 'leftForearm', 'rightForearm', BOTH_ARMS, 0.007),
+  pair('upperarm-cross', 'leftUpperArm', 'rightUpperArm', BOTH_ARMS, 0.006),
+  pair('left-forearm-right-upperarm', 'leftForearm', 'rightUpperArm', BOTH_ARMS, 0.006),
+  pair('right-forearm-left-upperarm', 'rightForearm', 'leftUpperArm', BOTH_ARMS, 0.006),
 
-  { id: 'left-hand-left-thigh', a: 'leftHand', b: 'leftThigh', drivers: L_ARM },
-  { id: 'left-hand-right-thigh', a: 'leftHand', b: 'rightThigh', drivers: L_ARM },
-  { id: 'right-hand-right-thigh', a: 'rightHand', b: 'rightThigh', drivers: R_ARM },
-  { id: 'right-hand-left-thigh', a: 'rightHand', b: 'leftThigh', drivers: R_ARM },
+  // Legs against each other.
+  pair('thigh-cross', 'leftThigh', 'rightThigh', BOTH_LEGS, 0.008),
+  pair('shin-cross', 'leftShin', 'rightShin', BOTH_LEGS, 0.007),
+  pair('foot-cross', 'leftFoot', 'rightFoot', BOTH_LEGS, 0.006),
+  pair('left-thigh-right-shin', 'leftThigh', 'rightShin', BOTH_LEGS, 0.007),
+  pair('right-thigh-left-shin', 'rightThigh', 'leftShin', BOTH_LEGS, 0.007),
+  pair('left-foot-right-shin', 'leftFoot', 'rightShin', BOTH_LEGS, 0.006),
+  pair('right-foot-left-shin', 'rightFoot', 'leftShin', BOTH_LEGS, 0.006),
+
+  // Hands/forearms vs legs and hips.
+  pair('left-hand-left-thigh', 'leftHand', 'leftThigh', L_ARM, 0.009),
+  pair('left-hand-right-thigh', 'leftHand', 'rightThigh', L_ARM, 0.009),
+  pair('right-hand-right-thigh', 'rightHand', 'rightThigh', R_ARM, 0.009),
+  pair('right-hand-left-thigh', 'rightHand', 'leftThigh', R_ARM, 0.009),
+  pair('left-forearm-left-thigh', 'leftForearm', 'leftThigh', L_ARM, 0.007),
+  pair('left-forearm-right-thigh', 'leftForearm', 'rightThigh', L_ARM, 0.007),
+  pair('right-forearm-right-thigh', 'rightForearm', 'rightThigh', R_ARM, 0.007),
+  pair('right-forearm-left-thigh', 'rightForearm', 'leftThigh', R_ARM, 0.007),
 ]);
 
 export function measureCollisionPairs(points, height = 1) {
   const proxies = buildAnatomyProxies(points, height);
-  return NIVA_COLLISION_PAIRS.map((pair) => ({
-    ...pair,
-    clearance: primitiveDistance(proxies[pair.a], proxies[pair.b]),
+  return NIVA_COLLISION_PAIRS.map((entry) => ({
+    ...entry,
+    clearance: primitiveDistance(proxies[entry.a], proxies[entry.b]),
   }));
 }
 
 export function calibrateCollisionThresholds(points, height = 1) {
   const h = Math.max(0.1, Number(height) || 1);
   const baseline = measureCollisionPairs(points, h);
-  const desiredWarning = h * 0.008;
-  const baselineSafetyGap = h * 0.008;
+
+  // V0.81 allowed a moving limb to consume roughly 28% of its neutral
+  // clearance before blocking. That is too late for bulky clothing because the
+  // bone centerline can still be outside while the rendered mesh already clips.
+  // V0.82 instead allows only a tiny model-scale approach beyond the authored
+  // neutral pose, and otherwise keeps a positive visual safety shell.
   return Object.fromEntries(baseline.map((item) => {
-    // A model may have very close body parts in its neutral pose. The threshold
-    // must always sit *inside* that neutral clearance, otherwise calibration
-    // itself would be treated as a collision. For roomy pairs we still keep an
-    // 0.8% body-height warning shell to stop motion before visible penetration.
-    const neutralSafeThreshold = item.clearance - baselineSafetyGap;
-    return [item.id, Math.min(desiredWarning, neutralSafeThreshold)];
+    const desiredVisualGap = h * item.marginScale;
+    const neutralSlack = h * item.neutralSlackScale;
+    const threshold = Number.isFinite(item.clearance)
+      ? Math.min(desiredVisualGap, item.clearance - neutralSlack)
+      : desiredVisualGap;
+    return [item.id, threshold];
   }));
 }
 
@@ -179,7 +255,7 @@ export function createAnatomicalCollisionGuard({
   capturePose,
   rollbackPose,
   onCollision = () => {},
-  cooldownMs = 220,
+  cooldownMs = 180,
 } = {}) {
   if (typeof getPoints !== 'function') throw new Error('getPoints is required');
   if (typeof capturePose !== 'function') throw new Error('capturePose is required');
