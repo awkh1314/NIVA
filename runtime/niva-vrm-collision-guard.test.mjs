@@ -4,6 +4,7 @@ import {
   calibrateCollisionThresholds,
   createAnatomicalCollisionGuard,
   detectAnatomicalCollisions,
+  measureCollisionPairs,
   pointSegmentDistance,
   segmentSegmentDistance,
 } from './niva-vrm-collision-guard.mjs';
@@ -33,9 +34,11 @@ function neutralPoints() {
     leftUpperLeg: p(-0.09, 0.90, 0),
     leftLowerLeg: p(-0.10, 0.48, 0),
     leftFoot: p(-0.10, 0.08, 0.08),
+    leftToes: p(-0.10, 0.04, 0.25),
     rightUpperLeg: p(0.09, 0.90, 0),
     rightLowerLeg: p(0.10, 0.48, 0),
     rightFoot: p(0.10, 0.08, 0.08),
+    rightToes: p(0.10, 0.04, 0.25),
   };
 }
 
@@ -46,12 +49,34 @@ test('neutral-pose calibration never reports the calibration pose itself', () =>
   assert.deepEqual(collisions, []);
 });
 
+test('v0.82 thresholds permit only a tiny approach beyond neutral', () => {
+  const points = neutralPoints();
+  const height = 1.7;
+  const measurements = measureCollisionPairs(points, height);
+  const thresholds = calibrateCollisionThresholds(points, height);
+  const handTorso = measurements.find((item) => item.id === 'left-hand-torso');
+  assert.ok(handTorso);
+  assert.ok(thresholds['left-hand-torso'] < handTorso.clearance);
+  assert.ok(handTorso.clearance - thresholds['left-hand-torso'] <= height * 0.0031);
+});
+
 test('hand entering torso is detected after neutral calibration', () => {
   const neutral = neutralPoints();
   const thresholds = calibrateCollisionThresholds(neutral, 1.7);
   const penetrated = { ...neutral, leftHand: p(0, 1.12, 0) };
   const collisions = detectAnatomicalCollisions(penetrated, 1.7, thresholds);
   assert.ok(collisions.some((item) => item.id === 'left-hand-torso'));
+});
+
+test('upper arm entering the garment shell is detected', () => {
+  const neutral = neutralPoints();
+  const thresholds = calibrateCollisionThresholds(neutral, 1.7);
+  const clipped = {
+    ...neutral,
+    leftLowerArm: p(-0.14, 1.25, 0),
+  };
+  const collisions = detectAnatomicalCollisions(clipped, 1.7, thresholds);
+  assert.ok(collisions.some((item) => item.id === 'left-upperarm-torso' || item.id === 'left-forearm-torso'));
 });
 
 test('guard rolls offending chain back to last safe pose', () => {
