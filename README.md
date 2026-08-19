@@ -6,7 +6,7 @@ NIVA 现在只保留一条技术主线：**唯一 `NIVA.vrm` → 安全姿态规
 
 V0.83 — Constraint-based Safe Pose Generator + Collision-free Path Planner
 
-关键变化：删除旧 2D 主线、Control Protocol 调试页和旧随机运动驱动；`NIVA.vrm` 仍是仓库唯一 VRM；54 个 Humanoid bones 继续受人体 ROM、最大角速度、最大角加速度约束；动作不再先执行再回滚，而是先在不可见状态计算候选姿态与整段运动轨迹；终点或过渡路径任意采样点出现人体自碰撞，候选动作直接废弃并重新规划；预计算常用 gesture 的安全姿态库，DeepSeek 只选择高层动作，不直接操作骨骼角度；运行中的回答不可被新输入瞬间打断，新输入排队并从上一段动作末端自然衔接；Windows 桌面模式默认只显示模型，双击模型打开/收起界面，并自动把窗口限制在当前显示器可见范围。
+关键变化：删除旧 2D 主线、Control Protocol 调试页和旧随机运动驱动；`NIVA.vrm` 仍是仓库唯一 VRM；54 个 Humanoid bones 继续受人体 ROM、最大角速度、最大角加速度约束；动作不再先执行再回滚，而是先在不可见状态计算候选姿态与整段运动轨迹；终点或过渡路径任意采样点出现人体自碰撞，候选动作直接废弃并重新规划；预计算常用 gesture 的安全姿态库，DeepSeek 只选择高层动作，不直接操作骨骼角度；运行中的回答不可被新输入瞬间打断，新输入排队并从上一段动作末端自然衔接；Windows 桌面模式默认只显示模型，双击模型打开/收起界面，并自动把窗口限制在当前显示器可见范围。NIVA 内部的点击/拖拽/双击增加模型像素命中保护，透明背景不会触发模型操作。
 
 DeepSeek 只输出一行稀疏 JSON：
 ```json
@@ -27,9 +27,21 @@ DeepSeek / Preset
 → NIVA.vrm
 ```
 
-输入：默认语音入口（WebView 支持 SpeechRecognition 时使用），文字始终可用。Desktop 首次运行提示输入 DeepSeek API Key；Key 只在当前运行会话保留。不接 API 可使用打招呼、思考、庆祝、安慰、说明等体验预设。
+输入优先级：
+```text
+本地 Vosk 中文 ASR（语音包已启动）
+→ Windows/WebView SpeechRecognition 回退
+→ 文字输入始终可用
+```
+麦克风在本地 Vosk 可用时会直接录制单声道语音，自动在停顿后结束，转成 16kHz PCM WAV 并在本机识别，识别文本再进入与文字输入完全相同的 DeepSeek 队列。
 
-情感语音默认目标为 **Qwen3-TTS Serena**。仓库附带 `tools/voice/` 本地服务脚本；首次启动会下载 Qwen3-TTS 0.6B CustomVoice（约 2.5GB）。NIVA 检测到本地服务后使用 Serena + 情绪指令；服务不可用时自动回退系统语音。
+Desktop 首次运行提示输入 DeepSeek API Key；Key 只在当前运行会话保留。不接 API 可使用打招呼、思考、庆祝、安慰、说明等体验预设。
+
+本地语音包由两部分组成：
+- 输入：**Vosk `vosk-model-small-cn-0.22`**，离线中文 ASR；
+- 输出：**Qwen3-TTS Serena**，支持情绪/语气指令。
+
+仓库附带 `tools/voice/install-and-start.ps1`。首次安装会下载约 40MB 的 Vosk 中文模型；Qwen3-TTS 0.6B CustomVoice 首次运行另需下载约 2.5GB。语音包不可用时 NIVA 自动回退系统输入/输出能力。
 
 开发：
 ```bash
@@ -40,3 +52,5 @@ npm run desktop
 ```
 
 GitHub Actions：`Deploy NIVA Web Preview` 测试后发布 Pages；`Build NIVA Windows EXE` 在 Windows runner 构建 `NIVA.exe`、上传 `NIVA-Windows-x64.zip` 并更新 `v0.83-latest` prerelease。
+
+> 当前“仅模型可点”已经做到 NIVA 应用内部的模型像素命中；Windows 对透明像素直接穿透到底层其他应用的 HWND 级命中测试尚未实现，不在此处虚报完成。
