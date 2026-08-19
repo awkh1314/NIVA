@@ -11,7 +11,11 @@ import {
   neutralPose,
   safeDemoPose,
   validateLimitTable,
-} from './niva-vrm-limits.mjs';
+} from './niva-vrm-limits.mjs?v=20260819-1905';
+
+const NIVA_BUILD = '2026.08.19-1905';
+const NIVA_MODEL_BLOB = 'cac284d2fe68c0f29c53f0367b5ad5fc1dc96a21';
+const NIVA_MODEL_URL = `./NIVA.vrm?v=${NIVA_MODEL_BLOB}`;
 
 const canvas = document.querySelector('#niva3d');
 const shell = document.querySelector('#stageShell');
@@ -193,8 +197,9 @@ const loader = new GLTFLoader();
 loader.crossOrigin = 'anonymous';
 loader.register((parser) => new VRMLoaderPlugin(parser));
 
+progressEl.textContent = `加载当前 NIVA.vrm · ${NIVA_MODEL_BLOB.slice(0, 8)}`;
 loader.load(
-  './NIVA.vrm',
+  NIVA_MODEL_URL,
   (gltf) => {
     vrm = gltf.userData.vrm;
     VRMUtils.removeUnnecessaryVertices(vrm.scene);
@@ -212,23 +217,23 @@ loader.load(
     jointCountEl.textContent = `${available.length}/${NIVA_VRM_EXPECTED_BONES.length}`;
     statusEl.textContent = missing.length ? `● 已载入 · 缺 ${missing.length} 骨骼` : '● 已载入 · 安全限制开启';
     statusEl.classList.add('ok');
-    progressEl.textContent = '默认全身安全活动中';
+    progressEl.textContent = `MODEL ${NIVA_MODEL_BLOB.slice(0, 8)} · BUILD ${NIVA_BUILD}`;
     fitModel();
     resetLimiterToNeutral();
   },
   (event) => {
     if (event.total) {
       const pct = Math.round(event.loaded / event.total * 100);
-      progressEl.textContent = `加载 NIVA.vrm ${pct}%`;
+      progressEl.textContent = `加载 NIVA.vrm ${pct}% · ${NIVA_MODEL_BLOB.slice(0, 8)}`;
     } else {
-      progressEl.textContent = `加载 NIVA.vrm ${(event.loaded / 1024 / 1024).toFixed(1)} MB`;
+      progressEl.textContent = `加载 NIVA.vrm ${(event.loaded / 1024 / 1024).toFixed(1)} MB · ${NIVA_MODEL_BLOB.slice(0, 8)}`;
     }
   },
   (error) => {
     console.error(error);
     statusEl.textContent = '● 模型加载失败';
     statusEl.classList.add('bad');
-    progressEl.textContent = '请刷新页面或检查浏览器 WebGL / CDN 网络';
+    progressEl.textContent = `加载失败 · MODEL ${NIVA_MODEL_BLOB.slice(0, 8)}`;
   },
 );
 
@@ -272,6 +277,8 @@ function animate() {
 animate();
 
 window.NIVA3D = Object.freeze({
+  build: NIVA_BUILD,
+  modelBlob: NIVA_MODEL_BLOB,
   get limits() { return NIVA_VRM_BONE_LIMITS; },
   get autoDemo() { return autoDemo; },
   setAutoDemo(enabled) {
