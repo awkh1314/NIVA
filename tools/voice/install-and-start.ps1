@@ -24,6 +24,6 @@ if (-not (Test-Path $AsrDir)) {
 }
 
 $Server = Join-Path $PSScriptRoot "qwen_voice_server.py"
-Write-Host "本地语音包：Vosk 中文 ASR + Qwen3-TTS Serena。" -ForegroundColor Green
-Write-Host "Qwen3-TTS 首次运行会从 Hugging Face 下载 0.6B CustomVoice（约 2.5GB）。" -ForegroundColor Cyan
+Write-Host "本地语音包：Vosk 中文 ASR + Qwen3-TTS 1.7B Serena 情感语音。" -ForegroundColor Green
+Write-Host "Qwen3-TTS 首次运行会下载 1.7B CustomVoice（约 4.52GB；支持情绪/风格指令）。" -ForegroundColor Cyan
 & $Py $Server
