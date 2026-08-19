@@ -1,11 +1,11 @@
 {
   "name": "niva-digital-spirit",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "private": true,
-  "description": "NIVA digital spirit: 2D mainline plus VRM safe-motion renderer",
+  "description": "NIVA digital spirit: VRM safe motion with anatomical self-collision guard",
   "scripts": {
     "start": "node server/server.js",
-    "test": "node --test server/server.test.js runtime/niva-vrm-limits.test.mjs"
+    "test": "node --test server/server.test.js runtime/niva-vrm-limits.test.mjs runtime/niva-vrm-collision-guard.test.mjs"
   },
   "engines": {
     "node": ">=18"
