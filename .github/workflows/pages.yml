@@ -23,14 +23,16 @@ jobs:
           node-version: 22
       - name: Apply V0.85 audio-motion sync gate
         run: node tools/apply-v085-sync.mjs
-      - name: Persist one-time sync migration
+      - name: Apply V0.85.1 runtime responsiveness repair
+        run: node tools/apply-v0851-runtime-fix.mjs
+      - name: Persist one-time runtime migrations
         shell: bash
         run: |
           if ! git diff --quiet -- src/main.js src/kokoro-voice.mjs; then
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add src/main.js src/kokoro-voice.mjs
-            git commit -m "fix(v0.85): synchronize prepared audio with performance motion"
+            git commit -m "fix(v0.85.1): restore responsive motion and browser audio"
             git push origin HEAD:main
           fi
       - run: npm install
@@ -47,7 +49,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          printf "V0.85 Pages deploy succeeded\nsource_sha=%s\npage_url=%s\n" "$GITHUB_SHA" "${{ steps.deployment.outputs.page_url }}" > .github/PAGES_SUCCESS
+          printf "V0.85.1 Pages deploy succeeded\nsource_sha=%s\npage_url=%s\n" "$GITHUB_SHA" "${{ steps.deployment.outputs.page_url }}" > .github/PAGES_SUCCESS
           git add .github/PAGES_SUCCESS
-          git commit -m "chore(ci): mark V0.85 Pages deployment success [skip ci]"
+          git commit -m "chore(ci): mark V0.85.1 Pages deployment success [skip ci]"
           git push origin HEAD:main
