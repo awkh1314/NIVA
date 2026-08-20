@@ -18,6 +18,22 @@ jobs:
         run: npm install
       - name: Test planner and runtime safety
         run: npm test
+      - name: Vendor Kokoro INT8 zf_001 for offline desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $Model = "public\kokoro\model"
+          $Onnx = "$Model\onnx"
+          $Voices = "public\kokoro\voices"
+          New-Item -ItemType Directory -Force -Path $Onnx,$Voices | Out-Null
+          $Base = "https://huggingface.co/onnx-community/Kokoro-82M-v1.1-zh-ONNX/resolve/main"
+          Invoke-WebRequest "$Base/config.json?download=true" -OutFile "$Model\config.json"
+          Invoke-WebRequest "$Base/tokenizer.json?download=true" -OutFile "$Model\tokenizer.json"
+          Invoke-WebRequest "$Base/tokenizer_config.json?download=true" -OutFile "$Model\tokenizer_config.json"
+          Invoke-WebRequest "$Base/onnx/model_quantized.onnx?download=true" -OutFile "$Onnx\model_quantized.onnx"
+          Invoke-WebRequest "$Base/voices/zf_001.bin?download=true" -OutFile "$Voices\zf_001.bin"
+          $hash=(Get-FileHash "$Onnx\model_quantized.onnx" -Algorithm SHA256).Hash.ToLower()
+          if ($hash -ne "5dc461e2a932be290d1deb86bd7f507ef6dcff2358e618338fe77fd810b11714") { throw "Kokoro model SHA256 mismatch: $hash" }
       - name: Build portable EXE
         run: npm run desktop
       - name: Assemble portable package
@@ -27,12 +43,12 @@ jobs:
           Copy-Item src-tauri\target\release\niva.exe release\NIVA.exe
           Copy-Item tools\voice\* release\voice\
           @"
-          NIVA V0.83 Portable
-          1. 直接运行 NIVA.exe；不配置 API 时可使用内置体验预设。
-          2. 双击模型打开/收起界面；运行中的回答/动作不会被新输入瞬移打断。
-          3. 默认声音：Kokoro v1.1-zh INT8 / zf_001。第一次真正发声时约下载 127MB 量化模型，后续使用本地缓存；不可用时回退系统语音。
-          4. 可选离线语音输入：运行 voice\install-and-start.ps1，安装 Vosk 中文 ASR（模型约 40MB）。
-          5. DeepSeek API Key 仅保存在当前运行会话。
+          NIVA V0.85 Portable
+          1. 直接运行 NIVA.exe；不配置 API 时可使用内置 Performance Presets。
+          2. Brain 默认 DeepSeek，也支持 OpenAI 与 OpenAI-compatible 自定义接口。
+          3. Kokoro INT8 / zf_001 已嵌入桌面构建，TTS 不需要首次下载；语音异常时不会切换系统声线。
+          4. 太极演绎由本地 Performance Director 分 cue 执行，每个动作名与对应安全动作同时开始。
+          5. 可选语音输入仍可运行 voice\install-and-start.ps1 安装 Vosk 中文 ASR。
           "@ | Set-Content -Encoding UTF8 release\README.txt
           Compress-Archive -Path release\* -DestinationPath NIVA-Windows-x64.zip -Force
       - uses: actions/upload-artifact@v4
@@ -46,8 +62,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v0.83-latest *> $null
+          gh release view v0.85-latest *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release delete v0.83-latest --yes --cleanup-tag
+            gh release delete v0.85-latest --yes --cleanup-tag
           }
-          gh release create v0.83-latest NIVA-Windows-x64.zip --title "NIVA V0.83 Latest" --notes "Constraint-based Safe Pose Generator + Collision-free Path Planner + Kokoro INT8 zf_001 desktop preview."
+          gh release create v0.85-latest NIVA-Windows-x64.zip --title "NIVA V0.85 Latest" --notes "Brain Interface + Performance Director + Safe Pose Planner + offline Kokoro INT8 zf_001."
