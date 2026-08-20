@@ -358,7 +358,7 @@ function scheduleSafeIdle(now){
   const rest=neutralPose(),back=validatePath(result.target,rest,14); if(back.safe)queueSegment(result.target,rest,1.8,'idle:settle');
 }
 
-async function speak(data){
+async function speak(data,onReady=()=>{}){
   const[style,intensity]=data.v||['neutral',.5];
   if(!String(data.t||'').trim()){mouthLevel=0;return;}
   speaking=true; mouthLevel=0;
@@ -367,6 +367,7 @@ async function speak(data){
       data.t,style,intensity,
       (status)=>{voiceBadge.textContent=status;},
       (level)=>{mouthLevel=level;},
+      onReady,
     );
     voiceBadge.textContent=kokoroVoiceStatus();
   }catch(error){
@@ -401,10 +402,22 @@ function enqueueBrainResponse(value){
 
 function processResponseQueue(){
   if(activeResponse||!modelReady||!responseQueue.length)return;
-  const data=responseQueue.shift(); activeResponse={data,speechDone:false};
-  setEmotion(data.e); showBubble(data.t); planResponseMotions(data); updateQueueInfo();
-  if(data.t){speak(data).finally(()=>{if(activeResponse)activeResponse.speechDone=true;});}
-  else activeResponse.speechDone=true;
+  const data=responseQueue.shift(); activeResponse={data,speechDone:false,motionStarted:false};
+  setEmotion(data.e); showBubble(data.t); updateQueueInfo();
+  const startMotion=()=>{
+    if(!activeResponse||activeResponse.data!==data||activeResponse.motionStarted)return;
+    activeResponse.motionStarted=true;
+    planResponseMotions(data);
+  };
+  if(data.t){
+    speak(data,startMotion).finally(()=>{
+      startMotion();
+      if(activeResponse&&activeResponse.data===data)activeResponse.speechDone=true;
+    });
+  }else{
+    startMotion();
+    activeResponse.speechDone=true;
+  }
 }
 
 function maybeCompleteResponse(){

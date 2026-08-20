@@ -107,12 +107,14 @@ export async function speakWithKokoro(
   intensity = 0.5,
   onStatus = () => {},
   onMouth = () => {},
+  onReady = () => {},
 ) {
   const clean = String(text || '').trim();
   if (!clean) return;
   const engine = await loadEngine(onStatus);
   const prosody = voiceProsody(style, intensity);
   const audio = await engine.generate(clean, { voice: VOICE, speed: prosody.speed });
+  onReady();
   await playRawAudio(audio, prosody.gain, onMouth);
 }
 
