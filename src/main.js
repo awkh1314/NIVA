@@ -33,9 +33,9 @@ import {
 import { expandPerformance } from '../runtime/performance/director.mjs';
 import { listPerformances } from '../runtime/performance/library.mjs';
 import { NIVA_PRESETS } from './presets.mjs';
-import { kokoroVoiceStatus, speakWithKokoro } from './kokoro-voice.mjs';
+import { kokoroVoiceStatus, preloadKokoro, speakWithKokoro, unlockKokoroAudio } from './kokoro-voice.mjs';
 
-const BUILD = '0.85.0';
+const BUILD = '0.85.1';
 const MODEL_URL = new URL('../NIVA.vrm', import.meta.url).href;
 const $ = (q) => document.querySelector(q);
 const isTauri = () => Boolean(window.__TAURI_INTERNALS__);
@@ -224,11 +224,13 @@ function bankSides(name) {
   return ['wave','point','think','step','tilt','taiChiBall','taiChiCloud'].includes(name) ? ['l','r'] : ['c'];
 }
 
-function buildSafePoseBank() {
+async function buildSafePoseBank() {
   const base = neutralPose();
   safePoseBank = [];
-  plannerBadge.textContent = '预计算安全姿态…';
   const intensities = [0.28,0.46,0.64,0.82];
+  const total = NIVA_GESTURES.reduce((sum,name)=>sum+bankSides(name).length*intensities.length*2,0);
+  let checked = 0;
+  plannerBadge.textContent = `安全姿态预计算 0/${total}`;
   for (const name of NIVA_GESTURES) {
     for (const side of bankSides(name)) {
       for (const intensity of intensities) {
@@ -236,15 +238,22 @@ function buildSafePoseBank() {
           const patch = gesturePatch(name, side, intensity, NIVA_VRM_BONE_LIMITS, variant);
           const candidate = applyCoupledJointConstraints(applyPosePatch(base, patch, NIVA_VRM_BONE_LIMITS), NIVA_VRM_BONE_LIMITS);
           const end = validatePose(candidate);
-          if (!end.safe) { plannerRejectCount += 1; continue; }
-          const path = validatePath(base, candidate, 12);
-          if (!path.safe) continue;
-          safePoseBank.push({ name, side, intensity, variant, patch });
+          if (!end.safe) plannerRejectCount += 1;
+          else {
+            const pathCheck = validatePath(base, candidate, 12);
+            if (pathCheck.safe) safePoseBank.push({ name, side, intensity, variant, patch });
+          }
+          checked += 1;
+          if (checked % 6 === 0) {
+            plannerBadge.textContent = `安全姿态预计算 ${checked}/${total}`;
+            updateStats();
+            await new Promise((resolve)=>requestAnimationFrame(resolve));
+          }
         }
       }
     }
   }
-  plannerBadge.textContent = `V0.85 就绪 · ${safePoseBank.length} 安全姿态`;
+  plannerBadge.textContent = `V0.85.1 就绪 · ${safePoseBank.length} 安全姿态`;
   updateStats();
 }
 
@@ -410,7 +419,14 @@ function processResponseQueue(){
     planResponseMotions(data);
   };
   if(data.t){
+    const motionFallbackTimer=setTimeout(()=>{
+      if(activeResponse&&activeResponse.data===data&&!activeResponse.motionStarted){
+        voiceBadge.textContent='Kokoro 正在准备 · 动作不阻塞';
+        startMotion();
+      }
+    },1800);
     speak(data,startMotion).finally(()=>{
+      clearTimeout(motionFallbackTimer);
       startMotion();
       if(activeResponse&&activeResponse.data===data)activeResponse.speechDone=true;
     });
@@ -496,6 +512,9 @@ function installMic(){
 }
 
 function installUi(){
+  const unlockVoice=()=>{unlockKokoroAudio((status)=>{voiceBadge.textContent=status;});};
+  document.addEventListener('pointerdown',unlockVoice,{capture:true});
+  document.addEventListener('keydown',unlockVoice,{capture:true});
   $('#closePanel').addEventListener('click',()=>setPanelVisible(false));
   canvas.addEventListener('dblclick',(event)=>{if(hitTestModel(event.clientX,event.clientY))setPanelVisible(!panelVisible);});
   $('#sendBtn').addEventListener('click',()=>submitText($('#inputBox').value));
@@ -520,23 +539,29 @@ function installUi(){
   canvas.addEventListener('pointerup',()=>{dragStart=null;}); canvas.addEventListener('pointercancel',()=>{dragStart=null;});
 }
 
-function probeVoice(){voiceBadge.textContent=kokoroVoiceStatus();}
+function probeVoice(){
+  voiceBadge.textContent=kokoroVoiceStatus();
+  preloadKokoro((status)=>{voiceBadge.textContent=status;});
+}
 
 function animate(now=performance.now()){
   requestAnimationFrame(animate);
-  if(modelReady){scheduleSafeIdle(now);updateMotion(now);updateBlink(now);updateMouth(now);maybeCompleteResponse();vrm?.update(1/60);}
+  if(vrm){updateBlink(now);updateMouth(now);}
+  if(modelReady){scheduleSafeIdle(now);updateMotion(now);maybeCompleteResponse();}
+  vrm?.update(1/60);
   renderer.render(scene,camera);
 }
 
 async function bootModel(){
   plannerBadge.textContent='载入 NIVA.vrm…';
   const loader=new GLTFLoader(); loader.register((parser)=>new VRMLoaderPlugin(parser));
-  loader.load(MODEL_URL,(gltf)=>{
+  loader.load(MODEL_URL,async(gltf)=>{
     vrm=gltf.userData.vrm; VRMUtils.removeUnnecessaryVertices(vrm.scene); VRMUtils.combineSkeletons(vrm.scene); vrm.scene.traverse((obj)=>{obj.frustumCulled=false;});
     avatarRoot.add(vrm.scene); currentPose=neutralPose(); setImmediatePose(currentPose); fitCamera();
-    collisionThresholds=calibrateCollisionThresholds(captureWorldPoints(),modelHeight); buildSafePoseBank(); modelReady=true;
-    nextIdleAt=performance.now()+1800; nextBlinkAt=performance.now()+900+Math.random()*900;
-    plannerBadge.textContent=`V0.85 就绪 · ${safePoseBank.length} 安全姿态`; updateStats(); processResponseQueue();
+    collisionThresholds=calibrateCollisionThresholds(captureWorldPoints(),modelHeight);
+    nextIdleAt=performance.now()+1800; nextBlinkAt=performance.now()+500+Math.random()*700;
+    await buildSafePoseBank(); modelReady=true;
+    plannerBadge.textContent=`V0.85.1 就绪 · ${safePoseBank.length} 安全姿态`; updateStats(); processResponseQueue();
     if(!isTauri())setTimeout(()=>setPanelVisible(true),450);
     else if(!sessionStorage.getItem('niva_api_seen'))setTimeout(()=>setPanelVisible(true),700);
   },undefined,(error)=>{console.error(error);plannerBadge.textContent='模型加载失败';});
