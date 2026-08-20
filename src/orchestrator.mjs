@@ -1,1 +1,26 @@
-export const NIVA_EMOTIONS=Object.freeze(['neutral','happy','shy','thinking','sad','angry','surprise']);export const NIVA_VOICE_STYLES=Object.freeze(['neutral','warm','bright','gentle','serious','sad','angry','surprised','excited','whisper']);export const NIVA_GESTURE_NAMES=Object.freeze(['nod','shake','tilt','wave','openArms','point','think','bow','cheer','step','sway','handsTogether']);export const NIVA_ORCHESTRATION_SYSTEM_PROMPT=`你是 NIVA 的回答与动作编排器。只输出一行 JSON，不要 markdown，不要解释。\n目标：回答自然、动作少而准、节省 token。禁止输出骨骼角度，禁止输出没有动作的身体部位。\n格式：{"t":"回答文本","e":"情绪","g":[["动作","方向",强度]],"v":["语音风格",强度]}\n字段：t 必填；e 必填，枚举 neutral|happy|shy|thinking|sad|angry|surprise；g 可省略，最多4项；方向只用 l|r|c；强度 0.15~1；v 可省略。\n动作枚举 nod|shake|tilt|wave|openArms|point|think|bow|cheer|step|sway|handsTogether。\n如果只说话无需明显动作，省略 g。不要输出时间轴，客户端根据语音长度自动排程。不要重复用户原话。回答默认控制在 80 个中文字以内，确需解释可更长。`;const clamp=(n,lo,hi)=>Math.max(lo,Math.min(hi,Number(n)||lo));export function normalizeOrchestration(value){const src=typeof value==='string'?JSON.parse(value):(value||{});const out={t:String(src.t||'').trim().slice(0,1200),e:NIVA_EMOTIONS.includes(src.e)?src.e:'neutral'};if(!out.t)throw new Error('orchestration missing t');if(Array.isArray(src.g)){const g=src.g.slice(0,4).map((item)=>{if(!Array.isArray(item)||!NIVA_GESTURE_NAMES.includes(item[0]))return null;const side=['l','r','c'].includes(item[1])?item[1]:'c';return[item[0],side,clamp(item[2]??.5,.15,1)];}).filter(Boolean);if(g.length)out.g=g;}if(Array.isArray(src.v)&&NIVA_VOICE_STYLES.includes(src.v[0]))out.v=[src.v[0],clamp(src.v[1]??.5,.15,1)];return out;}export function deepSeekPayload(userText){return{model:'deepseek-chat',temperature:.55,max_tokens:420,response_format:{type:'json_object'},messages:[{role:'system',content:NIVA_ORCHESTRATION_SYSTEM_PROMPT},{role:'user',content:String(userText||'').slice(0,4000)}]};}export function fallbackOrchestration(text){const s=String(text||'').trim();if(!s)return normalizeOrchestration({t:'我在。',e:'neutral',g:[['nod','c',.25]],v:['gentle',.35]});if(/你好|hi|hello/i.test(s))return normalizeOrchestration({t:'你好，我是 NIVA。很高兴见到你。',e:'happy',g:[['wave','r',.72],['nod','c',.28]],v:['bright',.55]});if(/成功|完成|太好了|庆祝/.test(s))return normalizeOrchestration({t:'收到。这个结果值得庆祝一下。',e:'happy',g:[['cheer','c',.72]],v:['excited',.62]});if(/难过|伤心|烦|累/.test(s))return normalizeOrchestration({t:'我听见了。先把最难受的那部分告诉我，我陪你一起理清。',e:'sad',g:[['tilt','l',.25],['handsTogether','c',.28]],v:['gentle',.58]});if(/想想|思考|怎么办|分析/.test(s))return normalizeOrchestration({t:'我先从目标、约束和可执行步骤三个方向来想。',e:'thinking',g:[['think','r',.42]],v:['serious',.42]});return normalizeOrchestration({t:`我收到你的输入：“${s.slice(0,80)}”。当前是体验模式，接入 DeepSeek 后我会直接理解并回答。`,e:'neutral',g:[['nod','c',.22]],v:['warm',.35]});}
+import {
+  NIVA_EMOTIONS,
+  NIVA_GESTURES,
+  NIVA_VOICE_STYLES,
+  brainToStageCue,
+  buildBrainSystemPrompt,
+  buildChatPayload,
+  fallbackBrainResponse,
+  normalizeBrainResponse,
+} from '../runtime/brain/protocol.mjs';
+
+export { NIVA_EMOTIONS, NIVA_VOICE_STYLES };
+export const NIVA_GESTURE_NAMES = NIVA_GESTURES;
+export const NIVA_ORCHESTRATION_SYSTEM_PROMPT = buildBrainSystemPrompt();
+
+export function normalizeOrchestration(value) {
+  return brainToStageCue(normalizeBrainResponse(value));
+}
+
+export function deepSeekPayload(userText) {
+  return buildChatPayload(userText, 'deepseek-chat');
+}
+
+export function fallbackOrchestration(text) {
+  return brainToStageCue(fallbackBrainResponse(text));
+}
