@@ -9,8 +9,8 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
@@ -30,8 +30,8 @@ jobs:
           NIVA V0.83 Portable
           1. 直接运行 NIVA.exe；不配置 API 时可使用内置体验预设。
           2. 双击模型打开/收起界面；运行中的回答/动作不会被新输入瞬移打断。
-          3. 可选：运行 voice\install-and-start.ps1 安装本地语音包：Vosk 中文离线 ASR + Qwen3-TTS 1.7B Serena 情感语音。
-          4. Vosk 中文模型约 40MB；Qwen3-TTS 1.7B CustomVoice 首次约下载 4.52GB。
+          3. 默认声音：Kokoro v1.1-zh INT8 / zf_001。第一次真正发声时约下载 127MB 量化模型，后续使用本地缓存；不可用时回退系统语音。
+          4. 可选离线语音输入：运行 voice\install-and-start.ps1，安装 Vosk 中文 ASR（模型约 40MB）。
           5. DeepSeek API Key 仅保存在当前运行会话。
           "@ | Set-Content -Encoding UTF8 release\README.txt
           Compress-Archive -Path release\* -DestinationPath NIVA-Windows-x64.zip -Force
@@ -50,4 +50,4 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release delete v0.83-latest --yes --cleanup-tag
           }
-          gh release create v0.83-latest NIVA-Windows-x64.zip --title "NIVA V0.83 Latest" --notes "Constraint-based Safe Pose Generator + Collision-free Path Planner desktop preview."
+          gh release create v0.83-latest NIVA-Windows-x64.zip --title "NIVA V0.83 Latest" --notes "Constraint-based Safe Pose Generator + Collision-free Path Planner + Kokoro INT8 zf_001 desktop preview."

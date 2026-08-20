@@ -18,4 +18,6 @@ DeepSeek 不接触 raw bone，只输出：
 
 Tauri 窗口透明、无边框、置顶。默认宽度只容纳 NIVA 模型；双击模型后扩展控制面板。展开/收起时读取当前显示器尺寸与窗口位置，将窗口位置 clamp 到显示器可见范围。
 
-语音优先本地 Qwen3-TTS Serena；服务不可用时回退系统 SpeechSynthesis。Qwen 模型权重不提交进 Git，首次安装语音包时独立下载并缓存。
+默认 TTS 为 Kokoro v1.1-zh 的 q8/INT8 路径，固定 `zf_001`。运行在 WebView 内，不需要 Python/Torch 服务；第一次发声下载约 127MB 模型。`v:[style,intensity]` 由本地 Prosody 层映射为 speed/gain，再与 VRM 表情和安全动作共同形成情绪表现。Kokoro 不可用时回退系统 SpeechSynthesis。
+
+离线中文语音输入仍可选用 Vosk；该服务与 TTS 解耦，Python 辅助脚本只安装 Vosk，不再安装 Qwen3-TTS。
