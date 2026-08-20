@@ -16,6 +16,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Apply V0.85 audio-motion sync gate
         run: node tools/apply-v085-sync.mjs
+      - name: Apply V0.85.1 runtime responsiveness repair
+        run: node tools/apply-v0851-runtime-fix.mjs
       - name: Install frontend dependencies
         run: npm install
       - name: Test planner and runtime safety
@@ -45,12 +47,13 @@ jobs:
           Copy-Item src-tauri\target\release\niva.exe release\NIVA.exe
           Copy-Item tools\voice\* release\voice\
           @"
-          NIVA V0.85 Portable
+          NIVA V0.85.1 Portable
           1. 直接运行 NIVA.exe；不配置 API 时可使用内置 Performance Presets。
           2. Brain 默认 DeepSeek，也支持 OpenAI 与 OpenAI-compatible 自定义接口。
           3. Kokoro INT8 / zf_001 已嵌入桌面构建，TTS 不需要首次下载；语音异常时不会切换系统声线。
-          4. 太极演绎由本地 Performance Director 分 cue 执行，每个动作名与对应安全动作同时开始。
-          5. 可选语音输入仍可运行 voice\install-and-start.ps1 安装 Vosk 中文 ASR。
+          4. 音频真正开始播放时启动对应动作；若语音准备过慢，动作不会再无限等待。
+          5. Safe Pose Bank 分批异步预计算，界面不会在启动阶段长时间冻结。
+          6. 可选语音输入仍可运行 voice\install-and-start.ps1 安装 Vosk 中文 ASR。
           "@ | Set-Content -Encoding UTF8 release\README.txt
           Compress-Archive -Path release\* -DestinationPath NIVA-Windows-x64.zip -Force
       - uses: actions/upload-artifact@v4
@@ -68,4 +71,4 @@ jobs:
           if ($LASTEXITCODE -eq 0) {
             gh release delete v0.85-latest --yes --cleanup-tag
           }
-          gh release create v0.85-latest NIVA-Windows-x64.zip --title "NIVA V0.85 Latest" --notes "Brain Interface + Performance Director + Safe Pose Planner + offline Kokoro INT8 zf_001."
+          gh release create v0.85-latest NIVA-Windows-x64.zip --title "NIVA V0.85.1 Latest" --notes "Brain Interface + Performance Director + responsive Safe Pose warmup + browser/desktop Kokoro audio repair."
