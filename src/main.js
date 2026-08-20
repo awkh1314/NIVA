@@ -5,11 +5,30 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { PhysicalPosition, PhysicalSize } from '@tauri-apps/api/dpi';
-import { NIVA_VRM_BONE_LIMITS, NIVA_VRM_EXPECTED_BONES, clampBoneRotation, neutralPose } from '../runtime/niva-vrm-limits.mjs';
-import { calibrateCollisionThresholds, detectAnatomicalCollisions } from '../runtime/niva-vrm-collision-guard.mjs';
-import { applyCoupledJointConstraints, applyPosePatch, blendPose, clonePose, createSafePosePlanner } from './safe-pose-planner.mjs';
+import {
+  NIVA_VRM_BONE_LIMITS,
+  NIVA_VRM_EXPECTED_BONES,
+  clampBoneRotation,
+  neutralPose,
+} from '../runtime/niva-vrm-limits.mjs';
+import {
+  calibrateCollisionThresholds,
+  detectAnatomicalCollisions,
+} from '../runtime/niva-vrm-collision-guard.mjs';
+import {
+  applyCoupledJointConstraints,
+  applyPosePatch,
+  blendPose,
+  clonePose,
+  createSafePosePlanner,
+} from './safe-pose-planner.mjs';
 import { gestureDuration, gesturePatch, NIVA_GESTURES } from './gestures.mjs';
-import { deepSeekPayload, fallbackOrchestration, NIVA_ORCHESTRATION_SYSTEM_PROMPT, normalizeOrchestration } from './orchestrator.mjs';
+import {
+  deepSeekPayload,
+  fallbackOrchestration,
+  NIVA_ORCHESTRATION_SYSTEM_PROMPT,
+  normalizeOrchestration,
+} from './orchestrator.mjs';
 import { NIVA_PRESETS } from './presets.mjs';
 import { kokoroVoiceStatus, speakWithKokoro } from './kokoro-voice.mjs';
 
@@ -49,7 +68,18 @@ let modelYaw = 0;
 let dragStart = null;
 let inputPipeline = Promise.resolve();
 
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+// Life-layer state. Idle motion is planned through the same V0.83 safety gate.
+let nextIdleAt = performance.now() + 2600;
+let nextBlinkAt = performance.now() + 1700;
+let blinkStartedAt = null;
+let idleVariant = 0;
+
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  alpha: true,
+  powerPreference: 'high-performance',
+});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setClearColor(0x000000, 0);
@@ -58,6 +88,9 @@ const scene = new THREE.Scene();
 const avatarRoot = new THREE.Group();
 scene.add(avatarRoot);
 const camera = new THREE.PerspectiveCamera(26, 1, 0.01, 100);
+const raycaster = new THREE.Raycaster();
+const pointerNdc = new THREE.Vector2();
+
 scene.add(new THREE.HemisphereLight(0xe9f8ff, 0x172030, 2.6));
 const key = new THREE.DirectionalLight(0xffffff, 3.4);
 key.position.set(2.2, 4.4, 3.2);
@@ -91,6 +124,22 @@ function fitCamera() {
   camera.near = Math.max(0.01, modelHeight / 100);
   camera.far = modelHeight * 20;
   camera.updateProjectionMatrix();
+}
+
+function hitTestModel(clientX, clientY) {
+  if (!modelReady || !vrm || !canvas) return false;
+  const rect = canvas.getBoundingClientRect();
+  if (
+    clientX < rect.left || clientX > rect.right ||
+    clientY < rect.top || clientY > rect.bottom ||
+    rect.width <= 0 || rect.height <= 0
+  ) return false;
+
+  pointerNdc.x = ((clientX - rect.left) / rect.width) * 2 - 1;
+  pointerNdc.y = -((clientY - rect.top) / rect.height) * 2 + 1;
+  vrm.scene.updateMatrixWorld(true);
+  raycaster.setFromCamera(pointerNdc, camera);
+  return raycaster.intersectObject(vrm.scene, true).some((hit) => hit.object?.visible !== false);
 }
 
 function setImmediatePose(pose) {
@@ -127,7 +176,11 @@ function captureWorldPoints() {
 
 function inspectCurrentPose() {
   if (!collisionThresholds) return { safe: true, collisions: [] };
-  const collisions = detectAnatomicalCollisions(captureWorldPoints(), modelHeight, collisionThresholds);
+  const collisions = detectAnatomicalCollisions(
+    captureWorldPoints(),
+    modelHeight,
+    collisionThresholds,
+  );
   return { safe: collisions.length === 0, collisions };
 }
 
@@ -200,9 +253,13 @@ function buildSafePoseBank() {
 
 function nearestBankEntries(request) {
   const side = request.side === 'c' ? null : request.side;
-  let candidates = safePoseBank.filter((x) => x.name === request.gesture && (!side || x.side === side));
+  let candidates = safePoseBank.filter(
+    (x) => x.name === request.gesture && (!side || x.side === side),
+  );
   if (!candidates.length) candidates = safePoseBank.filter((x) => x.name === request.gesture);
-  candidates.sort((a, b) => Math.abs(a.intensity - request.intensity) - Math.abs(b.intensity - request.intensity));
+  candidates.sort(
+    (a, b) => Math.abs(a.intensity - request.intensity) - Math.abs(b.intensity - request.intensity),
+  );
   return candidates;
 }
 
@@ -213,8 +270,14 @@ function planOneGesture(fromPose, request) {
     capturePose: () => fromPose,
     makeCandidate: (_req, from, attempt) => {
       const entry = entries[attempt % Math.max(1, entries.length)];
-      const fallbackIntensity = Math.max(0.18, request.intensity * Math.pow(0.84, attempt));
-      const patch = entry?.patch || gesturePatch(request.gesture, request.side, fallbackIntensity, NIVA_VRM_BONE_LIMITS, attempt);
+      const fallbackIntensity = Math.max(0.15, request.intensity * Math.pow(0.84, attempt));
+      const patch = entry?.patch || gesturePatch(
+        request.gesture,
+        request.side,
+        fallbackIntensity,
+        NIVA_VRM_BONE_LIMITS,
+        attempt,
+      );
       return applyPosePatch(from, patch, NIVA_VRM_BONE_LIMITS);
     },
     validatePose,
@@ -251,14 +314,22 @@ function requiredDuration(from, to, requested = 1.2) {
 }
 
 function queueSegment(from, to, duration, label) {
-  motionQueue.push({ from: clonePose(from), to: clonePose(to), duration: requiredDuration(from, to, duration), label });
+  motionQueue.push({
+    from: clonePose(from),
+    to: clonePose(to),
+    duration: requiredDuration(from, to, duration),
+    label,
+  });
 }
 
 function planResponseMotions(data) {
   let tail = motionQueue.length
     ? clonePose(motionQueue[motionQueue.length - 1].to)
-    : (currentSegment ? clonePose(currentSegment.to) : clonePose(currentPose));
+    : currentSegment
+      ? clonePose(currentSegment.to)
+      : clonePose(currentPose);
   let planned = 0;
+
   for (const item of data.g || []) {
     const [gesture, side, intensity] = item;
     const result = planOneGesture(tail, { gesture, side, intensity });
@@ -267,6 +338,7 @@ function planResponseMotions(data) {
     tail = result.target;
     planned += 1;
   }
+
   const rest = neutralPose();
   const restCheck = validatePath(tail, rest, 16);
   if (restCheck.safe && (planned || JSON.stringify(tail) !== JSON.stringify(rest))) {
@@ -317,21 +389,69 @@ function setEmotion(name) {
 function updateMouth(now) {
   if (!vrm?.expressionManager) return;
   let value = 0;
-  if (speaking) value = 0.12 + 0.32 * Math.abs(Math.sin(now * 0.018)) + 0.08 * Math.abs(Math.sin(now * 0.041));
+  if (speaking) {
+    value = 0.12 + 0.32 * Math.abs(Math.sin(now * 0.018)) + 0.08 * Math.abs(Math.sin(now * 0.041));
+  }
   try { vrm.expressionManager.setValue('aa', Math.min(0.58, value)); } catch {}
+}
+
+function updateBlink(now) {
+  if (!vrm?.expressionManager) return;
+  if (blinkStartedAt === null && now >= nextBlinkAt) blinkStartedAt = now;
+  if (blinkStartedAt === null) return;
+
+  const duration = 155;
+  const t = (now - blinkStartedAt) / duration;
+  if (t >= 1) {
+    try { vrm.expressionManager.setValue('blink', 0); } catch {}
+    blinkStartedAt = null;
+    nextBlinkAt = now + 2200 + Math.random() * 3400;
+    return;
+  }
+  const value = t < 0.45 ? t / 0.45 : (1 - t) / 0.55;
+  try { vrm.expressionManager.setValue('blink', Math.max(0, Math.min(1, value))); } catch {}
+}
+
+function scheduleSafeIdle(now) {
+  if (
+    !modelReady || activeResponse || responseQueue.length || speaking ||
+    currentSegment || motionQueue.length || now < nextIdleAt
+  ) return;
+
+  const choices = [
+    ['sway', 'c', 0.20],
+    ['sway', 'c', 0.24],
+    ['tilt', idleVariant % 2 ? 'l' : 'r', 0.18],
+    ['nod', 'c', 0.18],
+  ];
+  const [gesture, side, intensity] = choices[idleVariant % choices.length];
+  idleVariant += 1;
+  nextIdleAt = now + 4200 + Math.random() * 4200;
+
+  const from = clonePose(currentPose);
+  const result = planOneGesture(from, { gesture, side, intensity });
+  if (!result.ok) return;
+  queueSegment(from, result.target, Math.max(1.6, gestureDuration(gesture, intensity)), `idle:${gesture}`);
+  const rest = neutralPose();
+  const back = validatePath(result.target, rest, 14);
+  if (back.safe) queueSegment(result.target, rest, 1.8, 'idle:settle');
 }
 
 function speakFallback(text, style = 'neutral') {
   return new Promise((resolve) => {
     if (!('speechSynthesis' in window)) return resolve();
     speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'zh-CN';
-    utterance.rate = style === 'excited' ? 1.08 : (style === 'sad' || style === 'gentle' ? 0.93 : 1);
-    utterance.pitch = style === 'bright' || style === 'excited' ? 1.08 : (style === 'serious' ? 0.96 : 1.02);
-    utterance.onend = resolve;
-    utterance.onerror = resolve;
-    speechSynthesis.speak(utterance);
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'zh-CN';
+    if (style === 'excited' || style === 'bright') u.rate = 1.08;
+    else if (style === 'sad' || style === 'gentle' || style === 'whisper') u.rate = 0.93;
+    else u.rate = 1;
+    if (style === 'bright' || style === 'excited' || style === 'surprised') u.pitch = 1.08;
+    else if (style === 'serious' || style === 'sad') u.pitch = 0.96;
+    else u.pitch = 1.02;
+    u.onend = resolve;
+    u.onerror = resolve;
+    speechSynthesis.speak(u);
   });
 }
 
@@ -340,10 +460,12 @@ async function speak(data) {
   speaking = true;
   try {
     try {
-      await speakWithKokoro(data.t, style, intensity, (status) => { voiceBadge.textContent = status; });
+      await speakWithKokoro(data.t, style, intensity, (status) => {
+        voiceBadge.textContent = status;
+      });
       voiceBadge.textContent = kokoroVoiceStatus();
     } catch (error) {
-      console.warn('Kokoro unavailable, using system TTS', error);
+      console.warn('Kokoro fallback', error);
       voiceBadge.textContent = '系统语音回退';
       await speakFallback(data.t, style);
     }
@@ -393,7 +515,10 @@ function maybeCompleteResponse() {
   if (!activeResponse.speechDone || !motionDone) return;
   activeResponse = null;
   setEmotion('neutral');
-  setTimeout(() => { if (!activeResponse) hideBubble(); }, 700);
+  setTimeout(() => {
+    if (!activeResponse) hideBubble();
+  }, 700);
+  nextIdleAt = performance.now() + 2400 + Math.random() * 1800;
   updateQueueInfo();
   processResponseQueue();
 }
@@ -433,6 +558,7 @@ async function setPanelVisible(show) {
   panel.classList.toggle('hidden', !panelVisible);
   panel.setAttribute('aria-hidden', String(!panelVisible));
   if (!isTauri()) return;
+
   try {
     const win = getCurrentWindow();
     const monitor = await win.currentMonitor();
@@ -459,10 +585,13 @@ function installMic() {
   const btn = $('#micBtn');
   if (!SpeechRecognition) {
     btn.addEventListener('click', () => {
-      queueInfo.textContent = '当前 WebView 不支持系统语音识别，请直接输入文字。';
+      if (!window.NIVALocalASR?.ready) {
+        queueInfo.textContent = '当前环境没有可用语音识别，请直接输入文字。';
+      }
     });
     return;
   }
+
   const rec = new SpeechRecognition();
   rec.lang = 'zh-CN';
   rec.interimResults = false;
@@ -481,7 +610,12 @@ function installMic() {
 
 function installUi() {
   $('#closePanel').addEventListener('click', () => setPanelVisible(false));
-  canvas.addEventListener('dblclick', () => setPanelVisible(!panelVisible));
+
+  canvas.addEventListener('dblclick', (event) => {
+    if (!hitTestModel(event.clientX, event.clientY)) return;
+    setPanelVisible(!panelVisible);
+  });
+
   $('#sendBtn').addEventListener('click', () => submitText($('#inputBox').value));
   $('#inputBox').addEventListener('keydown', (event) => {
     if (event.key === 'Enter' && !event.shiftKey) {
@@ -489,6 +623,7 @@ function installUi() {
       submitText(event.currentTarget.value);
     }
   });
+
   $('#saveApi').addEventListener('click', () => {
     apiKeySession = $('#apiKey').value.trim();
     modeBadge.textContent = apiKeySession ? 'DeepSeek 已接入' : '体验模式';
@@ -501,14 +636,18 @@ function installUi() {
     $('#firstRun').classList.add('hidden');
     sessionStorage.setItem('niva_api_seen', '1');
   });
+
   for (const preset of NIVA_PRESETS) {
     const button = document.createElement('button');
     button.textContent = preset.label;
     button.addEventListener('click', () => enqueueResponse(preset.data));
     $('#presetGrid').appendChild(button);
   }
+
   installMic();
+
   canvas.addEventListener('pointerdown', (event) => {
+    if (!hitTestModel(event.clientX, event.clientY)) return;
     dragStart = { x: event.clientX, yaw: modelYaw };
     canvas.setPointerCapture?.(event.pointerId);
   });
@@ -518,6 +657,7 @@ function installUi() {
     avatarRoot.rotation.y = modelYaw;
   });
   canvas.addEventListener('pointerup', () => { dragStart = null; });
+  canvas.addEventListener('pointercancel', () => { dragStart = null; });
 }
 
 function probeVoice() {
@@ -527,7 +667,9 @@ function probeVoice() {
 function animate(now = performance.now()) {
   requestAnimationFrame(animate);
   if (modelReady) {
+    scheduleSafeIdle(now);
     updateMotion(now);
+    updateBlink(now);
     updateMouth(now);
     maybeCompleteResponse();
     vrm?.update(1 / 60);
@@ -553,7 +695,9 @@ async function bootModel() {
       collisionThresholds = calibrateCollisionThresholds(captureWorldPoints(), modelHeight);
       buildSafePoseBank();
       modelReady = true;
-      plannerBadge.textContent = `V0.83 就绪 · ${safePoseBank.length} 安全姿态`;
+      nextIdleAt = performance.now() + 1800;
+      nextBlinkAt = performance.now() + 900 + Math.random() * 900;
+      plannerBadge.textContent = `V0.83.1 就绪 · ${safePoseBank.length} 安全姿态`;
       updateStats();
       processResponseQueue();
       if (!sessionStorage.getItem('niva_api_seen') && isTauri()) {
@@ -576,9 +720,12 @@ animate();
 window.NIVA = Object.freeze({
   build: BUILD,
   enqueue: enqueueResponse,
+  hitTest(clientX, clientY) { return hitTestModel(clientX, clientY); },
+  openPanel() { return setPanelVisible(true); },
+  closePanel() { return setPanelVisible(false); },
   preset(id) {
-    const preset = NIVA_PRESETS.find((x) => x.id === id);
-    if (preset) enqueueResponse(preset.data);
+    const p = NIVA_PRESETS.find((x) => x.id === id);
+    if (p) enqueueResponse(p.data);
   },
   get bankSize() { return safePoseBank.length; },
   get queueLength() { return responseQueue.length; },
