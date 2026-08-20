@@ -1,1 +1,75 @@
-const AXES=['x','y','z'];const clamp01=(n)=>Math.max(0,Math.min(1,Number(n)||0));function rel(limits,name,delta={},intensity=1){const l=limits[name];if(!l)return null;const k=clamp01(intensity);const out={};for(const axis of AXES){const n=l[axis].neutral;const v=n+(Number(delta[axis]||0)*k);out[axis]=Math.max(l[axis].min,Math.min(l[axis].max,v));}return out;}const SIDE=(side)=>String(side||'r').toLowerCase().startsWith('l')?'left':'right';export const NIVA_GESTURES=Object.freeze(['nod','shake','tilt','wave','openArms','point','think','bow','cheer','step','sway','handsTogether']);export function gesturePatch(name,side,intensity,limits,variant=0){const k=Math.max(.15,Math.min(1,Number(intensity)||.5));const s=SIDE(side);const other=s==='left'?'right':'left';const patch={};const put=(bone,delta)=>{const value=rel(limits,bone,delta,k);if(value)patch[bone]=value;};switch(name){case'nod':put('neck',{x:variant%2?-8:8});put('head',{x:variant%2?-9:7});break;case'shake':put('neck',{y:variant%2?-15:15});put('head',{y:variant%2?-13:13});break;case'tilt':put('neck',{z:s==='left'?10:-10});put('head',{z:s==='left'?8:-8});break;case'wave':put(`${s}UpperArm`,{x:12,y:s==='left'?-12:12,z:s==='left'?-48:48});put(`${s}LowerArm`,{y:s==='left'?-74:74});put(`${s}Hand`,{x:variant%2?18:-12,z:s==='left'?12:-12});put(`${s}Shoulder`,{z:s==='left'?-6:6});break;case'openArms':put('leftUpperArm',{x:6,z:-36});put('rightUpperArm',{x:6,z:36});put('leftLowerArm',{y:24});put('rightLowerArm',{y:-24});break;case'point':put(`${s}UpperArm`,{x:28,y:s==='left'?-12:12,z:s==='left'?-28:28});put(`${s}LowerArm`,{y:s==='left'?-18:18});put(`${s}Hand`,{x:-8});break;case'think':put(`${s}UpperArm`,{x:15,z:s==='left'?-34:34});put(`${s}LowerArm`,{y:s==='left'?-82:82});put(`${s}Hand`,{x:12,z:s==='left'?-12:12});put('head',{x:-5,y:s==='left'?-6:6,z:s==='left'?4:-4});break;case'bow':put('hips',{x:6});put('spine',{x:6});put('chest',{x:8});put('upperChest',{x:5});put('head',{x:5});break;case'cheer':put('leftUpperArm',{x:22,z:-66});put('rightUpperArm',{x:22,z:66});put('leftLowerArm',{y:-62});put('rightLowerArm',{y:62});put('chest',{x:-4});put('head',{x:-5});break;case'step':put(`${s}UpperLeg`,{x:28,z:s==='left'?-5:5});put(`${s}LowerLeg`,{x:42});put(`${s}Foot`,{x:8});put(`${other}UpperLeg`,{x:-5});put('hips',{z:s==='left'?-3:3});break;case'sway':put('hips',{y:variant%2?-6:6,z:variant%2?-4:4});put('spine',{y:variant%2?-4:4,z:variant%2?-3:3});put('head',{y:variant%2?4:-4});break;case'handsTogether':put('leftUpperArm',{x:10,y:20,z:24});put('rightUpperArm',{x:10,y:-20,z:-24});put('leftLowerArm',{y:-72});put('rightLowerArm',{y:72});put('leftHand',{z:-8});put('rightHand',{z:8});break;default:break;}return patch;}export function gestureDuration(name,intensity=.5){const base={nod:.9,shake:1,tilt:1.1,wave:1.8,openArms:1.5,point:1.4,think:1.8,bow:1.5,cheer:1.8,step:1.6,sway:1.8,handsTogether:1.6}[name]||1.2;return base*(.9+clamp01(intensity)*.35);}
+const AXES = ['x','y','z'];
+const clamp01 = (n) => Math.max(0, Math.min(1, Number(n) || 0));
+function rel(limits,name,delta={},intensity=1){
+  const l=limits[name];
+  if(!l)return null;
+  const k=clamp01(intensity);
+  const out={};
+  for(const axis of AXES){
+    const n=l[axis].neutral;
+    const v=n+(Number(delta[axis]||0)*k);
+    out[axis]=Math.max(l[axis].min,Math.min(l[axis].max,v));
+  }
+  return out;
+}
+const SIDE=(side)=>String(side||'r').toLowerCase().startsWith('l')?'left':'right';
+
+export const NIVA_GESTURES=Object.freeze([
+  'nod','shake','tilt','wave','openArms','point','think','bow','cheer','step','sway','handsTogether',
+  'taiChiRaise','taiChiBall','taiChiCloud','taiChiPush','taiChiClose',
+]);
+
+export function gesturePatch(name,side,intensity,limits,variant=0){
+  const k=Math.max(.15,Math.min(1,Number(intensity)||.5));
+  const s=SIDE(side);
+  const other=s==='left'?'right':'left';
+  const patch={};
+  const put=(bone,delta)=>{const value=rel(limits,bone,delta,k);if(value)patch[bone]=value;};
+  switch(name){
+    case'nod':put('neck',{x:variant%2?-8:8});put('head',{x:variant%2?-9:7});break;
+    case'shake':put('neck',{y:variant%2?-15:15});put('head',{y:variant%2?-13:13});break;
+    case'tilt':put('neck',{z:s==='left'?10:-10});put('head',{z:s==='left'?8:-8});break;
+    case'wave':put(`${s}UpperArm`,{x:12,y:s==='left'?-12:12,z:s==='left'?-48:48});put(`${s}LowerArm`,{y:s==='left'?-74:74});put(`${s}Hand`,{x:variant%2?18:-12,z:s==='left'?12:-12});put(`${s}Shoulder`,{z:s==='left'?-6:6});break;
+    case'openArms':put('leftUpperArm',{x:6,z:-36});put('rightUpperArm',{x:6,z:36});put('leftLowerArm',{y:24});put('rightLowerArm',{y:-24});break;
+    case'point':put(`${s}UpperArm`,{x:28,y:s==='left'?-12:12,z:s==='left'?-28:28});put(`${s}LowerArm`,{y:s==='left'?-18:18});put(`${s}Hand`,{x:-8});break;
+    case'think':put(`${s}UpperArm`,{x:15,z:s==='left'?-34:34});put(`${s}LowerArm`,{y:s==='left'?-82:82});put(`${s}Hand`,{x:12,z:s==='left'?-12:12});put('head',{x:-5,y:s==='left'?-6:6,z:s==='left'?4:-4});break;
+    case'bow':put('hips',{x:6});put('spine',{x:6});put('chest',{x:8});put('upperChest',{x:5});put('head',{x:5});break;
+    case'cheer':put('leftUpperArm',{x:22,z:-66});put('rightUpperArm',{x:22,z:66});put('leftLowerArm',{y:-62});put('rightLowerArm',{y:62});put('chest',{x:-4});put('head',{x:-5});break;
+    case'step':put(`${s}UpperLeg`,{x:28,z:s==='left'?-5:5});put(`${s}LowerLeg`,{x:42});put(`${s}Foot`,{x:8});put(`${other}UpperLeg`,{x:-5});put('hips',{z:s==='left'?-3:3});break;
+    case'sway':put('hips',{y:variant%2?-6:6,z:variant%2?-4:4});put('spine',{y:variant%2?-4:4,z:variant%2?-3:3});put('head',{y:variant%2?4:-4});break;
+    case'handsTogether':put('leftUpperArm',{x:10,y:20,z:24});put('rightUpperArm',{x:10,y:-20,z:-24});put('leftLowerArm',{y:-72});put('rightLowerArm',{y:72});put('leftHand',{z:-8});put('rightHand',{z:8});break;
+    case'taiChiRaise':
+      put('leftShoulder',{z:-4});put('rightShoulder',{z:4});
+      put('leftUpperArm',{x:12,y:-5,z:-28});put('rightUpperArm',{x:12,y:5,z:28});
+      put('leftLowerArm',{y:-18});put('rightLowerArm',{y:18});put('chest',{x:-2});break;
+    case'taiChiBall':
+      put('leftUpperArm',{x:18,y:-12,z:-30});put('rightUpperArm',{x:8,y:16,z:18});
+      put('leftLowerArm',{y:-58});put('rightLowerArm',{y:52});
+      put('leftHand',{x:7,z:8});put('rightHand',{x:-6,z:-8});put('hips',{y:-4});break;
+    case'taiChiCloud':
+      if(s==='left'){
+        put('leftUpperArm',{x:14,y:-24,z:-36});put('leftLowerArm',{y:-46});
+        put('rightUpperArm',{x:8,y:18,z:24});put('rightLowerArm',{y:36});put('hips',{y:-7});put('spine',{y:-5});
+      }else{
+        put('rightUpperArm',{x:14,y:24,z:36});put('rightLowerArm',{y:46});
+        put('leftUpperArm',{x:8,y:-18,z:-24});put('leftLowerArm',{y:-36});put('hips',{y:7});put('spine',{y:5});
+      }
+      break;
+    case'taiChiPush':
+      put('leftUpperArm',{x:26,y:-5,z:-20});put('rightUpperArm',{x:26,y:5,z:20});
+      put('leftLowerArm',{y:-16});put('rightLowerArm',{y:16});put('leftHand',{x:-8});put('rightHand',{x:-8});put('chest',{x:3});break;
+    case'taiChiClose':
+      put('leftUpperArm',{x:4,z:-14});put('rightUpperArm',{x:4,z:14});
+      put('leftLowerArm',{y:-8});put('rightLowerArm',{y:8});put('hips',{x:3});put('chest',{x:3});put('head',{x:2});break;
+    default:break;
+  }
+  return patch;
+}
+
+export function gestureDuration(name,intensity=.5){
+  const base={
+    nod:.9,shake:1,tilt:1.1,wave:1.8,openArms:1.5,point:1.4,think:1.8,bow:1.5,cheer:1.8,step:1.6,sway:1.8,handsTogether:1.6,
+    taiChiRaise:2.4,taiChiBall:2.5,taiChiCloud:3.0,taiChiPush:2.5,taiChiClose:2.4,
+  }[name]||1.2;
+  return base*(.9+clamp01(intensity)*.35);
+}
