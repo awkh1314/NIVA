@@ -16,38 +16,63 @@
       <div class="panel-head">
         <div>
           <strong>NIVA</strong>
-          <small>V0.83 · Safe Pose Planner</small>
+          <small>V0.85 · Brain Interface + Performance Director</small>
         </div>
         <button id="closePanel" class="icon-btn">×</button>
       </div>
-      <div class="status-line"><span id="modeBadge">体验模式</span><span id="plannerBadge">安全姿态计算中</span></div>
-      <div id="firstRun" class="first-run">
-        <div class="section-title">DeepSeek API</div>
-        <p>接入后由 DeepSeek 输出精简的「回答 + 情绪 + 必要动作」JSON。API Key 仅保存在本次运行内。</p>
-        <input id="apiKey" type="password" autocomplete="off" placeholder="sk-...（可留空使用体验模式）" />
-        <div class="row-buttons"><button id="saveApi">接入 DeepSeek</button><button id="useDemo">体验模式</button></div>
+      <div class="status-line">
+        <span id="modeBadge">本地体验编排</span>
+        <span id="plannerBadge">安全姿态计算中</span>
+        <span id="performanceBadge">Director 空闲</span>
       </div>
+      <div id="firstRun" class="first-run">
+        <div class="section-title">Brain Provider</div>
+        <p>默认 DeepSeek。桌面版也可接 OpenAI 或 OpenAI-compatible API；所有模型最终都必须输出统一 NIVA Brain JSON，不能直接操作骨骼。</p>
+        <div class="config-grid">
+          <label>模型提供方
+            <select id="brainProvider">
+              <option value="deepseek">DeepSeek（默认）</option>
+              <option value="openai">OpenAI</option>
+              <option value="custom">自定义 OpenAI-compatible</option>
+            </select>
+          </label>
+          <label>模型
+            <input id="brainModel" value="deepseek-chat" autocomplete="off" />
+          </label>
+        </div>
+        <label id="brainBaseUrlRow" class="hidden">API Endpoint
+          <input id="brainBaseUrl" placeholder="https://example.com/v1/chat/completions" autocomplete="off" />
+        </label>
+        <label>API Key
+          <input id="apiKey" type="password" autocomplete="off" placeholder="sk-...（可留空使用体验模式）" />
+        </label>
+        <div class="row-buttons"><button id="saveApi">接入 Brain</button><button id="useDemo">体验模式</button></div>
+      </div>
+
       <div class="section-title">输入</div>
       <div class="input-row">
         <button id="micBtn" class="mic-btn" title="语音输入">🎙</button>
-        <textarea id="inputBox" rows="2" placeholder="直接输入，或点击麦克风说话…"></textarea>
+        <textarea id="inputBox" rows="2" placeholder="例如：给我打一套太极…"></textarea>
         <button id="sendBtn">发送</button>
       </div>
       <div id="queueInfo" class="queue-info">空闲</div>
-      <div class="section-title">体验预设</div>
+
+      <div class="section-title">Performance Presets</div>
       <div id="presetGrid" class="preset-grid"></div>
-      <div class="section-title">声音</div>
+
+      <div class="section-title">声音与口形</div>
       <div class="voice-card">
-        <div><b>默认：Kokoro INT8 · zf_001</b><small>首次使用下载约 127MB 量化模型；之后走本地缓存。情绪由本地 Prosody 参数 + 表情/动作共同呈现；失败时自动回退系统语音。</small></div>
-        <span id="voiceBadge">待首次加载</span>
+        <div><b>Kokoro INT8 · zf_001</b><small>桌面构建将 q8 模型和 zf_001 一并打包；网页体验首次发声在线加载。口形由实际 Kokoro PCM 音量包络驱动，不再使用固定随机张嘴。语音异常时静音，不切换系统声线。</small></div>
+        <span id="voiceBadge">待加载</span>
       </div>
+
       <div class="section-title">运行状态</div>
       <div class="stats">
         <span>安全姿态库 <b id="bankCount">0</b></span>
         <span>路径预检 <b id="pathCount">0</b></span>
         <span>拒绝候选 <b id="rejectCount">0</b></span>
       </div>
-      <p class="hint">双击模型可再次收起界面。运行中的回答不会被打断；新输入会排队，并从当前动作自然过渡。</p>
+      <p class="hint">模型始终按整个舞台居中，面板只作为悬浮层。表演 cue 不会互相瞬移：当前语音与动作完成后，下一 cue 从当前安全姿态继续规划。</p>
     </aside>
   </div>
   <script type="module" src="/src/main.js"></script>
