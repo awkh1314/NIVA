@@ -14,8 +14,6 @@ jobs:
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
-      - name: Apply V0.85.1 runtime responsiveness repair
-        run: node tools/apply-v0851-runtime-fix.mjs
       - name: Install frontend dependencies
         run: npm install
       - name: Test planner and runtime safety
