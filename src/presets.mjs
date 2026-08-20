@@ -1,1 +1,8 @@
-export const NIVA_PRESETS=Object.freeze([{id:'greet',label:'打招呼',data:{t:'你好，我是 NIVA。今天想让我陪你做什么？',e:'happy',g:[['wave','r',.72],['nod','c',.25]],v:['bright',.58]}},{id:'think',label:'思考',data:{t:'这个问题我想认真一点。先看目标，再看限制，最后找最短的可行路径。',e:'thinking',g:[['think','r',.5],['tilt','l',.2]],v:['serious',.45]}},{id:'celebrate',label:'庆祝',data:{t:'完成了。这个进展很不错，下一步继续把它做稳。',e:'happy',g:[['cheer','c',.7],['nod','c',.3]],v:['excited',.62]}},{id:'comfort',label:'安慰',data:{t:'我在这里。你可以慢慢说，不需要一次把所有事情都讲清楚。',e:'sad',g:[['handsTogether','c',.28],['tilt','l',.22]],v:['gentle',.58]}},{id:'explain',label:'说明',data:{t:'我会把复杂问题拆成几步，每一步只处理一个明确目标。',e:'neutral',g:[['openArms','c',.36],['point','r',.3]],v:['warm',.42]}}]);
+export const NIVA_PRESETS = Object.freeze([
+  { id:'welcome_home', label:'欢迎回归', data:{ performance:'welcome_home', emotion:'happy', voice:['bright',0.58] } },
+  { id:'tai_chi_beginner', label:'太极演绎', data:{ performance:'tai_chi_beginner', emotion:'neutral', voice:['gentle',0.42] } },
+  { id:'thinking_demo', label:'思考演绎', data:{ performance:'thinking_demo', emotion:'thinking', voice:['serious',0.44] } },
+  { id:'greet', label:'打招呼', data:{ text:'你好，我是 NIVA。今天想让我陪你做什么？', emotion:'happy', gestures:[['wave','r',0.72],['nod','c',0.25]], voice:['bright',0.58] } },
+  { id:'celebrate', label:'庆祝', data:{ text:'完成了。这个进展值得庆祝一下。', emotion:'happy', gestures:[['cheer','c',0.68],['nod','c',0.28]], voice:['excited',0.60] } },
+  { id:'explain', label:'说明', data:{ text:'我会把复杂问题拆成几步，每一步只处理一个明确目标。', emotion:'neutral', gestures:[['openArms','c',0.34],['point','r',0.28]], voice:['warm',0.42] } },
+]);
