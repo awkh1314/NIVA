@@ -1,43 +1,60 @@
-# NIVA · V0.83 Desktop Digital Life
+# NIVA · V0.85 Digital Life Runtime
 
-NIVA 只保留一条技术主线：**唯一 `NIVA.vrm` → 安全姿态规划 → 语音/文本输入 → DeepSeek 稀疏编排 → 情绪、Kokoro 语音、动作同步 → Windows 桌面数字生命。**
+NIVA 当前唯一技术主线：**唯一 `NIVA.vrm` → Safe Pose / Collision-free Path Planner → Brain Interface → Performance Director → Kokoro 声音、口形、表情和动作同步 → Windows 桌面数字生命。**
 
-## 当前版本
+## V0.85 核心
 
-V0.83 — Constraint-based Safe Pose Generator + Collision-free Path Planner
+### Brain Interface
+默认 Brain Provider 为 DeepSeek；桌面控制面板同时提供 OpenAI 与自定义 OpenAI-compatible Endpoint。模型不允许直接输出骨骼角度、坐标或逐帧动画，只能输出统一稀疏协议，例如：
 
-关键变化：旧 2D 主线、Control Protocol 调试页和旧随机运动驱动已经退出主线；`NIVA.vrm` 仍是仓库唯一 VRM；54 个 Humanoid bones 继续受人体 ROM、最大角速度、最大角加速度约束；动作不再先执行再回滚，而是先在不可见状态计算候选姿态与整段运动轨迹；终点或过渡路径任意采样点出现人体自碰撞，候选动作直接废弃并重新规划；预计算常用 gesture 的安全姿态库，DeepSeek 只选择高层动作，不直接操作骨骼角度；运行中的回答不可被新输入瞬间打断，新输入排队并从上一段动作末端自然衔接；Windows 桌面模式默认只显示模型，双击模型打开/收起界面，并自动把窗口限制在当前显示器可见范围。
-
-DeepSeek 只输出一行稀疏 JSON：
 ```json
-{"t":"你好，我是 NIVA。","e":"happy","g":[["wave","r",0.72],["nod","c",0.25]],"v":["bright",0.58]}
+{"text":"我来演示一遍。","emotion":"neutral","performance":"tai_chi_beginner","voice":["gentle",0.4]}
 ```
-`t` 回答文本；`e` 情绪；`g` 可省略且最多 4 个高层 gesture，没有必要运动的身体部位完全不输出；`v` 可省略。禁止输出骨骼角度、完整 54 骨骼状态或逐帧时间轴。客户端根据 gesture、人体限制和语音长度完成安全排程。
 
-安全动作链：
+普通回复只输出确实需要的 gesture：
+
+```json
+{"text":"你好。","emotion":"happy","gestures":[["wave","r",0.65]],"voice":["bright",0.5]}
+```
+
+### Performance Director
+V0.85 的完整表演不再要求 LLM 生成时间轴。Brain 只选择本地 performance，Director 展开为 cue 队列；每个 cue 的声音、表情和动作同时开始，当前声音与动作完成后才进入下一 cue，并从当前安全姿态继续规划。
+
+内置体验：
+- `welcome_home`：欢迎回归，两段连续互动。
+- `tai_chi_beginner`：起式 → 抱球 → 云手 → 推掌 → 收式；每做一式同时说动作名。
+- `thinking_demo`：托腮 → 左右观察 → 点头回答。
+
+太极新增 `taiChiRaise / taiChiBall / taiChiCloud / taiChiPush / taiChiClose` 五个专用动作原语。它们和普通 gesture 一样，必须通过 Safe Pose Bank、人体联动约束、终点碰撞检查和整条路径预检后才能执行。
+
+### 声音与口形
+固定 `Kokoro v1.1-zh INT8 / zf_001`。Windows 构建工作流在编译阶段下载并校验 q8 模型、tokenizer 和 `zf_001`，再打进桌面构建，因此成品 TTS 可离线运行。网页体验为了避免 Pages 体积膨胀，首次发声仍从模型源按需加载。
+
+Kokoro 异常时不再切换 Windows 系统声线，而是显示语音模块异常并静音。口形由 Kokoro 实际 PCM 音频包络驱动 `aa / ih / ou`，不再使用固定随机张嘴。
+
+### 舞台与交互
+Canvas 始终占满舞台；控制面板改为悬浮层，不参与模型布局。每次模型加载、窗口尺寸变化和桌面面板展开/收起都会重新按模型包围盒校准相机，使角色保持舞台中心。双击实际 VRM Mesh 打开/收起控制面板。
+
+### 输入
+文字输入已经接入 Brain Interface。语音转文字接口继续保留；现有 Vosk / WebView SpeechRecognition 可作为输入来源，但 ASR 不是 V0.85 的主要优化目标。
+
+## 安全执行链
+
 ```text
-DeepSeek / Preset
-→ Sparse gesture intent
-→ Precomputed Safe Pose Bank
+Voice/Text Input
+→ Brain Provider
+→ NIVA Brain JSON
+→ Performance Director / Sparse Gestures
+→ Safe Pose Bank
 → Coupled Joint Constraints
 → Endpoint Collision Test
-→ Swept Path Test (8–36 samples)
-→ Speed / Acceleration Duration Planner
-→ Quintic smooth transition
-→ NIVA.vrm
+→ Swept Path Test
+→ Speed / Acceleration Planner
+→ Kokoro + Audio-driven Lip Sync + VRM Motion
 ```
 
-## 输入
+## 开发
 
-默认入口支持文字和麦克风。离线中文 ASR 仍使用可选 Vosk `vosk-model-small-cn-0.22`；本地 ASR 服务不可用时回退 Windows/WebView SpeechRecognition，文字输入始终可用。`voice/install-and-start.ps1` 现在只负责 Vosk，不再安装任何大型 TTS/PyTorch 环境。
-
-## 默认声音：Kokoro INT8 / zf_001
-
-NIVA 默认 TTS 改为浏览器/WebView 内本地推理：`@uzen/kokoro-js` + `onnx-community/Kokoro-82M-v1.1-zh-ONNX`，固定使用用户选定的中文女声 `zf_001`。使用 `q8` 量化路径；第一次真正发声时下载约 127MB 模型，voice 文件约 522KB，后续由浏览器/WebView 缓存复用。Qwen3-TTS 已从默认运行时删除。
-
-Kokoro 本身不接受复杂情绪 instruction，因此 DeepSeek 仍只输出短参数 `v:[style,intensity]`，本地 `voice-prosody.mjs` 把它映射为语速和增益；最终情绪由 **声音韵律 + VRM 表情 + Safe Pose 动作** 联合呈现。Kokoro 加载或推理失败时自动回退系统 TTS。
-
-开发：
 ```bash
 npm install
 npm test
@@ -45,6 +62,8 @@ npm run dev
 npm run desktop
 ```
 
-GitHub Actions：`Deploy NIVA Web Preview` 测试后发布 Pages；`Build NIVA Windows EXE` 在 Windows runner 构建 `NIVA.exe`、上传 `NIVA-Windows-x64.zip` 并更新 `v0.83-latest` prerelease。Windows Tauri 必需图标位于 `src-tauri/icons/icon.ico`。
+GitHub Actions：
+- `Deploy NIVA Web Preview`：测试后发布网页体验。
+- `Build NIVA Windows EXE`：测试 → vendor Kokoro INT8/zf_001 → Tauri 编译 → `NIVA-Windows-x64.zip` → `v0.85-latest` Release。
 
-> 当前“仅模型可点”已经做到 NIVA 应用内部的模型像素命中；Windows 对透明像素直接穿透到底层其他应用的 HWND 级命中测试尚未实现。
+> `prone_chat` / 趴地撑头与小腿摆动尚未伪装成可用动作。它需要 Ground Contact Solver 与非直立姿态碰撞标定后再开放，否则会重新引入穿地/穿模。
