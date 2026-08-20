@@ -10,24 +10,69 @@ const DESKTOP_VOICE_PATH = '/kokoro/voices';
 let enginePromise = null;
 let audioContext = null;
 let state = '待首次加载';
+let activeDevice = '未选择';
 const isTauri = () => Boolean(globalThis.window?.__TAURI_INTERNALS__);
+const hasWebGPU = () => !isTauri() && Boolean(globalThis.navigator?.gpu);
 
 export function kokoroVoiceStatus() {
   const source = isTauri() ? '内置离线' : '网页按需加载';
-  return `Kokoro INT8 · ${VOICE} · ${source} · ${state}`;
+  return `Kokoro INT8 · ${VOICE} · ${source} · ${activeDevice} · ${state}`;
+}
+
+function getAudioContext() {
+  const AudioContextCtor = globalThis.window?.AudioContext || globalThis.window?.webkitAudioContext;
+  if (!AudioContextCtor) return null;
+  if (!audioContext) audioContext = new AudioContextCtor();
+  return audioContext;
+}
+
+export async function unlockKokoroAudio(onStatus = () => {}) {
+  const context = getAudioContext();
+  if (!context) {
+    state = '浏览器无 Web Audio';
+    onStatus(kokoroVoiceStatus());
+    return false;
+  }
+  try {
+    if (context.state === 'suspended') await context.resume();
+    onStatus(kokoroVoiceStatus());
+    return context.state === 'running';
+  } catch (error) {
+    console.warn('Kokoro AudioContext unlock failed', error);
+    return false;
+  }
+}
+
+async function createEngine(onStatus = () => {}) {
+  const modelId = isTauri() ? DESKTOP_MODEL_ID : REMOTE_MODEL_ID;
+  const voicePath = isTauri() ? DESKTOP_VOICE_PATH : REMOTE_VOICE_PATH;
+  const optionsFor = (device) => ({
+    dtype: 'q8',
+    device,
+    voicePath,
+    ...(isTauri() ? { local_files_only: true } : {}),
+  });
+
+  const preferred = isTauri() ? 'wasm' : (hasWebGPU() ? 'webgpu' : 'wasm');
+  activeDevice = preferred.toUpperCase();
+  state = isTauri() ? '加载内置模型' : `后台预热 ${activeDevice}`;
+  onStatus(kokoroVoiceStatus());
+
+  try {
+    return await KokoroTTS.from_pretrained(modelId, optionsFor(preferred));
+  } catch (error) {
+    if (preferred !== 'webgpu') throw error;
+    console.warn('Kokoro WebGPU init failed; retrying WASM', error);
+    activeDevice = 'WASM';
+    state = 'WebGPU 不可用，切换 WASM';
+    onStatus(kokoroVoiceStatus());
+    return KokoroTTS.from_pretrained(modelId, optionsFor('wasm'));
+  }
 }
 
 async function loadEngine(onStatus = () => {}) {
   if (!enginePromise) {
-    state = isTauri() ? '加载内置模型' : '首次加载约127MB';
-    onStatus(kokoroVoiceStatus());
-    const modelId = isTauri() ? DESKTOP_MODEL_ID : REMOTE_MODEL_ID;
-    enginePromise = KokoroTTS.from_pretrained(modelId, {
-      dtype: 'q8',
-      device: 'wasm',
-      voicePath: isTauri() ? DESKTOP_VOICE_PATH : REMOTE_VOICE_PATH,
-      ...(isTauri() ? { local_files_only: true } : {}),
-    }).then((engine) => {
+    enginePromise = createEngine(onStatus).then((engine) => {
       state = '就绪';
       onStatus(kokoroVoiceStatus());
       return engine;
@@ -39,6 +84,13 @@ async function loadEngine(onStatus = () => {}) {
     });
   }
   return enginePromise;
+}
+
+export function preloadKokoro(onStatus = () => {}) {
+  return loadEngine(onStatus).catch((error) => {
+    console.warn('Kokoro preload failed', error);
+    return null;
+  });
 }
 
 function rmsAt(pcm, sampleRate, seconds) {
@@ -57,29 +109,29 @@ function rmsAt(pcm, sampleRate, seconds) {
   return Math.max(0, Math.min(1, (rms - 0.008) * 12));
 }
 
-async function playRawAudio(raw, gainValue = 1, onMouth = () => {}) {
-  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-  if (!AudioContextCtor) throw new Error('Web Audio unavailable');
-  if (!audioContext) audioContext = new AudioContextCtor();
-  if (audioContext.state === 'suspended') await audioContext.resume();
+async function playRawAudio(raw, gainValue = 1, onMouth = () => {}, onPlaybackStart = () => {}) {
+  const context = getAudioContext();
+  if (!context) throw new Error('Web Audio unavailable');
+  if (context.state === 'suspended') await context.resume();
+  if (context.state !== 'running') throw new Error(`AudioContext not running: ${context.state}`);
 
   const pcm = raw?.data;
   const sampleRate = Number(raw?.sampling_rate || raw?.samplingRate || 24000);
   if (!pcm?.length) throw new Error('Kokoro returned empty audio');
 
-  const buffer = audioContext.createBuffer(1, pcm.length, sampleRate);
+  const buffer = context.createBuffer(1, pcm.length, sampleRate);
   buffer.copyToChannel(pcm, 0);
-  const source = audioContext.createBufferSource();
-  const gain = audioContext.createGain();
+  const source = context.createBufferSource();
+  const gain = context.createGain();
   gain.gain.value = Math.max(0.5, Math.min(1.25, gainValue));
   source.buffer = buffer;
   source.connect(gain);
-  gain.connect(audioContext.destination);
+  gain.connect(context.destination);
 
-  const startedAt = audioContext.currentTime;
+  let startedAt = 0;
   let raf = 0;
   const trackMouth = () => {
-    const elapsed = audioContext.currentTime - startedAt;
+    const elapsed = Math.max(0, context.currentTime - startedAt);
     onMouth(rmsAt(pcm, sampleRate, elapsed));
     raf = requestAnimationFrame(trackMouth);
   };
@@ -92,6 +144,8 @@ async function playRawAudio(raw, gainValue = 1, onMouth = () => {}) {
     };
     try {
       source.start();
+      startedAt = context.currentTime;
+      onPlaybackStart();
       trackMouth();
     } catch (error) {
       cancelAnimationFrame(raf);
@@ -107,15 +161,14 @@ export async function speakWithKokoro(
   intensity = 0.5,
   onStatus = () => {},
   onMouth = () => {},
-  onReady = () => {},
+  onPlaybackStart = () => {},
 ) {
   const clean = String(text || '').trim();
   if (!clean) return;
   const engine = await loadEngine(onStatus);
   const prosody = voiceProsody(style, intensity);
   const audio = await engine.generate(clean, { voice: VOICE, speed: prosody.speed });
-  onReady();
-  await playRawAudio(audio, prosody.gain, onMouth);
+  await playRawAudio(audio, prosody.gain, onMouth, onPlaybackStart);
 }
 
 export const NIVA_KOKORO = Object.freeze({
