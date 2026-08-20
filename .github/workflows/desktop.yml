@@ -14,6 +14,8 @@ jobs:
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
+      - name: Apply V0.85 audio-motion sync gate
+        run: node tools/apply-v085-sync.mjs
       - name: Install frontend dependencies
         run: npm install
       - name: Test planner and runtime safety
