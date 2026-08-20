@@ -21,18 +21,6 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Apply V0.85.1 runtime responsiveness repair
-        run: node tools/apply-v0851-runtime-fix.mjs
-      - name: Persist one-time runtime migration
-        shell: bash
-        run: |
-          if ! git diff --quiet -- src/main.js; then
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src/main.js
-            git commit -m "fix(v0.85.1): restore responsive motion and browser audio"
-            git push origin HEAD:main
-          fi
       - run: npm install
       - run: npm test
       - run: npm run build
@@ -47,7 +35,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git rebase origin/main
           printf "V0.85.1 Pages deploy succeeded\nsource_sha=%s\npage_url=%s\n" "$GITHUB_SHA" "${{ steps.deployment.outputs.page_url }}" > .github/PAGES_SUCCESS
           git add .github/PAGES_SUCCESS
+          if git diff --cached --quiet; then exit 0; fi
           git commit -m "chore(ci): mark V0.85.1 Pages deployment success [skip ci]"
           git push origin HEAD:main
