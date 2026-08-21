@@ -1,3 +1,5 @@
+import { directBrainPerformance } from '../performance/director.mjs';
+
 export const NIVA_EMOTIONS = Object.freeze(['neutral','happy','shy','thinking','sad','angry','surprise']);
 export const NIVA_VOICE_STYLES = Object.freeze(['neutral','warm','bright','gentle','serious','sad','angry','surprised','excited','whisper']);
 export const NIVA_GESTURES = Object.freeze(['nod','shake','tilt','wave','openArms','point','think','bow','cheer','step','sway','handsTogether','taiChiRaise','taiChiBall','taiChiCloud','taiChiPush','taiChiClose']);
@@ -30,7 +32,8 @@ export function normalizeBrainResponse(value) {
   }
   const type = performance ? 'performance' : 'conversation';
   if (!text && !performance) throw new Error('NIVA Brain response requires text or performance');
-  return { type, text, emotion, ...(performance ? { performance } : {}), ...(gestures.length ? { gestures } : {}), voice };
+  const brain = { type, text, emotion, ...(performance ? { performance } : {}), ...(gestures.length ? { gestures } : {}), voice };
+  return directBrainPerformance(brain);
 }
 
 export function brainToStageCue(value, extra = {}) {
