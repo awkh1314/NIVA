@@ -10,6 +10,9 @@
   <div id="app">
     <div id="stage" class="stage">
       <canvas id="nivaCanvas"></canvas>
+      <div id="modelBootOverlay" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:3;pointer-events:none;color:#8fdedc;font:14px/1.5 system-ui,sans-serif;background:radial-gradient(circle at center,#10212655 0,#0b0d0e00 42%);">
+        <div style="padding:10px 14px;border:1px solid #285063;border-radius:12px;background:#07141bcc;backdrop-filter:blur(10px)">正在载入 NIVA 3D 模型…</div>
+      </div>
       <div class="topbar">
         <span class="free-badge">FREE / 基础体验</span>
         <div class="top-actions">
@@ -51,5 +54,24 @@
     </aside>
   </div>
   <script type="module" src="/src/main.js"></script>
+  <script>
+    (() => {
+      const overlay = document.getElementById('modelBootOverlay');
+      const text = overlay?.firstElementChild;
+      const started = performance.now();
+      const timer = setInterval(() => {
+        let ready = false;
+        try { ready = Boolean(window.NIVA?.state?.().modelReady); } catch {}
+        if (ready) {
+          clearInterval(timer);
+          if (overlay) overlay.style.display = 'none';
+          return;
+        }
+        const elapsed = performance.now() - started;
+        if (text && elapsed > 12000) text.textContent = 'NIVA.vrm 正在加载，模型约 15 MB，请稍候…';
+        if (text && elapsed > 30000) text.textContent = '3D 模型载入超时。请强制刷新页面（Ctrl+F5）后重试。';
+      }, 250);
+    })();
+  </script>
 </body>
 </html>
