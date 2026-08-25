@@ -1,76 +1,51 @@
-name: Hotfix NIVA Web Runtime
+name: Hotfix NIVA Runtime
 on:
   push:
-    branches: ["main"]
-    paths: [".github/workflows/hotfix-runtime.yml"]
+    branches: [main]
+    paths:
+      - .github/workflows/hotfix-runtime.yml
 permissions:
   contents: write
-  pages: write
-  id-token: write
-concurrency:
-  group: niva-runtime-hotfix
-  cancel-in-progress: false
 jobs:
-  fix-and-deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  hotfix:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-      - name: Repair browser startup ordering and diagnostics
-        shell: bash
+      - name: Patch startup order
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
-
-          main = Path('src/main.js')
-          s = main.read_text(encoding='utf-8')
+          p = Path('src/main.js')
+          s = p.read_text(encoding='utf-8')
           decl = "const TABS=['基础','人物','表情','生命','动作','舞台','灯光','相机','声音']; let activeTab='基础';\n"
           marker = "let voices=[];\nfunction refreshVoices()"
           if marker not in s:
-              raise SystemExit('startup marker not found')
+              raise SystemExit('voices startup marker missing')
           s = s.replace(marker, decl + marker, 1)
-          duplicate = decl + "for(const t of TABS)"
-          if duplicate not in s:
-              raise SystemExit('late activeTab declaration not found')
-          s = s.replace(duplicate, "for(const t of TABS)", 1)
-          main.write_text(s, encoding='utf-8')
+          late = decl + "for(const t of TABS)"
+          if late not in s:
+              raise SystemExit('late tab declaration missing')
+          s = s.replace(late, "for(const t of TABS)", 1)
+          p.write_text(s, encoding='utf-8')
 
-          index = Path('index.html')
-          h = index.read_text(encoding='utf-8')
+          p = Path('index.html')
+          h = p.read_text(encoding='utf-8')
           old = "if (text && elapsed > 30000) text.textContent = '3D 模型载入超时。请强制刷新页面（Ctrl+F5）后重试。';"
           new = "if (text && elapsed > 30000) text.textContent = window.__NIVA_BOOT_ERROR__ ? `启动错误：${window.__NIVA_BOOT_ERROR__}` : 'NIVA 仍在初始化模型，请继续等待；首次加载约 15 MB。';"
-          if old not in h:
-              raise SystemExit('timeout diagnostic marker not found')
-          h = h.replace(old, new, 1)
-          hook = """    window.addEventListener('error', (event) => { window.__NIVA_BOOT_ERROR__ = event.message || '未知脚本错误'; });
-    window.addEventListener('unhandledrejection', (event) => { window.__NIVA_BOOT_ERROR__ = String(event.reason?.message || event.reason || 'Promise rejection'); });
-"""
+          if old in h:
+              h = h.replace(old, new, 1)
           needle = "  <script>\n    (() => {"
-          if needle not in h:
-              raise SystemExit('diagnostic script marker not found')
-          h = h.replace(needle, "  <script>\n" + hook + "    (() => {", 1)
-          index.write_text(h, encoding='utf-8')
+          hook = "  <script>\n    window.addEventListener('error', (event) => { window.__NIVA_BOOT_ERROR__ = event.message || '未知脚本错误'; });\n    window.addEventListener('unhandledrejection', (event) => { window.__NIVA_BOOT_ERROR__ = String(event.reason?.message || event.reason || 'Promise rejection'); });\n    (() => {"
+          if needle in h:
+              h = h.replace(needle, hook, 1)
+          p.write_text(h, encoding='utf-8')
           PY
-      - run: npm install
-      - run: npm test
-      - run: npm run build
-      - name: Commit runtime fix
+      - name: Commit fix
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/main.js index.html
-          git commit -m "fix(web): repair startup before speech voice initialization"
+          git commit -m "fix(web): initialize tabs before system speech"
           git push origin HEAD:main
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-      - id: deployment
-        uses: actions/deploy-pages@v4
