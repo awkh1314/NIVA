@@ -55,6 +55,8 @@
   </div>
   <script type="module" src="/src/main.js"></script>
   <script>
+    window.addEventListener('error', (event) => { window.__NIVA_BOOT_ERROR__ = event.message || '未知脚本错误'; });
+    window.addEventListener('unhandledrejection', (event) => { window.__NIVA_BOOT_ERROR__ = String(event.reason?.message || event.reason || 'Promise rejection'); });
     (() => {
       const overlay = document.getElementById('modelBootOverlay');
       const text = overlay?.firstElementChild;
@@ -69,7 +71,7 @@
         }
         const elapsed = performance.now() - started;
         if (text && elapsed > 12000) text.textContent = 'NIVA.vrm 正在加载，模型约 15 MB，请稍候…';
-        if (text && elapsed > 30000) text.textContent = '3D 模型载入超时。请强制刷新页面（Ctrl+F5）后重试。';
+        if (text && elapsed > 30000) text.textContent = window.__NIVA_BOOT_ERROR__ ? `启动错误：${window.__NIVA_BOOT_ERROR__}` : 'NIVA 仍在初始化模型，请继续等待；首次加载约 15 MB。';
       }, 250);
     })();
   </script>

@@ -247,6 +247,7 @@ function performAction(action){
   if(action==='breath'){ life.deepBreathUntil=performance.now()+5000; return; }
 }
 
+const TABS=['基础','人物','表情','生命','动作','舞台','灯光','相机','声音']; let activeTab='基础';
 let voices=[];
 function refreshVoices(){ voices=speechSynthesis?.getVoices?.()||[]; renderVoicePageIfOpen(); }
 if('speechSynthesis' in window){ refreshVoices(); speechSynthesis.addEventListener?.('voiceschanged',refreshVoices); }
@@ -321,7 +322,6 @@ function updateGaze(now){
 }
 canvas.addEventListener('pointerenter',()=>pointerInside=true);canvas.addEventListener('pointerleave',()=>pointerInside=false);canvas.addEventListener('pointermove',e=>{const r=canvas.getBoundingClientRect();pointerNdc.set(((e.clientX-r.left)/r.width)*2-1,-(((e.clientY-r.top)/r.height)*2-1));pointerMovedAt=performance.now();});
 
-const TABS=['基础','人物','表情','生命','动作','舞台','灯光','相机','声音']; let activeTab='基础';
 for(const t of TABS){const b=document.createElement('button');b.textContent=t;b.onclick=()=>{activeTab=t;renderControl();};controlTabs.appendChild(b);}
 function rowSlider(label,min,max,step,value){const id=`s${Math.random().toString(36).slice(2)}`;return `<label class="control-row"><span>${label}</span><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}"><output>${value}</output></label>`;}
 function toggleHtml(label,key){return `<label class="switch-row"><span>${label}</span><input type="checkbox" data-setting="${key}" ${settings[key]?'checked':''}></label>`;}
