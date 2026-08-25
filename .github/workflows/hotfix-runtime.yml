@@ -24,8 +24,9 @@ jobs:
         with:
           node-version: 22
       - name: Repair browser startup ordering and diagnostics
-        shell: python
+        shell: bash
         run: |
+          python - <<'PY'
           from pathlib import Path
 
           main = Path('src/main.js')
@@ -56,6 +57,7 @@ jobs:
               raise SystemExit('diagnostic script marker not found')
           h = h.replace(needle, "  <script>\n" + hook + "    (() => {", 1)
           index.write_text(h, encoding='utf-8')
+          PY
       - run: npm install
       - run: npm test
       - run: npm run build
