@@ -1,10 +1,10 @@
-name: Deploy NIVA Web Preview
+name: Deploy NIVA Free Life
 on:
   push:
     branches: ["main"]
   workflow_dispatch:
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
 concurrency:
@@ -21,6 +21,7 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
       - run: npm install
       - run: npm test
       - run: npm run build
@@ -30,15 +31,3 @@ jobs:
           path: dist
       - id: deployment
         uses: actions/deploy-pages@v4
-      - name: Mark successful preview deployment
-        shell: bash
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin main
-          git rebase origin/main
-          printf "V0.85.1 Pages deploy succeeded\nsource_sha=%s\npage_url=%s\n" "$GITHUB_SHA" "${{ steps.deployment.outputs.page_url }}" > .github/PAGES_SUCCESS
-          git add .github/PAGES_SUCCESS
-          if git diff --cached --quiet; then exit 0; fi
-          git commit -m "chore(ci): mark V0.85.1 Pages deployment success [skip ci]"
-          git push origin HEAD:main

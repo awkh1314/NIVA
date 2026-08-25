@@ -3,81 +3,53 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NIVA</title>
+  <meta name="theme-color" content="#071012" />
+  <title>NIVA · Free Life</title>
 </head>
 <body>
   <div id="app">
-    <div id="avatarStage" title="双击 NIVA 打开控制界面">
+    <div id="stage" class="stage">
       <canvas id="nivaCanvas"></canvas>
-      <div id="speechBubble" class="speech-bubble hidden"></div>
-      <div id="statusDot" class="status-dot" title="NIVA 状态"></div>
-    </div>
-    <aside id="panel" class="panel hidden" aria-hidden="true">
-      <div class="panel-head">
-        <div>
-          <strong>NIVA</strong>
-          <small>V0.85 · Brain Interface + Performance Director</small>
+      <div class="topbar">
+        <span class="free-badge">FREE / 基础体验</span>
+        <div class="top-actions">
+          <button id="panelToggle" class="ghost-btn">控制台</button>
+          <button id="upgradeToggle" class="ghost-btn">升级 / 接入</button>
         </div>
+      </div>
+      <div id="nivaBubbles" class="bubble-column niva-column"></div>
+      <div id="userBubbles" class="bubble-column user-column"></div>
+      <div class="experience-bar" id="experienceBar"></div>
+      <div class="composer">
+        <div class="composer-mode">
+          <button data-mode="chat" class="mode-btn active">对话</button>
+          <button data-mode="speak" class="mode-btn">发声</button>
+        </div>
+        <textarea id="composerInput" rows="1" placeholder="和 NIVA 说点什么……"></textarea>
+        <button id="sendBtn" class="primary-btn">发送</button>
+      </div>
+      <div id="toast" class="toast hidden"></div>
+    </div>
+    <aside id="controlPanel" class="drawer hidden" aria-hidden="true">
+      <div class="drawer-head">
+        <div><b>NIVA 控制台</b><small id="runtimeSummary">Free Life Runtime</small></div>
         <button id="closePanel" class="icon-btn">×</button>
       </div>
-      <div class="status-line">
-        <span id="modeBadge">本地体验编排</span>
-        <span id="plannerBadge">安全姿态计算中</span>
-        <span id="performanceBadge">Director 空闲</span>
+      <nav id="controlTabs" class="tabs"></nav>
+      <div id="controlPage" class="control-page"></div>
+    </aside>
+    <aside id="upgradePanel" class="upgrade-panel hidden" aria-hidden="true">
+      <div class="drawer-head">
+        <div><b>升级 / 接入</b><small>基础体验保持完全免费</small></div>
+        <button id="closeUpgrade" class="icon-btn">×</button>
       </div>
-      <div id="firstRun" class="first-run">
-        <div class="section-title">Brain Provider</div>
-        <p>默认 DeepSeek。桌面版也可接 OpenAI 或 OpenAI-compatible API；所有模型最终都必须输出统一 NIVA Brain JSON，不能直接操作骨骼。</p>
-        <div class="config-grid">
-          <label>模型提供方
-            <select id="brainProvider">
-              <option value="deepseek">DeepSeek（默认）</option>
-              <option value="openai">OpenAI</option>
-              <option value="custom">自定义 OpenAI-compatible</option>
-            </select>
-          </label>
-          <label>模型
-            <input id="brainModel" value="deepseek-chat" autocomplete="off" />
-          </label>
-        </div>
-        <label id="brainBaseUrlRow" class="hidden">API Endpoint
-          <input id="brainBaseUrl" placeholder="https://example.com/v1/chat/completions" autocomplete="off" />
-        </label>
-        <label>API Key
-          <input id="apiKey" type="password" autocomplete="off" placeholder="sk-...（可留空使用体验模式）" />
-        </label>
-        <div class="row-buttons"><button id="saveApi">接入 Brain</button><button id="useDemo">体验模式</button></div>
+      <div class="upgrade-grid">
+        <section class="upgrade-card"><h3>Brain</h3><p>当前：Local Demo</p><label>Provider<select><option>Local Demo</option><option disabled>DeepSeek</option><option disabled>OpenAI-compatible</option></select></label><label>API Key<input type="password" placeholder="升级时再填写" disabled></label><small>免费版不会发起模型网络请求。</small></section>
+        <section class="upgrade-card"><h3>Voice</h3><p>当前：System Speech</p><label>Voice<select><option>系统语音</option><option>Web Kokoro（手动）</option></select></label><small>系统语音是免费默认保底；高级语音包后续接入。</small></section>
+        <section class="upgrade-card"><h3>Motion</h3><p>当前：NIVA Free Motion</p><button class="secondary-btn" disabled>导入 VRMA（预留）</button><small>动作扩展不会获得直接控制原始骨骼的权限。</small></section>
       </div>
-
-      <div class="section-title">输入</div>
-      <div class="input-row">
-        <button id="micBtn" class="mic-btn" title="语音输入">🎙</button>
-        <textarea id="inputBox" rows="2" placeholder="例如：给我打一套太极…"></textarea>
-        <button id="sendBtn">发送</button>
-      </div>
-      <div id="queueInfo" class="queue-info">空闲</div>
-
-      <div class="section-title">Performance Presets</div>
-      <div id="presetGrid" class="preset-grid"></div>
-
-      <div class="section-title">声音与口形</div>
-      <div class="voice-card">
-        <div><b>Kokoro INT8 · zf_001</b><small>桌面构建将 q8 模型和 zf_001 一并打包；网页体验首次发声在线加载。口形由实际 Kokoro PCM 音量包络驱动，不再使用固定随机张嘴。语音异常时静音，不切换系统声线。</small></div>
-        <span id="voiceBadge">待加载</span>
-      </div>
-
-      <div class="section-title">运行状态</div>
-      <div class="stats">
-        <span>安全姿态库 <b id="bankCount">0</b></span>
-        <span>路径预检 <b id="pathCount">0</b></span>
-        <span>拒绝候选 <b id="rejectCount">0</b></span>
-      </div>
-      <p class="hint">模型始终按整个舞台居中，面板只作为悬浮层。表演 cue 不会互相瞬移：当前语音与动作完成后，下一 cue 从当前安全姿态继续规划。</p>
     </aside>
   </div>
   <script type="module" src="/src/main.js"></script>
-  <script type="module" src="/src/public-api-compat.mjs"></script>
-  <script type="module" src="/src/local-asr.mjs"></script>
-  <script type="module" src="/src/model-hit-guard.mjs"></script>
 </body>
 </html>
