@@ -72,6 +72,15 @@ const settings = Object.assign({
   voiceRate:1,
   voicePitch:1,
   voiceVolume:1,
+  motionSpeed:1,
+  modelVisible:true,
+  modelScale:1,
+  modelX:0, modelY:0, modelZ:0, modelRotY:0,
+  skinBrightness:1,
+  stageVisible:true,
+  keyColor:'#fff4eb', fillColor:'#bfdcff', rimColor:'#a9d8ff', stageColor:'#69e4e8',
+  keyX:2.4,keyY:4.2,keyZ:3.2, fillX:-2.8,fillY:2.3,fillZ:2.2, rimX:-2.3,rimY:3,rimZ:-2.7,
+  spotX:0,spotY:4,spotZ:2, spotTargetX:0,spotTargetY:1,spotTargetZ:0, spotAngle:.45,spotPenumbra:.7,spotDistance:8,
 }, JSON.parse(localStorage.getItem('niva.free.settings') || '{}'));
 function saveSettings(){ localStorage.setItem('niva.free.settings', JSON.stringify(settings)); }
 
@@ -118,13 +127,53 @@ function getBone(name){
   return boneCache.get(name) || null;
 }
 function rememberBones(){
-  const names = ['hips','spine','chest','upperChest','neck','head','leftShoulder','rightShoulder','leftUpperArm','rightUpperArm','leftLowerArm','rightLowerArm','leftHand','rightHand','leftUpperLeg','rightUpperLeg','leftLowerLeg','rightLowerLeg','leftFoot','rightFoot','leftToes','rightToes'];
+  const names = ['hips','spine','chest','upperChest','neck','head','leftEye','rightEye','jaw','leftShoulder','rightShoulder','leftUpperArm','rightUpperArm','leftLowerArm','rightLowerArm','leftHand','rightHand','leftUpperLeg','rightUpperLeg','leftLowerLeg','rightLowerLeg','leftFoot','rightFoot','leftToes','rightToes','leftThumbMetacarpal','leftThumbProximal','leftThumbDistal','leftIndexProximal','leftIndexIntermediate','leftIndexDistal','leftMiddleProximal','leftMiddleIntermediate','leftMiddleDistal','leftRingProximal','leftRingIntermediate','leftRingDistal','leftLittleProximal','leftLittleIntermediate','leftLittleDistal','rightThumbMetacarpal','rightThumbProximal','rightThumbDistal','rightIndexProximal','rightIndexIntermediate','rightIndexDistal','rightMiddleProximal','rightMiddleIntermediate','rightMiddleDistal','rightRingProximal','rightRingIntermediate','rightRingDistal','rightLittleProximal','rightLittleIntermediate','rightLittleDistal'];
   for (const n of names){ const b=getBone(n); if (b) baseQuats.set(n,b.quaternion.clone()); }
 }
 function qFor(name, x=0,y=0,z=0){
   const base = baseQuats.get(name) || new THREE.Quaternion();
   return base.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(x),rad(y),rad(z),'XYZ')));
 }
+
+function offsetFromBase(name,x=0,y=0,z=0){
+  const node=getBone(name),base=baseQuats.get(name); if(!node||!base)return;
+  node.quaternion.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(x),rad(y),rad(z),'XYZ')));
+}
+function chooseArmDown(side){
+  const upper=getBone(`${side}UpperArm`),hand=getBone(`${side}Hand`),shoulder=getBone(`${side}Shoulder`); if(!upper||!hand||!shoulder)return side==='left'?68:-68;
+  const base=baseQuats.get(`${side}UpperArm`)?.clone(); if(!base)return side==='left'?68:-68;
+  let best={score:Infinity,z:side==='left'?68:-68};
+  for(const z of [68,-68]){
+    upper.quaternion.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,rad(z))));
+    vrm.scene.updateMatrixWorld(true);
+    const hp=hand.getWorldPosition(new THREE.Vector3()),sp=shoulder.getWorldPosition(new THREE.Vector3());
+    const score=(hp.y-sp.y)*5+Math.abs(hp.x-sp.x);
+    if(score<best.score)best={score,z};
+  }
+  upper.quaternion.copy(base); return best.z;
+}
+function applyFingerRelax(side){
+  const sign=side==='left'?-1:1;
+  const curls={Thumb:[3,5,4],Index:[4,7,5],Middle:[5,8,6],Ring:[6,9,7],Little:[7,10,8]};
+  for(const [finger,vals] of Object.entries(curls)){
+    const names=finger==='Thumb'?[`${side}ThumbMetacarpal`,`${side}ThumbProximal`,`${side}ThumbDistal`]:[`${side}${finger}Proximal`,`${side}${finger}Intermediate`,`${side}${finger}Distal`];
+    names.forEach((n,i)=>offsetFromBase(n,0,0,sign*(vals[i]||0)));
+  }
+}
+function applyRelaxedStandingPose(){
+  const lz=chooseArmDown('left'),rz=chooseArmDown('right');
+  offsetFromBase('leftUpperArm',2,0,lz); offsetFromBase('rightUpperArm',2,0,rz);
+  offsetFromBase('leftLowerArm',0,-10,0); offsetFromBase('rightLowerArm',0,10,0);
+  offsetFromBase('leftHand',0,0,4); offsetFromBase('rightHand',0,0,-4);
+  applyFingerRelax('left'); applyFingerRelax('right'); vrm.scene.updateMatrixWorld(true);
+}
+const materialSnapshots=new Map();
+function captureMaterials(){materialSnapshots.clear();vrm?.scene.traverse(o=>{if(!o.isMesh)return;const mats=Array.isArray(o.material)?o.material:[o.material];for(const m of mats){if(!m||materialSnapshots.has(m.uuid))continue;materialSnapshots.set(m.uuid,{mat:m,name:m.name||o.name||'material',color:m.color?.clone?.(),opacity:m.opacity,roughness:m.roughness,metalness:m.metalness});}});}
+function isSkinMaterial(snap){return /(skin|face|head|body|肌|肤|颜)/i.test(snap.name||'');}
+function applySkinBrightness(){for(const snap of materialSnapshots.values()){if(!snap.color||!isSkinMaterial(snap))continue;snap.mat.color.copy(snap.color).multiplyScalar(settings.skinBrightness);snap.mat.needsUpdate=true;}}
+const modelHome=new THREE.Vector3();
+function applyModelSettings(){if(!vrm)return;vrm.scene.visible=settings.modelVisible;vrm.scene.scale.setScalar(settings.modelScale);vrm.scene.position.set(modelHome.x+settings.modelX,modelHome.y+settings.modelY,modelHome.z+settings.modelZ);vrm.scene.rotation.y=rad(settings.modelRotY);applySkinBrightness();}
+
 function makeClip(name, duration, tracks){
   const t=[];
   for (const [bone, frames] of Object.entries(tracks)){
@@ -145,22 +194,26 @@ function buildClips(){
   clips.set('weight', makeClip('weight',2.6,{hips:[[0,0,0,0],[.6,0,0,-2],[1.2,0,0,-2],[1.8,0,0,2],[2.6,0,0,0]],spine:[[0,0,0,0],[.6,0,0,1.2],[1.2,0,0,1.2],[1.8,0,0,-1.2],[2.6,0,0,0]],leftUpperLeg:[[0,0,0,0],[.6,0,0,1.5],[1.2,0,0,1.5],[2.6,0,0,0]],rightUpperLeg:[[0,0,0,0],[1.8,0,0,-1.5],[2.2,0,0,-1.5],[2.6,0,0,0]]}));
   clips.set('wave', makeClip('wave',2.05,{rightUpperArm:[[0,0,0,0],[.3,8,0,34],[.55,10,4,45],[1.72,10,4,45],[2.05,0,0,0]],rightLowerArm:[[0,0,0,0],[.35,0,52,0],[.55,0,72,0],[1.72,0,72,0],[2.05,0,0,0]],rightHand:[[0,0,0,0],[.55,0,0,-8],[.78,0,0,14],[1.02,0,0,-14],[1.26,0,0,14],[1.50,0,0,-14],[1.72,0,0,0],[2.05,0,0,0]]}));
   const walkTimes=[0,.125,.25,.375,.5,.625,.75,.875,1];
-  const legL=[18,10,0,-12,-18,-10,0,12,18], legR=legL.map((_,i)=>legL[(i+4)%8]??18);
-  const kneeL=[5,18,32,18,5,8,14,8,5], kneeR=kneeL.map((_,i)=>kneeL[(i+4)%8]??5);
-  const armL=legR.map(v=>v*.7), armR=legL.map(v=>v*.7);
-  const frames=(arr,axis='x')=>walkTimes.map((t,i)=>axis==='x'?[t,arr[i],0,0]:[t,0,arr[i],0]);
-  clips.set('walk', makeClip('walk',1,{leftUpperLeg:frames(legL),rightUpperLeg:frames(legR),leftLowerLeg:frames(kneeL),rightLowerLeg:frames(kneeR),leftUpperArm:frames(armL),rightUpperArm:frames(armR),chest:walkTimes.map((t,i)=>[t,0,(i<4?-2:2),0])}));
+  const legL=[22,12,1,-11,-20,-11,0,12,22],legR=[-20,-11,0,12,22,12,1,-11,-20];
+  const kneeL=[7,18,34,24,8,10,18,11,7],kneeR=[8,10,18,11,7,18,34,24,8];
+  const footL=[-4,-1,7,3,-3,-2,4,1,-4],footR=[-3,-2,4,1,-4,-1,7,3,-3];
+  const armL=[-14,-8,0,8,14,8,0,-8,-14],armR=[14,8,0,-8,-14,-8,0,8,14];
+  const f=(arr)=>walkTimes.map((t,i)=>[t,arr[i],0,0]);
+  clips.set('walk',makeClip('walk',1,{leftUpperLeg:f(legL),rightUpperLeg:f(legR),leftLowerLeg:f(kneeL),rightLowerLeg:f(kneeR),leftFoot:f(footL),rightFoot:f(footR),leftUpperArm:f(armL),rightUpperArm:f(armR),leftLowerArm:walkTimes.map(t=>[t,0,-14,0]),rightLowerArm:walkTimes.map(t=>[t,0,14,0]),hips:walkTimes.map((t,i)=>[t,0,(i<4?2:-2),0]),chest:walkTimes.map((t,i)=>[t,0,(i<4?-1.5:1.5),0])}));
   const rt=[0,.09,.18,.26,.35,.44,.53,.61,.70];
-  const runL=[30,18,-5,-18,-30,-18,5,18,30], runR=runL.map((_,i)=>runL[(i+4)%8]??30);
-  const rkL=[12,38,72,48,16,26,58,36,12], rkR=rkL.map((_,i)=>rkL[(i+4)%8]??12);
-  const runFrames=(arr)=>rt.map((t,i)=>[t,arr[i],0,0]);
-  clips.set('run', makeClip('run',.70,{leftUpperLeg:runFrames(runL),rightUpperLeg:runFrames(runR),leftLowerLeg:runFrames(rkL),rightLowerLeg:runFrames(rkR),leftUpperArm:runFrames(runR.map(v=>v*.75)),rightUpperArm:runFrames(runL.map(v=>v*.75)),leftLowerArm:rt.map(t=>[t,0,-58,0]),rightLowerArm:rt.map(t=>[t,0,58,0]),spine:rt.map(t=>[t,5,0,0])}));
+  const runL=[38,22,2,-22,-36,-20,2,22,38],runR=[-36,-20,2,22,38,22,2,-22,-36];
+  const rkL=[16,42,76,56,18,28,62,42,16],rkR=[18,28,62,42,16,42,76,56,18];
+  const rfL=[-7,-2,12,7,-5,-3,9,4,-7],rfR=[-5,-3,9,4,-7,-2,12,7,-5];
+  const raL=[-28,-16,0,19,28,16,0,-19,-28],raR=[28,16,0,-19,-28,-16,0,19,28];
+  const rf=(arr)=>rt.map((t,i)=>[t,arr[i],0,0]);
+  clips.set('run',makeClip('run',.70,{leftUpperLeg:rf(runL),rightUpperLeg:rf(runR),leftLowerLeg:rf(rkL),rightLowerLeg:rf(rkR),leftFoot:rf(rfL),rightFoot:rf(rfR),leftUpperArm:rf(raL),rightUpperArm:rf(raR),leftLowerArm:rt.map(t=>[t,0,-72,0]),rightLowerArm:rt.map(t=>[t,0,72,0]),spine:rt.map(t=>[t,5,0,0]),chest:rt.map((t,i)=>[t,1.5,(i<4?-2:2),0])}));
+  clips.set('thinkLoop',makeClip('thinkLoop',4,{head:[[0,-2,5,-7],[1,-3,6,-8],[2,-2,5,-7],[3,-3,7,-6],[4,-2,5,-7]],rightUpperArm:[[0,8,4,20],[4,8,4,20]],rightLowerArm:[[0,0,48,0],[4,0,48,0]],rightHand:[[0,6,0,-6],[2,8,0,-5],[4,6,0,-6]]}));
 }
 function playClip(name,{loop=false,duration=null}={}){
   if(!mixer || !clips.has(name) || speaking || performance.now()<manualOverrideUntil) return false;
   const clip=clips.get(name);
   const next=mixer.clipAction(clip);
-  next.reset(); next.enabled=true; next.setEffectiveWeight(1); next.setEffectiveTimeScale(1);
+  next.reset(); next.enabled=true; next.setEffectiveWeight(1); next.setEffectiveTimeScale(settings.motionSpeed||1);
   next.setLoop(loop?THREE.LoopRepeat:THREE.LoopOnce, loop?Infinity:1); next.clampWhenFinished=!loop;
   if(currentAction && currentAction!==next){ currentAction.fadeOut(.22); }
   next.fadeIn(.22).play(); currentAction=next; currentActionName=name;
@@ -185,8 +238,8 @@ loader.load(MODEL_URL,(gltf)=>{
   vrm=gltf.userData.vrm; if(!vrm) throw new Error('VRM missing');
   VRMUtils.removeUnnecessaryVertices(gltf.scene); VRMUtils.removeUnnecessaryJoints(gltf.scene);
   vrm.scene.traverse(o=>{ if(o.isMesh){o.castShadow=true;o.receiveShadow=true;} });
-  scene.add(vrm.scene); centerModel(); rememberBones();
-  if(vrm.lookAt) vrm.lookAt.target=gazeTarget;
+  scene.add(vrm.scene); rememberBones(); applyRelaxedStandingPose(); rememberBones(); centerModel(); modelHome.copy(vrm.scene.position); captureMaterials(); applyModelSettings();
+  gazeTarget.position.copy(camera.position); if(vrm.lookAt) vrm.lookAt.target=gazeTarget;
   mixer=new THREE.AnimationMixer(vrm.humanoid.normalizedHumanBonesRoot || vrm.scene); buildClips();
   modelReady=true; runtimeSummary.textContent='Free Life Runtime · Ready';
   showToast('NIVA 已就绪');
@@ -266,8 +319,19 @@ function submit(){
 sendBtn.addEventListener('click',submit); composerInput.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();submit();}});
 document.querySelectorAll('.mode-btn').forEach(b=>b.addEventListener('click',()=>{composerMode=b.dataset.mode;document.querySelectorAll('.mode-btn').forEach(x=>x.classList.toggle('active',x===b)); composerInput.placeholder=composerMode==='chat'?'和 NIVA 说点什么……':'输入想让 NIVA 说的话……';}));
 
-const chips=[['打招呼','你好'],['自我介绍','介绍一下自己'],['微笑','微笑'],['挥手','挥手'],['深呼吸','深呼吸'],['思考','思考一下'],['走路','走路'],['跑步','跑步'],['说句话','今天也请多关照。']];
-for(const [label,text] of chips){const b=document.createElement('button');b.className='chip';b.textContent=label;b.onclick=()=>{if(label==='说句话'){composerMode='speak';speak(text);}else{composerMode='chat';composerInput.value=text;submit();}};$('#experienceBar').appendChild(b);}
+const experienceBar=$('#experienceBar');
+experienceBar.innerHTML='<div class="experience-row"><span class="experience-label">动作预览</span></div><div class="experience-row"><span class="experience-label">语音演出</span></div>';
+const previewRow=experienceBar.children[0],voiceRow=experienceBar.children[1];
+const previewActions=[['停止','stop'],['思考','thinkLoop'],['走路','walk'],['跑步','run']];
+function startPreviewMotion(name){if(name==='stop'){stopAction();setExpression('neutral',0);return;}stopAction();setTimeout(()=>playClip(name,{loop:true}),190);}
+for(const [label,name] of previewActions){const b=document.createElement('button');b.className='chip';b.textContent=label;b.onclick=()=>startPreviewMotion(name);previewRow.appendChild(b);}
+const voiceScenes=[
+  ['打招呼',()=>{stopAction();setExpression('happy',.28);setTimeout(()=>playClip('wave',{duration:2.05}),120);setTimeout(()=>speak('你好，我是 NIVA。很高兴见到你。',true),220);}],
+  ['自我介绍',()=>{stopAction();setExpression('happy',.22);setTimeout(()=>playClip('nod',{duration:1}),120);setTimeout(()=>speak('我是妮瓦。你可以体验我的动作、表情、生命状态、舞台、灯光和完整模型控制。',true),220);}],
+  ['微笑说话',()=>{stopAction();setExpression('happy',.30);speak('嗯，我在这里。',true);}],
+  ['说明',()=>{stopAction();setExpression('neutral',.08);speak('免费基础体验不需要连接任何接口，你可以直接操控和观察我。',true);}]
+];
+for(const [label,fn] of voiceScenes){const b=document.createElement('button');b.className='chip';b.textContent=label;b.onclick=fn;voiceRow.appendChild(b);}
 
 const life={
   nextBlink:performance.now()+2500,
@@ -316,9 +380,10 @@ const director={
 function updateGaze(now){
   if(!vrm||!settings.gazeEnabled)return;
   let x=0,y=0;
-  if(lookOverride&&now<lookOverrideUntil){x=lookOverride.x;y=lookOverride.y;}else{lookOverride=null;if(settings.mouseGaze&&pointerInside&&(now-pointerMovedAt)<1200){x=pointerNdc.x*.65;y=pointerNdc.y*.28;}}
-  const target=new THREE.Vector3(); const dir=new THREE.Vector3(x*0.8,y*0.45,-1).unproject(camera); const ray=dir.sub(camera.position).normalize(); target.copy(camera.position).add(ray.multiplyScalar(modelHeight*2.2));
-  gazeTarget.position.lerp(target,.08);
+  if(lookOverride&&now<lookOverrideUntil){x=clamp(lookOverride.x,-.45,.45);y=clamp(lookOverride.y,-.22,.22);}else{lookOverride=null;if(settings.mouseGaze&&pointerInside&&(now-pointerMovedAt)<1200){x=clamp(pointerNdc.x,-.8,.8);y=clamp(pointerNdc.y,-.6,.6);}}
+  const right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion),up=new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+  const target=camera.position.clone().addScaledVector(right,x*modelHeight*.24).addScaledVector(up,y*modelHeight*.14);
+  gazeTarget.position.lerp(target,.12);
 }
 canvas.addEventListener('pointerenter',()=>pointerInside=true);canvas.addEventListener('pointerleave',()=>pointerInside=false);canvas.addEventListener('pointermove',e=>{const r=canvas.getBoundingClientRect();pointerNdc.set(((e.clientX-r.left)/r.width)*2-1,-(((e.clientY-r.top)/r.height)*2-1));pointerMovedAt=performance.now();});
 
@@ -340,10 +405,14 @@ function renderControl(){
   else if(activeTab==='声音') renderVoiceControls();
 }
 function renderBodyControls(){
-  const groups={头颈:['head','neck'],躯干:['spine','chest','upperChest'],左臂:['leftUpperArm','leftLowerArm','leftHand'],右臂:['rightUpperArm','rightLowerArm','rightHand'],左腿:['leftUpperLeg','leftLowerLeg','leftFoot','leftToes'],右腿:['rightUpperLeg','rightLowerLeg','rightFoot','rightToes']};
-  let html=`<div class="section-toolbar"><button id="bodyReset" class="secondary-btn">全身重置</button><small>手动操控优先于自然行为</small></div>`;
-  for(const [g,bones] of Object.entries(groups)){html+=`<details class="bone-group"><summary>${g}</summary>`;for(const bone of bones){if(!getBone(bone))continue;html+=`<div class="bone-card"><b>${bone}</b>${['X','Y','Z'].map((a,i)=>`<label class="control-row compact"><span>${a}</span><input type="range" min="-45" max="45" step="1" value="${manualOffsets.get(bone)?.[i]||0}" data-bone="${bone}" data-axis="${i}"><output>${manualOffsets.get(bone)?.[i]||0}</output></label>`).join('')}<button class="mini-btn" data-reset-bone="${bone}">重置</button></div>`;}html+='</details>';}
-  controlPage.innerHTML=html;controlPage.querySelectorAll('[data-bone]').forEach(el=>{el.onpointerdown=()=>{manualOverrideUntil=performance.now()+999999;stopAction();};el.onpointerup=()=>manualOverrideUntil=performance.now()+1500;el.oninput=()=>{const b=el.dataset.bone,i=Number(el.dataset.axis);const v=manualOffsets.get(b)||[0,0,0];v[i]=Number(el.value);manualOffsets.set(b,v);el.parentElement.querySelector('output').textContent=el.value;};});controlPage.querySelectorAll('[data-reset-bone]').forEach(b=>b.onclick=()=>{manualOffsets.delete(b.dataset.resetBone);renderBodyControls();});$('#bodyReset').onclick=()=>{manualOffsets.clear();renderBodyControls();};
+  const groups={躯干:['hips','spine','chest','upperChest'],头颈:['neck','head','leftEye','rightEye','jaw'],肩臂:['leftShoulder','rightShoulder','leftUpperArm','rightUpperArm','leftLowerArm','rightLowerArm','leftHand','rightHand'],下肢:['leftUpperLeg','rightUpperLeg','leftLowerLeg','rightLowerLeg','leftFoot','rightFoot','leftToes','rightToes'],左手指:['leftThumbMetacarpal','leftThumbProximal','leftThumbDistal','leftIndexProximal','leftIndexIntermediate','leftIndexDistal','leftMiddleProximal','leftMiddleIntermediate','leftMiddleDistal','leftRingProximal','leftRingIntermediate','leftRingDistal','leftLittleProximal','leftLittleIntermediate','leftLittleDistal'],右手指:['rightThumbMetacarpal','rightThumbProximal','rightThumbDistal','rightIndexProximal','rightIndexIntermediate','rightIndexDistal','rightMiddleProximal','rightMiddleIntermediate','rightMiddleDistal','rightRingProximal','rightRingIntermediate','rightRingDistal','rightLittleProximal','rightLittleIntermediate','rightLittleDistal']};
+  let html=`<section class="panel-section"><h3>模型总控</h3>${toggleHtml('显示模型','modelVisible')}${rowSlider('模型缩放',.5,1.8,.01,settings.modelScale)}${rowSlider('位置 X',-2,2,.01,settings.modelX)}${rowSlider('位置 Y',-.5,2,.01,settings.modelY)}${rowSlider('位置 Z',-2,2,.01,settings.modelZ)}${rowSlider('朝向 Y°',-180,180,1,settings.modelRotY)}${rowSlider('皮肤/面部亮度',.55,1.45,.01,settings.skinBrightness)}<button id="modelReset" class="secondary-btn wide">恢复自然站姿</button></section><div class="section-toolbar"><button id="bodyReset" class="secondary-btn">清除骨骼偏移</button><small>完整 normalized humanoid 控制</small></div>`;
+  for(const [g,bones] of Object.entries(groups)){html+=`<details class="bone-group"><summary>${g} · ${bones.filter(getBone).length} 骨骼</summary>`;for(const bone of bones){if(!getBone(bone))continue;html+=`<div class="bone-card"><b>${bone}</b>${['X','Y','Z'].map((a,i)=>`<label class="control-row compact"><span>${a}</span><input type="range" min="-60" max="60" step="1" value="${manualOffsets.get(bone)?.[i]||0}" data-bone="${bone}" data-axis="${i}"><output>${manualOffsets.get(bone)?.[i]||0}</output></label>`).join('')}<button class="mini-btn" data-reset-bone="${bone}">重置</button></div>`;}html+='</details>';}
+  controlPage.innerHTML=html;bindToggles();
+  const modelRanges=[...controlPage.querySelectorAll('.panel-section input[type=range]')],modelKeys=['modelScale','modelX','modelY','modelZ','modelRotY','skinBrightness'];modelRanges.forEach((el,i)=>el.oninput=()=>{settings[modelKeys[i]]=Number(el.value);el.parentElement.querySelector('output').textContent=el.value;applyModelSettings();saveSettings();});
+  controlPage.querySelector('[data-setting="modelVisible"]').onchange=e=>{settings.modelVisible=e.target.checked;applyModelSettings();saveSettings();};
+  controlPage.querySelectorAll('[data-bone]').forEach(el=>{el.onpointerdown=()=>{manualOverrideUntil=performance.now()+999999;stopAction();};el.onpointerup=()=>manualOverrideUntil=performance.now()+1500;el.oninput=()=>{const b=el.dataset.bone,i=Number(el.dataset.axis);const v=manualOffsets.get(b)||[0,0,0];v[i]=Number(el.value);manualOffsets.set(b,v);el.parentElement.querySelector('output').textContent=el.value;};});
+  controlPage.querySelectorAll('[data-reset-bone]').forEach(b=>b.onclick=()=>{manualOffsets.delete(b.dataset.resetBone);renderBodyControls();});$('#bodyReset').onclick=()=>{manualOffsets.clear();renderBodyControls();};$('#modelReset').onclick=()=>{manualOffsets.clear();Object.assign(settings,{modelScale:1,modelX:0,modelY:0,modelZ:0,modelRotY:0,skinBrightness:1});applyModelSettings();saveSettings();renderBodyControls();};
 }
 function renderExpressionControls(){
   const names=[['自然','neutral'],['微笑','happy'],['开心','happy'],['悲伤','sad'],['生气','angry'],['惊讶','surprised'],['放松','relaxed'],['眨眼','blink']];
@@ -352,7 +421,7 @@ function renderExpressionControls(){
 function renderLifeControls(){
   controlPage.innerHTML=`<section class="panel-section"><h3>生命系统</h3>${toggleHtml('自然行为系统','lifeEnabled')}${toggleHtml('跟随鼠标','mouseGaze')}${toggleHtml('允许摸鼠标','allowReach')}${toggleHtml('允许走路','allowWalk')}${toggleHtml('允许跑步','allowRun')}${rowSlider('心率 BPM',45,120,1,settings.bpm)}${rowSlider('呼吸 / min',6,24,1,settings.breaths)}${rowSlider('呼吸幅度',0,.8,.05,settings.breathAmp)}${rowSlider('微动作频率',0,1,.05,settings.microFreq)}${rowSlider('大动作频率',0,1,.05,settings.majorFreq)}</section>`;bindToggles();const ins=controlPage.querySelectorAll('input[type=range]');const keys=['bpm','breaths','breathAmp','microFreq','majorFreq'];ins.forEach((el,i)=>{el.oninput=()=>{settings[keys[i]]=Number(el.value);el.parentElement.querySelector('output').textContent=el.value;saveSettings();};});
 }
-function renderMotionControls(){controlPage.innerHTML=`<section class="panel-section"><h3>动作实验室</h3><div class="button-grid"><button data-motion="nod">点头</button><button data-motion="wave">挥手</button><button data-motion="think">思考</button><button data-motion="reach">摸鼠标</button><button data-motion="walk">走路</button><button data-motion="run">跑步</button><button id="stopMotion">停止</button></div><small>全部为本地动作；不会恢复旧鞠躬循环。</small></section>`;controlPage.querySelectorAll('[data-motion]').forEach(b=>b.onclick=()=>{const n=b.dataset.motion;if(n==='walk'){if(playClip(n,{loop:true}))setTimeout(stopAction,3000);}else if(n==='run'){if(playClip(n,{loop:true}))setTimeout(stopAction,2500);}else playClip(n,{duration:clips.get(n)?.duration||2});});$('#stopMotion').onclick=stopAction;}
+function renderMotionControls(){controlPage.innerHTML=`<section class="panel-section"><h3>持续动作预览</h3><div class="button-grid"><button data-preview="stop">停止</button><button data-preview="thinkLoop">思考</button><button data-preview="walk">走路</button><button data-preview="run">跑步</button></div>${rowSlider('动作速度',.6,1.5,.05,settings.motionSpeed)}<small>选择后持续播放，直到切换或停止。</small></section><section class="panel-section"><h3>单次动作</h3><div class="button-grid"><button data-once="nod">点头</button><button data-once="wave">挥手</button><button data-once="reach">摸鼠标</button><button data-once="weight">重心切换</button></div></section>`;controlPage.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>startPreviewMotion(b.dataset.preview));controlPage.querySelectorAll('[data-once]').forEach(b=>b.onclick=()=>playClip(b.dataset.once,{duration:clips.get(b.dataset.once)?.duration||2}));const speed=controlPage.querySelector('input[type=range]');speed.oninput=()=>{settings.motionSpeed=Number(speed.value);speed.parentElement.querySelector('output').textContent=speed.value;if(currentAction)currentAction.setEffectiveTimeScale(settings.motionSpeed);saveSettings();};}
 function renderStageControls(){controlPage.innerHTML=`<section class="panel-section"><h3>舞台</h3>${rowSlider('舞台半径',1,2.5,.05,1.55)}${rowSlider('地板透明度',.1,1,.05,floorMat.opacity)}${rowSlider('主圆环亮度',0,1,.05,ringMat.opacity)}<label class="color-row"><span>背景颜色</span><input id="bgColor" type="color" value="#0b0d0e"></label><label class="color-row"><span>舞台颜色</span><input id="stageColor" type="color" value="#10161d"></label><button id="stageReset" class="secondary-btn wide">舞台复位</button></section>`;const s=controlPage.querySelectorAll('input[type=range]');s[0].oninput=()=>{const scale=Number(s[0].value)/1.55;floor.scale.setScalar(scale);ring.scale.setScalar(scale);innerRing.scale.setScalar(scale);s[0].parentElement.querySelector('output').textContent=s[0].value;};s[1].oninput=()=>{floorMat.opacity=Number(s[1].value);s[1].parentElement.querySelector('output').textContent=s[1].value;};s[2].oninput=()=>{ringMat.opacity=Number(s[2].value);s[2].parentElement.querySelector('output').textContent=s[2].value;};$('#bgColor').oninput=e=>{scene.background.set(e.target.value);renderer.setClearColor(e.target.value);};$('#stageColor').oninput=e=>floorMat.color.set(e.target.value);$('#stageReset').onclick=()=>location.reload();}
 function renderLightControls(){controlPage.innerHTML=`<section class="panel-section"><h3>灯光</h3><div class="preset-row"><button data-light="natural">自然</button><button data-light="soft">柔和</button><button data-light="warm">暖色</button><button data-light="cool">冷色</button><button data-light="stage">舞台</button></div>${rowSlider('环境光',0,1.5,.05,settings.ambient)}${rowSlider('主光',0,3,.05,settings.key)}${rowSlider('补光',0,2,.05,settings.fill)}${rowSlider('轮廓光',0,2,.05,settings.rim)}${rowSlider('舞台灯',0,5,.1,settings.stageLight)}${rowSlider('曝光',.5,1.5,.05,settings.exposure)}</section>`;const els=controlPage.querySelectorAll('input[type=range]');const props=['ambient','key','fill','rim','stageLight','exposure'];els.forEach((el,i)=>el.oninput=()=>{settings[props[i]]=Number(el.value);el.parentElement.querySelector('output').textContent=el.value;applyLighting();saveSettings();});controlPage.querySelectorAll('[data-light]').forEach(b=>b.onclick=()=>applyLightPreset(b.dataset.light));}
 function applyLighting(){ambient.intensity=settings.ambient;key.intensity=settings.key;fill.intensity=settings.fill;rim.intensity=settings.rim;stageSpot.intensity=settings.stageLight;renderer.toneMappingExposure=settings.exposure;}
@@ -373,4 +442,4 @@ function animate(){
 }
 animate();
 
-window.NIVA={version:'0.90-free-life',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state})};
+window.NIVA={version:'0.91-free-life',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state})};
