@@ -1,6 +1,6 @@
 [package]
 name = "niva"
-version = "0.83.0"
+version = "0.99.0"
 description = "NIVA desktop digital life"
 authors = ["AWKH"]
 edition = "2021"

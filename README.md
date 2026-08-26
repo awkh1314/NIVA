@@ -2,7 +2,7 @@
 
 NIVA is a lightweight, local-first VRM digital-life runtime.
 
-Current baseline: **NIVA 0.90 Free Life**.
+Current baseline: **NIVA 0.99.0 Free Life**.
 
 ## Free Life
 
@@ -17,6 +17,8 @@ The default experience is designed to work without an API key or paid cloud serv
 - Breathing, heartbeat, blinking and gaze
 - Mouse-follow gaze and ambient Natural Activity Director
 - Local authored walk / run / wave / think / reach motion clips
+- Stable public control contract: `NIVA.play({ text, emotion, motion })`
+- Motion Bridge drives visible full-arm `wave`, `nod`, `idle` and keeps string `play(name)` compatibility
 - Stage, lighting and camera controls
 - Brain / Voice / Motion integrations isolated under `升级 / 接入`
 

@@ -9,6 +9,7 @@ import { NivaVrmAdapter } from './runtime/core/vrm-adapter.mjs';
 import { FacingController } from './runtime/core/facing-controller.mjs';
 import { NivaIKSystem } from './runtime/ik/niva-ik-system.mjs';
 import { CharacterFrameDebug } from './runtime/debug/character-frame-debug.mjs';
+import { createPublicMotionBridge } from './runtime/motion/public-motion-bridge.mjs';
 
 const MODEL_URL = new URL('../NIVA.vrm', import.meta.url).href;
 const $ = (q) => document.querySelector(q);
@@ -222,7 +223,15 @@ function buildClips(){
   clips.set('think', makeClip('think',2.5,{head:[[0,0,0,0],[.45,-3,6,-7],[1.8,-3,6,-7],[2.5,0,0,0]],rightUpperArm:[[0,0,0,0],[.5,10,4,22],[1.9,10,4,22],[2.5,0,0,0]],rightLowerArm:[[0,0,0,0],[.6,0,52,0],[1.9,0,52,0],[2.5,0,0,0]],rightHand:[[0,0,0,0],[.7,8,0,-8],[1.9,8,0,-8],[2.5,0,0,0]]}));
   clips.set('reach', makeClip('reach',2.0,{spine:[[0,0,0,0],[.65,3,0,0],[1.35,3,0,0],[2,0,0,0]],head:[[0,0,0,0],[.65,5,-5,0],[1.35,5,-5,0],[2,0,0,0]],rightUpperArm:[[0,0,0,0],[.65,18,10,18],[1.35,18,10,18],[2,0,0,0]],rightLowerArm:[[0,0,0,0],[.7,0,34,0],[1.35,0,34,0],[2,0,0,0]],rightHand:[[0,0,0,0],[.75,-7,0,-8],[1.35,-7,0,-8],[2,0,0,0]]}));
   clips.set('weight', makeClip('weight',2.6,{hips:[[0,0,0,0],[.6,0,0,-2],[1.2,0,0,-2],[1.8,0,0,2],[2.6,0,0,0]],spine:[[0,0,0,0],[.6,0,0,1.2],[1.2,0,0,1.2],[1.8,0,0,-1.2],[2.6,0,0,0]],leftUpperLeg:[[0,0,0,0],[.6,0,0,1.5],[1.2,0,0,1.5],[2.6,0,0,0]],rightUpperLeg:[[0,0,0,0],[1.8,0,0,-1.5],[2.2,0,0,-1.5],[2.6,0,0,0]]}));
-  clips.set('wave', makeClip('wave',2.05,{rightHand:[[0,0,0,0],[.42,-2,0,-4],[.62,-2,0,-4],[.82,-1,0,7],[1.04,-1,0,-7],[1.26,-1,0,7],[1.48,-1,0,-7],[1.70,-2,0,-3],[2.05,0,0,0]]}));
+  const waveDownZ=chooseArmDown('right');
+  const waveMidZ=-waveDownZ*.34,waveUpZ=-waveDownZ*.56;
+  clips.set('wave', makeClip('wave',2.05,{
+    rightShoulder:[[0,0,0,0],[.34,0,0,-waveDownZ*.06],[1.72,0,0,-waveDownZ*.06],[2.05,0,0,0]],
+    rightUpperArm:[[0,2,0,waveDownZ],[.36,-8,4,waveMidZ],[.58,-16,8,waveUpZ],[1.68,-16,8,waveUpZ],[1.84,-6,3,waveMidZ],[2.05,2,0,waveDownZ]],
+    rightLowerArm:[[0,0,10,0],[.44,0,52,0],[.66,0,68,0],[1.62,0,68,0],[1.82,0,44,0],[2.05,0,10,0]],
+    rightHand:[[0,0,0,-4],[.58,-4,0,-8],[.78,-4,0,14],[.98,-4,0,-14],[1.18,-4,0,14],[1.38,-4,0,-14],[1.58,-4,0,10],[1.78,-2,0,-4],[2.05,0,0,-4]],
+    chest:[[0,0,0,0],[.52,0,-2,0],[1.68,0,-2,0],[2.05,0,0,0]], head:[[0,0,0,0],[.52,0,-4,-2],[1.68,0,-4,-2],[2.05,0,0,0]]
+  }));
   const walkTimes=[0,.125,.25,.375,.5,.625,.75,.875,1];
   const legL=[22,12,1,-11,-20,-11,0,12,22],legR=[-20,-11,0,12,22,12,1,-11,-20];
   const kneeL=[7,18,34,24,8,10,18,11,7],kneeR=[8,10,18,11,7,18,34,24,8];
@@ -241,8 +250,8 @@ function buildClips(){
   clips.set('crouch',makeClip('crouch',2,{leftUpperLeg:[[0,2,0,0],[2,2,0,0]],rightUpperLeg:[[0,2,0,0],[2,2,0,0]],leftLowerLeg:[[0,6,0,0],[2,6,0,0]],rightLowerLeg:[[0,6,0,0],[2,6,0,0]],leftFoot:[[0,0,0,0],[2,0,0,0]],rightFoot:[[0,0,0,0],[2,0,0,0]],spine:[[0,0,0,0],[2,0,0,0]],chest:[[0,0,0,0],[2,0,0,0]],head:[[0,0,0,0],[2,0,0,0]]}));
   clips.set('recovery',makeClip('recovery',3,{spine:[[0,18,0,0],[3,18,0,0]],chest:[[0,7,0,0],[3,7,0,0]],neck:[[0,-5,0,0],[3,-5,0,0]],leftUpperLeg:[[0,8,0,0],[3,8,0,0]],rightUpperLeg:[[0,8,0,0],[3,8,0,0]],leftLowerLeg:[[0,18,0,0],[3,18,0,0]],rightLowerLeg:[[0,18,0,0],[3,18,0,0]],leftFoot:[[0,-5,0,0],[3,-5,0,0]],rightFoot:[[0,-5,0,0],[3,-5,0,0]],leftUpperArm:[[0,10,0,-7],[3,10,0,-7]],rightUpperArm:[[0,10,0,7],[3,10,0,7]],leftLowerArm:[[0,0,-24,0],[3,0,-24,0]],rightLowerArm:[[0,0,24,0],[3,0,24,0]],head:[[0,-6,0,0],[3,-6,0,0]]}));
 }
-function playClip(name,{loop=false,duration=null}={}){
-  if(!mixer || !clips.has(name) || speaking || performance.now()<manualOverrideUntil) return false;
+function playClip(name,{loop=false,duration=null,allowWhileSpeaking=false}={}){
+  if(!mixer || !clips.has(name) || (!allowWhileSpeaking && speaking) || performance.now()<manualOverrideUntil) return false;
   const clip=clips.get(name);
   const next=mixer.clipAction(clip);
   next.reset(); next.enabled=true; next.setEffectiveWeight(1); next.setEffectiveTimeScale(settings.motionSpeed||1);
@@ -325,11 +334,13 @@ function expressionTick(now){
   if(expressionNameFrom && expressionNameFrom!==activeExpression) vrm.expressionManager.setValue(expressionNameFrom, expressionBlendFrom*(1-e));
   const v=expressionBlendFrom+(expressionTarget-expressionBlendFrom)*e; expressionValue=v; vrm.expressionManager.setValue(activeExpression,v);
 }
-function performAction(action){
-  if(action==='wave') return playClip('wave',{duration:2.05});
-  if(action==='think') return playClip('think',{duration:2.5});
-  if(action==='walk'){ if(playClip('walk',{loop:true})){setTimeout(stopAction,3100);} return; }
-  if(action==='run'){ if(playClip('run',{loop:true})){setTimeout(stopAction,2500);} return; }
+function performAction(action,allowWhileSpeaking=false){
+  if(action==='idle'){stopAction();return true;}
+  if(action==='nod')return playClip('nod',{duration:1,allowWhileSpeaking});
+  if(action==='wave') return playClip('wave',{duration:2.05,allowWhileSpeaking});
+  if(action==='think') return playClip('think',{duration:2.5,allowWhileSpeaking});
+  if(action==='walk'){ if(playClip('walk',{loop:true,allowWhileSpeaking})){setTimeout(stopAction,3100);} return; }
+  if(action==='run'){ if(playClip('run',{loop:true,allowWhileSpeaking})){setTimeout(stopAction,2500);} return; }
   if(action==='smile'){ setExpression('happy',.3); setTimeout(()=>setExpression('neutral',0),2200); return; }
   if(action==='breath'){ life.deepBreathUntil=performance.now()+5000; return; }
 }
@@ -547,4 +558,10 @@ function animate(){
 }
 animate();
 
-window.NIVA={version:'0.970-runtime-boundaries-v1',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,frame:characterFrame?.describe?.(),facing:facingController?.state?.(),ik:ikSystem?.state?.(),physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
+const publicPlay=createPublicMotionBridge({
+  runMotion:(name,allowWhileSpeaking=false)=>['idle','wave','nod','think','walk','run','smile'].includes(name)?performAction(name,allowWhileSpeaking):playClip(name,{duration:clips.get(name)?.duration||2,allowWhileSpeaking}),
+  stopMotion:stopAction,
+  setEmotion:(name)=>{const intensity=name==='happy'?.28:name==='excited'?.30:.18;setExpression(name,intensity);setTimeout(()=>setExpression('neutral',0),2600);},
+  speakText:speak,
+});
+window.NIVA={version:'0.99.0',speak,act:(name)=>performAction(name),play:publicPlay,stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,frame:characterFrame?.describe?.(),facing:facingController?.state?.(),ik:ikSystem?.state?.(),physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
