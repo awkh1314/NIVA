@@ -423,12 +423,11 @@ const lifeSim={
     vrm.scene.position.y+=((baseY-vrm.scene.position.y)*(1-Math.exp(-dt*8)));
   },
   applyBalance(){
-    const b=this.balancePlan;if(!b)return;
-    const pitch=b.torsoPitchDeg||0,roll=b.torsoRollDeg||0;
-    applyAdditive('hips',pitch*.20,0,-roll*.46,'balance');
-    applyAdditive('spine',pitch*.36,0,-roll*.30,'balance');
-    applyAdditive('chest',pitch*.28,0,-roll*.18,'balance');
-    applyAdditive('upperChest',pitch*.16,0,-roll*.08,'balance');
+    if(!settings.physicsEnabled||!settings.physicsGroundContact)return;
+    const fullBody=this.balancePlan?.fullBody;if(!fullBody)return;
+    for(const [name,p] of Object.entries(fullBody)){
+      applyAdditive(name,p?.x||0,p?.y||0,p?.z||0,'balance');
+    }
   },
   applyFatigueFace(){
     if(!vrm?.expressionManager||speaking||activeExpression!=='neutral')return;const tired=clamp((this.fatigue-32)/115,0,.42);
