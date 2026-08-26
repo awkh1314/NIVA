@@ -1,3 +1,3 @@
-NIVA Free Life v0.93
-Runtime commit: 02a377213aef60cd42887c4f03007ee44342e1e9
-Features: natural relaxed pose, corrected viewer/mouse gaze, improved walk/run, continuous motion preview layer, speech performance layer, full normalized humanoid/finger controls, all VRM expressions, runtime materials, mesh visibility, SpringBone/collider physics, stage, lighting, renderer and camera controls.
+NIVA Free Life v1.00
+Runtime commit: 8dd7b7c25f1f45fc5ff945863ede740d68614709
+Features: state-driven fatigue/energy, dynamic heart rate and breathing, fatigue face/posture and pace variation, exhaustion recovery, real stage locomotion, crouch with foot-anchor grounding, left-top operation guide, plus existing full model/stage/light/camera controls.
