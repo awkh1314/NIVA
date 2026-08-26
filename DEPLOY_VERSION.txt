@@ -1,2 +1,2 @@
-NIVA Biomechanics V4.2
-Crouch rotation hotfix: body basis is derived only from the VRM root transform; animated arms no longer define character right/forward; crouch captures and holds its entry yaw so hands-on-head IK cannot create a self-rotating feedback loop.
+NIVA Runtime Boundaries V1
+CharacterFrame is the only source of forward/right/up (+Z/+X/+Y); FacingController owns root yaw; Physics owns Rapier/root position/ground contacts only; IK owns post-animation limb bone correction.

@@ -4,6 +4,11 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { NivaPhysicsBodySystem } from './runtime/physics/niva-body-physics.mjs';
+import { CharacterFrame } from './runtime/core/character-frame.mjs';
+import { NivaVrmAdapter } from './runtime/core/vrm-adapter.mjs';
+import { FacingController } from './runtime/core/facing-controller.mjs';
+import { NivaIKSystem } from './runtime/ik/niva-ik-system.mjs';
+import { CharacterFrameDebug } from './runtime/debug/character-frame-debug.mjs';
 
 const MODEL_URL = new URL('../NIVA.vrm', import.meta.url).href;
 const $ = (q) => document.querySelector(q);
@@ -34,6 +39,11 @@ let mixer = null;
 let currentAction = null;
 let currentActionName = 'idle';
 let bodyPhysics = null;
+let vrmAdapter = null;
+let characterFrame = null;
+let facingController = null;
+let ikSystem = null;
+let coordinateDebug = null;
 let physicsReady = false;
 let physicsError = '';
 let persistentPreview = '';
@@ -78,6 +88,7 @@ const settings = Object.assign({
   physicsEnabled:true,
   footIKEnabled:true,
   physicsGroundContact:true,
+  coordinateDebug:false,
   footIKStrength:0.9,
   crouchDepth:0.14,
   walkWorldSpeed:0.55,
@@ -191,7 +202,7 @@ function captureMaterials(){materialSnapshots.clear();vrm?.scene.traverse(o=>{if
 function isSkinMaterial(snap){return /(skin|face|head|body|肌|肤|颜)/i.test(snap.name||'');}
 function applySkinBrightness(){for(const snap of materialSnapshots.values()){if(!snap.color||!isSkinMaterial(snap))continue;snap.mat.color.copy(snap.color).multiplyScalar(settings.skinBrightness);snap.mat.needsUpdate=true;}}
 const modelHome=new THREE.Vector3();
-function applyModelSettings(){if(!vrm)return;vrm.scene.visible=settings.modelVisible;vrm.scene.scale.setScalar(settings.modelScale);vrm.scene.position.set(modelHome.x+settings.modelX,modelHome.y+settings.modelY,modelHome.z+settings.modelZ);vrm.scene.rotation.y=rad(settings.modelRotY);bodyPhysics?.syncManualRoot?.(vrm.scene.position.x,vrm.scene.position.z);applySkinBrightness();}
+function applyModelSettings(){if(!vrm)return;vrm.scene.visible=settings.modelVisible;vrm.scene.scale.setScalar(settings.modelScale);vrm.scene.position.set(modelHome.x+settings.modelX,modelHome.y+settings.modelY,modelHome.z+settings.modelZ);if(facingController)facingController.setManualYawDegrees(settings.modelRotY);else vrm.scene.rotation.y=rad(settings.modelRotY);bodyPhysics?.syncManualRoot?.(vrm.scene.position.x,vrm.scene.position.z);applySkinBrightness();}
 
 function makeClip(name, duration, tracks){
   const t=[];
@@ -260,11 +271,12 @@ loader.load(MODEL_URL,(gltf)=>{
   VRMUtils.removeUnnecessaryVertices(gltf.scene); VRMUtils.removeUnnecessaryJoints(gltf.scene);
   vrm.scene.traverse(o=>{ if(o.isMesh){o.castShadow=true;o.receiveShadow=true;} });
   scene.add(vrm.scene); rememberBones(); applyRelaxedStandingPose(); rememberBones(); centerModel(); modelHome.copy(vrm.scene.position); captureMaterials(); applyModelSettings();
+  vrmAdapter=new NivaVrmAdapter(vrm); characterFrame=new CharacterFrame(vrm.scene); facingController=new FacingController(vrm.scene); facingController.setManualYawDegrees(settings.modelRotY); ikSystem=new NivaIKSystem({vrm,getBone,frame:characterFrame,modelHeight}); coordinateDebug=new CharacterFrameDebug({scene,frame:characterFrame,root:vrm.scene,camera,stage}); coordinateDebug.setVisible(settings.coordinateDebug);
   gazeTarget.position.copy(camera.position); if(vrm.lookAt) vrm.lookAt.target=gazeTarget;
   mixer=new THREE.AnimationMixer(vrm.humanoid.normalizedHumanBonesRoot || vrm.scene); buildClips();
   modelReady=true; runtimeSummary.textContent='Free Life Runtime · Ready';
   showToast('NIVA 已就绪');
-  NivaPhysicsBodySystem.create({vrm,getBone,modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physics Ready';showToast('NIVA 物理身体已就绪');}).catch((err)=>{physicsReady=false;physicsError=String(err?.message||err);console.error('NIVA physics init failed',err);runtimeSummary.textContent='Free Life Runtime · Physics fallback';});
+  NivaPhysicsBodySystem.create({vrm,getFootWorldPosition:(side,out)=>vrmAdapter?.footWorldPosition(side,out),modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physics Ready';showToast('NIVA 物理身体已就绪');}).catch((err)=>{physicsReady=false;physicsError=String(err?.message||err);console.error('NIVA physics init failed',err);runtimeSummary.textContent='Free Life Runtime · Physics fallback';});
 },undefined,(e)=>{ console.error(e); runtimeSummary.textContent='模型加载失败'; showToast('NIVA.vrm 加载失败'); });
 
 function resize(){ const r=stage.getBoundingClientRect(); renderer.setSize(r.width,r.height,false); camera.aspect=r.width/r.height; camera.updateProjectionMatrix(); }
@@ -387,7 +399,7 @@ const lifeSim={
       pos.addScaledVector(dir,speed*dt);const maxR=1.18*Math.max(.4,floor.scale.x||1);if(pos.length()>maxR)pos.setLength(maxR);
       vrm.scene.position.x=baseX+pos.x;vrm.scene.position.z=baseZ+pos.z;
     }
-    const targetYaw=rad(settings.modelRotY)+Math.atan2(dir.x,dir.z),cur=vrm.scene.rotation.y,diff=Math.atan2(Math.sin(targetYaw-cur),Math.cos(targetYaw-cur));vrm.scene.rotation.y=cur+diff*(1-Math.exp(-dt*7));
+    facingController?.faceDirection(dir,dt,7);
   },
   forceRecovery(now){
     if(this.recovering||persistentPreview!=='run')return;this.recovering=true;this.recoveryUntil=now+14000;this.captureFootAnchor();life.deepBreathUntil=now+15000;
@@ -478,11 +490,11 @@ canvas.addEventListener('pointerenter',()=>pointerInside=true);canvas.addEventLi
 for(const t of TABS){const b=document.createElement('button');b.textContent=t;b.onclick=()=>{activeTab=t;renderControl();};controlTabs.appendChild(b);}
 function rowSlider(label,min,max,step,value){const id=`s${Math.random().toString(36).slice(2)}`;return `<label class="control-row"><span>${label}</span><input id="${id}" type="range" min="${min}" max="${max}" step="${step}" value="${value}"><output>${value}</output></label>`;}
 function toggleHtml(label,key){return `<label class="switch-row"><span>${label}</span><input type="checkbox" data-setting="${key}" ${settings[key]?'checked':''}></label>`;}
-function bindToggles(){controlPage.querySelectorAll('[data-setting]').forEach(el=>el.onchange=()=>{settings[el.dataset.setting]=el.checked;saveSettings();});}
+function bindToggles(){controlPage.querySelectorAll('[data-setting]').forEach(el=>el.onchange=()=>{settings[el.dataset.setting]=el.checked;if(el.dataset.setting==='coordinateDebug')coordinateDebug?.setVisible(el.checked);saveSettings();});}
 function renderControl(){
   [...controlTabs.children].forEach(b=>b.classList.toggle('active',b.textContent===activeTab));
   if(activeTab==='基础'){
-    controlPage.innerHTML=`<section class="panel-section"><h3>基础体验</h3>${toggleHtml('生命状态','lifeEnabled')}${toggleHtml('自动眨眼','blinkEnabled')}${toggleHtml('注视用户','gazeEnabled')}${toggleHtml('跟随鼠标','mouseGaze')}${toggleHtml('呼吸','breathingEnabled')}${toggleHtml('心跳','heartbeatEnabled')}${toggleHtml('声音','soundEnabled')}${toggleHtml('对白气泡','bubblesEnabled')}${toggleHtml('Rapier 角色物理','physicsEnabled')}${toggleHtml('脚底 IK','footIKEnabled')}${toggleHtml('地面接触','physicsGroundContact')}<button id="resetFree" class="secondary-btn wide">恢复默认设置</button></section>`;bindToggles();$('#resetFree').onclick=()=>{localStorage.removeItem('niva.free.settings');location.reload();};
+    controlPage.innerHTML=`<section class="panel-section"><h3>基础体验</h3>${toggleHtml('生命状态','lifeEnabled')}${toggleHtml('自动眨眼','blinkEnabled')}${toggleHtml('注视用户','gazeEnabled')}${toggleHtml('跟随鼠标','mouseGaze')}${toggleHtml('呼吸','breathingEnabled')}${toggleHtml('心跳','heartbeatEnabled')}${toggleHtml('声音','soundEnabled')}${toggleHtml('对白气泡','bubblesEnabled')}${toggleHtml('Rapier 角色物理','physicsEnabled')}${toggleHtml('脚底 IK','footIKEnabled')}${toggleHtml('地面接触','physicsGroundContact')}${toggleHtml('坐标校准','coordinateDebug')}<button id="resetFree" class="secondary-btn wide">恢复默认设置</button></section>`;bindToggles();$('#resetFree').onclick=()=>{localStorage.removeItem('niva.free.settings');location.reload();};
   } else if(activeTab==='人物') renderBodyControls();
   else if(activeTab==='表情') renderExpressionControls();
   else if(activeTab==='生命') renderLifeControls();
@@ -536,8 +548,8 @@ applyLighting();floor.visible=ring.visible=innerRing.visible=settings.stageVisib
 function animate(){
   requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(); controls.update(); if(mixer)mixer.update(dt); lifeSim.update(dt,now); life.update(now); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
   if(speaking&&vrm?.expressionManager){ mouthLevel=.12+Math.abs(Math.sin(now*.012))*0.32+Math.abs(Math.sin(now*.027))*0.14;vrm.expressionManager.setValue('aa',mouthLevel); } else if(vrm?.expressionManager){mouthLevel*=.78;vrm.expressionManager.setValue('aa',mouthLevel);}
-  applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);if(settings.physicsEnabled&&bodyPhysics&&physicsReady){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});bodyPhysics.solvePostAnimation(dt,{action:currentActionName,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth});}vrm.update(dt);} renderer.render(scene,camera);
+  applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});contactPlan=bodyPhysics.solvePostAnimation(dt,{action:currentActionName,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth});}if(ikSystem&&contactPlan){ikSystem.configure({enabled:settings.footIKEnabled,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}facingController?.tick();coordinateDebug?.update();vrm.update(dt);} renderer.render(scene,camera);
 }
 animate();
 
-window.NIVA={version:'0.961-stable-squat-v41',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
+window.NIVA={version:'0.970-runtime-boundaries-v1',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,frame:characterFrame?.describe?.(),facing:facingController?.state?.(),ik:ikSystem?.state?.(),physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
