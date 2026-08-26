@@ -14,14 +14,18 @@ export class NivaIKSystem {
     this.frame = frame;
     this.modelHeight = modelHeight;
     this.enabled = true;
+    this.footEnabled = true;
+    this.actionEnabled = true;
     this.strength = 0.9;
     this.lastAction = 'idle';
     this.crouchReference = null;
     this.lastGroundNormal = new THREE.Vector3(0, 1, 0);
   }
 
-  configure({ enabled = true, strength = 0.9 } = {}) {
+  configure({ enabled = true, footEnabled = true, actionEnabled = true, strength = 0.9 } = {}) {
     this.enabled = enabled;
+    this.footEnabled = footEnabled;
+    this.actionEnabled = actionEnabled;
     this.strength = clamp(strength, 0, 1);
   }
 
@@ -266,7 +270,7 @@ export class NivaIKSystem {
       this.lastAction = action;
     }
 
-    if (plan.footAnchors) {
+    if (this.footEnabled && plan.footAnchors) {
       for (const side of ['left', 'right']) {
         const anchor = plan.footAnchors[side];
         if (!anchor) continue;
@@ -278,13 +282,15 @@ export class NivaIKSystem {
       }
     }
 
-    if (action === 'walk' || action === 'run') this.solveLocomotionArms(action, phase);
-    if (action === 'wave') this.solveWavePose(phase);
-    if (action === 'crouch') this.solveCrouchHandsToHead(0.88 * crouchAmount);
-    if (action === 'recovery') this.solveHandsToKnees(0.82);
+    if (this.actionEnabled) {
+      if (action === 'walk' || action === 'run') this.solveLocomotionArms(action, phase);
+      if (action === 'wave') this.solveWavePose(phase);
+      if (action === 'crouch') this.solveCrouchHandsToHead(0.88 * crouchAmount);
+      if (action === 'recovery') this.solveHandsToKnees(0.82);
+    }
   }
 
   state() {
-    return { owner: 'normalized humanoid limb IK', solver: 'isolated-ccd-v1', lastAction: this.lastAction };
+    return { owner: 'normalized humanoid limb IK', solver: 'isolated-ccd-v1', footEnabled: this.footEnabled, actionEnabled: this.actionEnabled, lastAction: this.lastAction };
   }
 }
