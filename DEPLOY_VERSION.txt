@@ -1,4 +1,3 @@
-NIVA Free Life v1.01 · Biomechanics V3
-Motion runtime: 654fd91a000a16e602cbfb8c06c4d59f18c396a1
-Physics solver: pole-guided-ccd-v3
-Features: planted-foot crouch captured before pelvis lowering, independent left/right foot IK, knee/elbow pole vectors, world-space safe wave target, physical walk/run arm counter-swing, Rapier character movement and stage collision, fatigue/recovery life system, full model/stage/light/camera controls.
+NIVA Biomechanics V3.1
+Crouch: feet planted, knees forward, both hands behind/sides of head, elbows out.
+Left/right arm targets are never swapped.

@@ -260,11 +260,13 @@ export class NivaPhysicsBodySystem {
         this.lastStance[side] = stance;
         if (stance && this.footAnchor[side]) this.solveLeg(side, this.footAnchor[side], this.ikStrength, action);
       }
-
-      if (action === 'walk' || action === 'run') this.solveLocomotionArms(action, phase);
-      if (action === 'wave') this.solveWavePose(phase);
-      if (action === 'recovery') this.solveHandsToKnees(0.86);
     }
+
+    // Upper-body action IK is independent from the foot-IK toggle.
+    if (action === 'walk' || action === 'run') this.solveLocomotionArms(action, phase);
+    if (action === 'wave') this.solveWavePose(phase);
+    if (action === 'crouch') this.solveCrouchHandsToHead(0.96);
+    if (action === 'recovery') this.solveHandsToKnees(0.86);
   }
 
   setBoneWorldQuaternion(bone, desiredWorld, weight = 1) {
@@ -419,6 +421,31 @@ export class NivaPhysicsBodySystem {
     this.solveArm('right', target, 0.90 * blend, pole);
   }
 
+  solveCrouchHandsToHead(weight = 0.96) {
+    this.vrm.scene.updateMatrixWorld(true);
+    const head = this.getBone('head');
+    if (!head) return;
+    const { right, up, forward } = this.bodyBasis();
+    const headPos = head.getWorldPosition(new THREE.Vector3());
+
+    // Same-side targets behind the crown plus wide elbow poles create a true
+    // hands-on-head squat. Left hand stays left; right hand stays right.
+    for (const side of ['left', 'right']) {
+      const upper = this.getBone(`${side}UpperArm`);
+      if (!upper) continue;
+      const sign = side === 'left' ? -1 : 1;
+      const target = headPos.clone()
+        .addScaledVector(right, sign * this.modelHeight * 0.078)
+        .addScaledVector(up, this.modelHeight * 0.018)
+        .addScaledVector(forward, -this.modelHeight * 0.052);
+      const pole = upper.getWorldPosition(new THREE.Vector3())
+        .addScaledVector(right, sign * this.modelHeight * 0.34)
+        .addScaledVector(up, this.modelHeight * 0.055)
+        .addScaledVector(forward, this.modelHeight * 0.015);
+      this.solveArm(side, target, weight, pole);
+    }
+  }
+
   solveHandsToKnees(weight = 0.8) {
     this.vrm.scene.updateMatrixWorld(true);
     const { right, forward, up } = this.bodyBasis();
@@ -448,7 +475,7 @@ export class NivaPhysicsBodySystem {
       postureOffset: this.postureOffset,
       leftFootPlanted: Boolean(this.footAnchor.left),
       rightFootPlanted: Boolean(this.footAnchor.right),
-      solver: 'pole-guided-ccd-v3',
+      solver: 'pole-guided-ccd-v3.1-hands-on-head',
     };
   }
 }
