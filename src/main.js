@@ -12,6 +12,7 @@ import { CharacterFrameDebug } from './runtime/debug/character-frame-debug.mjs';
 import { createPublicMotionBridge } from './runtime/motion/public-motion-bridge.mjs';
 import { PhysiologyOscillator } from './runtime/physics/biomechanics-life.mjs';
 import { JointRotationGuard } from './runtime/safety/joint-rotation-guard.mjs';
+import { SelfCollisionProjector } from './runtime/safety/self-collision-projector.mjs';
 
 const MODEL_URL = new URL('../NIVA.vrm', import.meta.url).href;
 const $ = (q) => document.querySelector(q);
@@ -47,6 +48,7 @@ let characterFrame = null;
 let facingController = null;
 let ikSystem = null;
 let jointGuard = null;
+let selfCollisionProjector = null;
 let coordinateDebug = null;
 let physicsReady = false;
 let physicsError = '';
@@ -283,7 +285,7 @@ loader.load(MODEL_URL,(gltf)=>{
   VRMUtils.removeUnnecessaryVertices(gltf.scene); VRMUtils.removeUnnecessaryJoints(gltf.scene);
   vrm.scene.traverse(o=>{ if(o.isMesh){o.castShadow=true;o.receiveShadow=true;} });
   scene.add(vrm.scene); rememberBones(); applyRelaxedStandingPose(); rememberBones(); centerModel(); modelHome.copy(vrm.scene.position); captureMaterials(); applyModelSettings();
-  vrmAdapter=new NivaVrmAdapter(vrm); characterFrame=new CharacterFrame(vrm.scene); facingController=new FacingController(vrm.scene); facingController.setManualYawDegrees(settings.modelRotY); ikSystem=new NivaIKSystem({vrm,getBone,frame:characterFrame,modelHeight}); jointGuard=new JointRotationGuard({getBone,baseQuats});jointGuard.reset(); coordinateDebug=new CharacterFrameDebug({scene,frame:characterFrame,root:vrm.scene,camera,stage}); coordinateDebug.setVisible(settings.coordinateDebug);
+  vrmAdapter=new NivaVrmAdapter(vrm); characterFrame=new CharacterFrame(vrm.scene); facingController=new FacingController(vrm.scene); facingController.setManualYawDegrees(settings.modelRotY); ikSystem=new NivaIKSystem({vrm,getBone,frame:characterFrame,modelHeight}); jointGuard=new JointRotationGuard({getBone,baseQuats});jointGuard.reset(); selfCollisionProjector=new SelfCollisionProjector({vrm,getBone,baseQuats,getHeight:()=>modelHeight});selfCollisionProjector.calibrate(); coordinateDebug=new CharacterFrameDebug({scene,frame:characterFrame,root:vrm.scene,camera,stage}); coordinateDebug.setVisible(settings.coordinateDebug);
   gazeTarget.position.copy(camera.position); if(vrm.lookAt) vrm.lookAt.target=gazeTarget;
   mixer=new THREE.AnimationMixer(vrm.humanoid.normalizedHumanBonesRoot || vrm.scene); buildClips();
   modelReady=true; runtimeSummary.textContent='Free Life Runtime · Ready';
@@ -579,7 +581,7 @@ applyLighting();floor.visible=ring.visible=innerRing.visible=settings.stageVisib
 function animate(){
   requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(); controls.update(); if(mixer)mixer.update(dt); lifeSim.update(dt,now); life.update(now,dt); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
   if(speaking&&vrm?.expressionManager){ mouthLevel=.12+Math.abs(Math.sin(now*.012))*0.32+Math.abs(Math.sin(now*.027))*0.14;vrm.expressionManager.setValue('aa',mouthLevel); } else if(vrm?.expressionManager){mouthLevel*=.78;vrm.expressionManager.setValue('aa',mouthLevel);}
-  lifeSim.applyBalance(); applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});contactPlan=bodyPhysics.solvePostAnimation(dt,{action:currentActionName,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth});lifeSim.balancePlan=contactPlan?.balance||null;}if(ikSystem&&contactPlan){ikSystem.configure({enabled:true,footEnabled:settings.footIKEnabled,actionEnabled:true,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}jointGuard?.apply(dt);facingController?.tick();coordinateDebug?.update();vrm.update(dt);} renderer.render(scene,camera);
+  lifeSim.applyBalance(); applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});contactPlan=bodyPhysics.solvePostAnimation(dt,{action:currentActionName,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth});lifeSim.balancePlan=contactPlan?.balance||null;}if(ikSystem&&contactPlan){ikSystem.configure({enabled:true,footEnabled:settings.footIKEnabled,actionEnabled:true,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}jointGuard?.apply(dt);selfCollisionProjector?.project();facingController?.tick();coordinateDebug?.update();vrm.update(dt);} renderer.render(scene,camera);
 }
 animate();
 

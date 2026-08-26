@@ -117,13 +117,13 @@ export function buildAnatomyProxies(points, height = 1) {
   // loose upper garment and hips. Neutral-pose calibration below prevents the
   // larger shells from classifying the authored rest pose as a collision.
   const chest = torsoAxisReady
-    ? { type: 'segment', a: torsoPoint(0.56), b: torsoPoint(0.97), radius: h * 0.118 }
+    ? { type: 'segment', a: torsoPoint(0.56), b: torsoPoint(0.97), radius: h * 0.128 }
     : null;
   const abdomen = torsoAxisReady
-    ? { type: 'segment', a: torsoPoint(0.25), b: torsoPoint(0.66), radius: h * 0.102 }
+    ? { type: 'segment', a: torsoPoint(0.25), b: torsoPoint(0.66), radius: h * 0.120 }
     : null;
   const pelvis = compound([
-    sphereAt(torsoPoint(0.08), h * 0.108),
+    sphereAt(torsoPoint(0.08), h * 0.116),
     sphere(points, 'hips', h * 0.112),
   ]);
   const torso = compound([chest, abdomen, pelvis]);
@@ -133,23 +133,23 @@ export function buildAnatomyProxies(points, height = 1) {
     chest,
     abdomen,
     pelvis,
-    head: sphere(points, 'head', h * 0.082),
+    head: sphere(points, 'head', h * 0.088),
 
     // Start upper-arm capsules away from the shoulder joint so normal shoulder
     // attachment is not treated as torso penetration.
-    leftUpperArm: segment(points, 'leftUpperArm', 'leftLowerArm', 0.24, 0.96, h * 0.034),
-    rightUpperArm: segment(points, 'rightUpperArm', 'rightLowerArm', 0.24, 0.96, h * 0.034),
-    leftForearm: segment(points, 'leftLowerArm', 'leftHand', 0.06, 0.96, h * 0.030),
-    rightForearm: segment(points, 'rightLowerArm', 'rightHand', 0.06, 0.96, h * 0.030),
-    leftHand: sphere(points, 'leftHand', h * 0.034),
-    rightHand: sphere(points, 'rightHand', h * 0.034),
+    leftUpperArm: segment(points, 'leftUpperArm', 'leftLowerArm', 0.24, 0.96, h * 0.038),
+    rightUpperArm: segment(points, 'rightUpperArm', 'rightLowerArm', 0.24, 0.96, h * 0.038),
+    leftForearm: segment(points, 'leftLowerArm', 'leftHand', 0.06, 0.96, h * 0.034),
+    rightForearm: segment(points, 'rightLowerArm', 'rightHand', 0.06, 0.96, h * 0.034),
+    leftHand: sphere(points, 'leftHand', h * 0.039),
+    rightHand: sphere(points, 'rightHand', h * 0.039),
 
-    leftThigh: segment(points, 'leftUpperLeg', 'leftLowerLeg', 0.14, 0.97, h * 0.043),
-    rightThigh: segment(points, 'rightUpperLeg', 'rightLowerLeg', 0.14, 0.97, h * 0.043),
-    leftShin: segment(points, 'leftLowerLeg', 'leftFoot', 0.05, 0.96, h * 0.034),
-    rightShin: segment(points, 'rightLowerLeg', 'rightFoot', 0.05, 0.96, h * 0.034),
-    leftFoot: limbOrSphere(points, 'leftFoot', 'leftToes', h * 0.036, 0, 1),
-    rightFoot: limbOrSphere(points, 'rightFoot', 'rightToes', h * 0.036, 0, 1),
+    leftThigh: segment(points, 'leftUpperLeg', 'leftLowerLeg', 0.14, 0.97, h * 0.047),
+    rightThigh: segment(points, 'rightUpperLeg', 'rightLowerLeg', 0.14, 0.97, h * 0.047),
+    leftShin: segment(points, 'leftLowerLeg', 'leftFoot', 0.05, 0.96, h * 0.038),
+    rightShin: segment(points, 'rightLowerLeg', 'rightFoot', 0.05, 0.96, h * 0.038),
+    leftFoot: limbOrSphere(points, 'leftFoot', 'leftToes', h * 0.041, 0, 1),
+    rightFoot: limbOrSphere(points, 'rightFoot', 'rightToes', h * 0.041, 0, 1),
   };
 }
 
@@ -160,7 +160,7 @@ const L_LEG = Object.freeze(['leftUpperLeg', 'leftLowerLeg', 'leftFoot']);
 const R_LEG = Object.freeze(['rightUpperLeg', 'rightLowerLeg', 'rightFoot']);
 const BOTH_LEGS = Object.freeze([...L_LEG, ...R_LEG]);
 
-const pair = (id, a, b, drivers, marginScale = 0.010, neutralSlackScale = 0.003) => Object.freeze({
+const pair = (id, a, b, drivers, marginScale = 0.010, neutralSlackScale = 0.0015) => Object.freeze({
   id, a, b, drivers, marginScale, neutralSlackScale,
 });
 
@@ -206,6 +206,40 @@ export const NIVA_COLLISION_PAIRS = Object.freeze([
   pair('left-forearm-right-thigh', 'leftForearm', 'rightThigh', L_ARM, 0.007),
   pair('right-forearm-right-thigh', 'rightForearm', 'rightThigh', R_ARM, 0.007),
   pair('right-forearm-left-thigh', 'rightForearm', 'leftThigh', R_ARM, 0.007),
+
+  // V0.90 predictive full-body coverage: no chain may tunnel through another.
+  pair('left-upperarm-head', 'leftUpperArm', 'head', L_ARM, 0.012),
+  pair('right-upperarm-head', 'rightUpperArm', 'head', R_ARM, 0.012),
+  pair('left-upperarm-pelvis', 'leftUpperArm', 'pelvis', L_ARM, 0.012),
+  pair('right-upperarm-pelvis', 'rightUpperArm', 'pelvis', R_ARM, 0.012),
+  pair('left-forearm-pelvis', 'leftForearm', 'pelvis', L_ARM, 0.014),
+  pair('right-forearm-pelvis', 'rightForearm', 'pelvis', R_ARM, 0.014),
+
+  pair('left-hand-left-shin', 'leftHand', 'leftShin', L_ARM, 0.011),
+  pair('left-hand-right-shin', 'leftHand', 'rightShin', L_ARM, 0.011),
+  pair('right-hand-left-shin', 'rightHand', 'leftShin', R_ARM, 0.011),
+  pair('right-hand-right-shin', 'rightHand', 'rightShin', R_ARM, 0.011),
+  pair('left-hand-left-foot', 'leftHand', 'leftFoot', L_ARM, 0.010),
+  pair('left-hand-right-foot', 'leftHand', 'rightFoot', L_ARM, 0.010),
+  pair('right-hand-left-foot', 'rightHand', 'leftFoot', R_ARM, 0.010),
+  pair('right-hand-right-foot', 'rightHand', 'rightFoot', R_ARM, 0.010),
+  pair('left-forearm-left-shin', 'leftForearm', 'leftShin', L_ARM, 0.009),
+  pair('left-forearm-right-shin', 'leftForearm', 'rightShin', L_ARM, 0.009),
+  pair('right-forearm-left-shin', 'rightForearm', 'leftShin', R_ARM, 0.009),
+  pair('right-forearm-right-shin', 'rightForearm', 'rightShin', R_ARM, 0.009),
+
+  pair('left-thigh-torso', 'leftThigh', 'torso', L_LEG, 0.012),
+  pair('right-thigh-torso', 'rightThigh', 'torso', R_LEG, 0.012),
+  pair('left-shin-torso', 'leftShin', 'torso', L_LEG, 0.012),
+  pair('right-shin-torso', 'rightShin', 'torso', R_LEG, 0.012),
+  pair('left-foot-torso', 'leftFoot', 'torso', L_LEG, 0.012),
+  pair('right-foot-torso', 'rightFoot', 'torso', R_LEG, 0.012),
+  pair('left-thigh-head', 'leftThigh', 'head', L_LEG, 0.010),
+  pair('right-thigh-head', 'rightThigh', 'head', R_LEG, 0.010),
+  pair('left-shin-head', 'leftShin', 'head', L_LEG, 0.010),
+  pair('right-shin-head', 'rightShin', 'head', R_LEG, 0.010),
+  pair('left-foot-head', 'leftFoot', 'head', L_LEG, 0.010),
+  pair('right-foot-head', 'rightFoot', 'head', R_LEG, 0.010),
 ]);
 
 export function measureCollisionPairs(points, height = 1) {
