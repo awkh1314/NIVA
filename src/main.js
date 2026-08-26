@@ -211,23 +211,23 @@ function buildClips(){
   clips.set('think', makeClip('think',2.5,{head:[[0,0,0,0],[.45,-3,6,-7],[1.8,-3,6,-7],[2.5,0,0,0]],rightUpperArm:[[0,0,0,0],[.5,10,4,22],[1.9,10,4,22],[2.5,0,0,0]],rightLowerArm:[[0,0,0,0],[.6,0,52,0],[1.9,0,52,0],[2.5,0,0,0]],rightHand:[[0,0,0,0],[.7,8,0,-8],[1.9,8,0,-8],[2.5,0,0,0]]}));
   clips.set('reach', makeClip('reach',2.0,{spine:[[0,0,0,0],[.65,3,0,0],[1.35,3,0,0],[2,0,0,0]],head:[[0,0,0,0],[.65,5,-5,0],[1.35,5,-5,0],[2,0,0,0]],rightUpperArm:[[0,0,0,0],[.65,18,10,18],[1.35,18,10,18],[2,0,0,0]],rightLowerArm:[[0,0,0,0],[.7,0,34,0],[1.35,0,34,0],[2,0,0,0]],rightHand:[[0,0,0,0],[.75,-7,0,-8],[1.35,-7,0,-8],[2,0,0,0]]}));
   clips.set('weight', makeClip('weight',2.6,{hips:[[0,0,0,0],[.6,0,0,-2],[1.2,0,0,-2],[1.8,0,0,2],[2.6,0,0,0]],spine:[[0,0,0,0],[.6,0,0,1.2],[1.2,0,0,1.2],[1.8,0,0,-1.2],[2.6,0,0,0]],leftUpperLeg:[[0,0,0,0],[.6,0,0,1.5],[1.2,0,0,1.5],[2.6,0,0,0]],rightUpperLeg:[[0,0,0,0],[1.8,0,0,-1.5],[2.2,0,0,-1.5],[2.6,0,0,0]]}));
-  clips.set('wave', makeClip('wave',2.05,{rightUpperArm:[[0,0,0,0],[.3,8,0,34],[.55,10,4,45],[1.72,10,4,45],[2.05,0,0,0]],rightLowerArm:[[0,0,0,0],[.35,0,52,0],[.55,0,72,0],[1.72,0,72,0],[2.05,0,0,0]],rightHand:[[0,0,0,0],[.55,0,0,-8],[.78,0,0,14],[1.02,0,0,-14],[1.26,0,0,14],[1.50,0,0,-14],[1.72,0,0,0],[2.05,0,0,0]]}));
+  clips.set('wave', makeClip('wave',2.05,{rightHand:[[0,0,0,0],[.42,-2,0,-4],[.62,-2,0,-4],[.82,-1,0,7],[1.04,-1,0,-7],[1.26,-1,0,7],[1.48,-1,0,-7],[1.70,-2,0,-3],[2.05,0,0,0]]}));
   const walkTimes=[0,.125,.25,.375,.5,.625,.75,.875,1];
   const legL=[22,12,1,-11,-20,-11,0,12,22],legR=[-20,-11,0,12,22,12,1,-11,-20];
   const kneeL=[7,18,34,24,8,10,18,11,7],kneeR=[8,10,18,11,7,18,34,24,8];
   const footL=[-4,-1,7,3,-3,-2,4,1,-4],footR=[-3,-2,4,1,-4,-1,7,3,-3];
   const armL=[-14,-8,0,8,14,8,0,-8,-14],armR=[14,8,0,-8,-14,-8,0,8,14];
   const f=(arr)=>walkTimes.map((t,i)=>[t,arr[i],0,0]);
-  clips.set('walk',makeClip('walk',1,{leftUpperLeg:f(legL),rightUpperLeg:f(legR),leftLowerLeg:f(kneeL),rightLowerLeg:f(kneeR),leftFoot:f(footL),rightFoot:f(footR),leftUpperArm:f(armL),rightUpperArm:f(armR),leftLowerArm:walkTimes.map(t=>[t,0,-14,0]),rightLowerArm:walkTimes.map(t=>[t,0,14,0]),hips:walkTimes.map((t,i)=>[t,0,(i<4?2:-2),0]),chest:walkTimes.map((t,i)=>[t,0,(i<4?-1.5:1.5),0])}));
+  clips.set('walk',makeClip('walk',1,{leftUpperLeg:f(legL),rightUpperLeg:f(legR),leftLowerLeg:f(kneeL),rightLowerLeg:f(kneeR),leftFoot:f(footL),rightFoot:f(footR),hips:walkTimes.map((t,i)=>[t,0,(i<4?1.4:-1.4),0]),chest:walkTimes.map((t,i)=>[t,0,(i<4?-1:1),0])}));
   const rt=[0,.09,.18,.26,.35,.44,.53,.61,.70];
   const runL=[38,22,2,-22,-36,-20,2,22,38],runR=[-36,-20,2,22,38,22,2,-22,-36];
   const rkL=[16,42,76,56,18,28,62,42,16],rkR=[18,28,62,42,16,42,76,56,18];
   const rfL=[-7,-2,12,7,-5,-3,9,4,-7],rfR=[-5,-3,9,4,-7,-2,12,7,-5];
   const raL=[-28,-16,0,19,28,16,0,-19,-28],raR=[28,16,0,-19,-28,-16,0,19,28];
   const rf=(arr)=>rt.map((t,i)=>[t,arr[i],0,0]);
-  clips.set('run',makeClip('run',.70,{leftUpperLeg:rf(runL),rightUpperLeg:rf(runR),leftLowerLeg:rf(rkL),rightLowerLeg:rf(rkR),leftFoot:rf(rfL),rightFoot:rf(rfR),leftUpperArm:rf(raL),rightUpperArm:rf(raR),leftLowerArm:rt.map(t=>[t,0,-72,0]),rightLowerArm:rt.map(t=>[t,0,72,0]),spine:rt.map(t=>[t,5,0,0]),chest:rt.map((t,i)=>[t,1.5,(i<4?-2:2),0])}));
+  clips.set('run',makeClip('run',.70,{leftUpperLeg:rf(runL),rightUpperLeg:rf(runR),leftLowerLeg:rf(rkL),rightLowerLeg:rf(rkR),leftFoot:rf(rfL),rightFoot:rf(rfR),spine:rt.map(t=>[t,4.5,0,0]),chest:rt.map((t,i)=>[t,1.2,(i<4?-1.5:1.5),0])}));
   clips.set('thinkLoop',makeClip('thinkLoop',4,{head:[[0,-2,5,-7],[1,-3,6,-8],[2,-2,5,-7],[3,-3,7,-6],[4,-2,5,-7]],rightUpperArm:[[0,8,4,20],[4,8,4,20]],rightLowerArm:[[0,0,48,0],[4,0,48,0]],rightHand:[[0,6,0,-6],[2,8,0,-5],[4,6,0,-6]]}));
-  clips.set('crouch',makeClip('crouch',2,{spine:[[0,4,0,0],[2,4,0,0]],chest:[[0,2,0,0],[2,2,0,0]],leftUpperLeg:[[0,8,0,0],[2,8,0,0]],rightUpperLeg:[[0,8,0,0],[2,8,0,0]],leftLowerLeg:[[0,18,0,0],[2,18,0,0]],rightLowerLeg:[[0,18,0,0],[2,18,0,0]],leftFoot:[[0,-5,0,0],[2,-5,0,0]],rightFoot:[[0,-5,0,0],[2,-5,0,0]],head:[[0,-2,0,0],[2,-2,0,0]]}));
+  clips.set('crouch',makeClip('crouch',2,{spine:[[0,6,0,0],[2,6,0,0]],chest:[[0,3,0,0],[2,3,0,0]],leftUpperLeg:[[0,4,0,0],[2,4,0,0]],rightUpperLeg:[[0,4,0,0],[2,4,0,0]],leftLowerLeg:[[0,8,0,0],[2,8,0,0]],rightLowerLeg:[[0,8,0,0],[2,8,0,0]],leftFoot:[[0,-2,0,0],[2,-2,0,0]],rightFoot:[[0,-2,0,0],[2,-2,0,0]],head:[[0,-2,0,0],[2,-2,0,0]]}));
   clips.set('recovery',makeClip('recovery',3,{spine:[[0,18,0,0],[3,18,0,0]],chest:[[0,7,0,0],[3,7,0,0]],neck:[[0,-5,0,0],[3,-5,0,0]],leftUpperLeg:[[0,8,0,0],[3,8,0,0]],rightUpperLeg:[[0,8,0,0],[3,8,0,0]],leftLowerLeg:[[0,18,0,0],[3,18,0,0]],rightLowerLeg:[[0,18,0,0],[3,18,0,0]],leftFoot:[[0,-5,0,0],[3,-5,0,0]],rightFoot:[[0,-5,0,0],[3,-5,0,0]],leftUpperArm:[[0,10,0,-7],[3,10,0,-7]],rightUpperArm:[[0,10,0,7],[3,10,0,7]],leftLowerArm:[[0,0,-24,0],[3,0,-24,0]],rightLowerArm:[[0,0,24,0],[3,0,24,0]],head:[[0,-6,0,0],[3,-6,0,0]]}));
 }
 function playClip(name,{loop=false,duration=null}={}){
@@ -540,4 +540,4 @@ function animate(){
 }
 animate();
 
-window.NIVA={version:'0.94-physics-body',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
+window.NIVA={version:'0.95-biomechanics-v3',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
