@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test runtime/niva-vrm-limits.test.mjs runtime/niva-vrm-collision-guard.test.mjs runtime/architecture/runtime-boundaries.test.mjs runtime/architecture/motion-anatomy.test.mjs runtime/architecture/biomechanics-v2.test.mjs src/safe-pose-planner.test.mjs src/orchestrator.test.mjs src/voice-prosody.test.mjs runtime/brain/protocol.test.mjs runtime/performance/director.test.mjs src/runtime/motion/public-motion-bridge.test.mjs src/runtime/physics/biomechanics-life.test.mjs src/runtime/physics/predictive-stability.test.mjs src/runtime/safety/joint-rotation-guard.test.mjs src/runtime/safety/self-collision-projector.test.mjs",
+    "test": "node --test runtime/niva-vrm-limits.test.mjs runtime/niva-vrm-collision-guard.test.mjs runtime/architecture/runtime-boundaries.test.mjs runtime/architecture/motion-anatomy.test.mjs runtime/architecture/biomechanics-v2.test.mjs src/safe-pose-planner.test.mjs src/orchestrator.test.mjs src/voice-prosody.test.mjs runtime/brain/protocol.test.mjs runtime/performance/director.test.mjs src/runtime/motion/public-motion-bridge.test.mjs src/runtime/physics/biomechanics-life.test.mjs src/runtime/physics/predictive-stability.test.mjs src/runtime/safety/anatomical-rom-v2.test.mjs src/runtime/safety/joint-rotation-guard.test.mjs src/runtime/safety/self-collision-projector.test.mjs",
     "tauri": "tauri",
     "desktop": "tauri build --no-bundle"
   },
