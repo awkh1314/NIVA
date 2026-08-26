@@ -1,2 +1,2 @@
-NIVA 0.99.1 · Biomechanics Life Physics V1
-CharacterFrame is the only source of forward/right/up (+Z/+X/+Y); FacingController owns root yaw; Physics owns Rapier/root translation/ground contacts/COM balance planning; IK owns post-animation limb correction; life physiology is deterministic additive breathing + heartbeat.
+NIVA 0.99.1 · Predictive Stability V2
+CharacterFrame is the only source of forward/right/up (+Z/+X/+Y); FacingController owns root yaw; Physics owns Rapier/root translation/ground contacts/COM + Capture Point prediction/recovery-step planning; IK owns post-animation limb correction; whole-body stability and deterministic breathing + heartbeat remain additive layers.
