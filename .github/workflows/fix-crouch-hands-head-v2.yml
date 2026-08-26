@@ -1,0 +1,30 @@
+name: Fix crouch hands on head v2
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: python3 scripts/patch-crouch-hands.py
+      - run: npm install
+      - run: npm test
+      - run: npm run build
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/fix-crouch-hands-head.yml
+          rm -f .github/workflows/fix-crouch-hands-head-v2.yml
+          rm -f scripts/patch-crouch-hands.py
+          git add -A
+          git commit -m "fix(motion): crouch with both hands on head"
+          git push origin HEAD:main
