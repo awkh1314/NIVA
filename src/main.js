@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+import { NivaPhysicsBodySystem } from './runtime/physics/niva-body-physics.mjs';
 
 const MODEL_URL = new URL('../NIVA.vrm', import.meta.url).href;
 const $ = (q) => document.querySelector(q);
@@ -32,6 +33,9 @@ let modelHeight = 1.6;
 let mixer = null;
 let currentAction = null;
 let currentActionName = 'idle';
+let bodyPhysics = null;
+let physicsReady = false;
+let physicsError = '';
 let persistentPreview = '';
 let speaking = false;
 let mouthLevel = 0;
@@ -71,6 +75,13 @@ const settings = Object.assign({
   lifeSimulation:true,
   lifeTimeScale:1,
   autoFatigueRecovery:true,
+  physicsEnabled:true,
+  footIKEnabled:true,
+  physicsGroundContact:true,
+  footIKStrength:0.9,
+  crouchDepth:0.19,
+  walkWorldSpeed:0.55,
+  runWorldSpeed:1.25,
   exposure:0.9,
   ambient:0.32,
   key:1.15,
@@ -180,7 +191,7 @@ function captureMaterials(){materialSnapshots.clear();vrm?.scene.traverse(o=>{if
 function isSkinMaterial(snap){return /(skin|face|head|body|肌|肤|颜)/i.test(snap.name||'');}
 function applySkinBrightness(){for(const snap of materialSnapshots.values()){if(!snap.color||!isSkinMaterial(snap))continue;snap.mat.color.copy(snap.color).multiplyScalar(settings.skinBrightness);snap.mat.needsUpdate=true;}}
 const modelHome=new THREE.Vector3();
-function applyModelSettings(){if(!vrm)return;vrm.scene.visible=settings.modelVisible;vrm.scene.scale.setScalar(settings.modelScale);vrm.scene.position.set(modelHome.x+settings.modelX,modelHome.y+settings.modelY,modelHome.z+settings.modelZ);vrm.scene.rotation.y=rad(settings.modelRotY);applySkinBrightness();}
+function applyModelSettings(){if(!vrm)return;vrm.scene.visible=settings.modelVisible;vrm.scene.scale.setScalar(settings.modelScale);vrm.scene.position.set(modelHome.x+settings.modelX,modelHome.y+settings.modelY,modelHome.z+settings.modelZ);vrm.scene.rotation.y=rad(settings.modelRotY);bodyPhysics?.syncManualRoot?.(vrm.scene.position.x,vrm.scene.position.z);applySkinBrightness();}
 
 function makeClip(name, duration, tracks){
   const t=[];
@@ -216,8 +227,8 @@ function buildClips(){
   const rf=(arr)=>rt.map((t,i)=>[t,arr[i],0,0]);
   clips.set('run',makeClip('run',.70,{leftUpperLeg:rf(runL),rightUpperLeg:rf(runR),leftLowerLeg:rf(rkL),rightLowerLeg:rf(rkR),leftFoot:rf(rfL),rightFoot:rf(rfR),leftUpperArm:rf(raL),rightUpperArm:rf(raR),leftLowerArm:rt.map(t=>[t,0,-72,0]),rightLowerArm:rt.map(t=>[t,0,72,0]),spine:rt.map(t=>[t,5,0,0]),chest:rt.map((t,i)=>[t,1.5,(i<4?-2:2),0])}));
   clips.set('thinkLoop',makeClip('thinkLoop',4,{head:[[0,-2,5,-7],[1,-3,6,-8],[2,-2,5,-7],[3,-3,7,-6],[4,-2,5,-7]],rightUpperArm:[[0,8,4,20],[4,8,4,20]],rightLowerArm:[[0,0,48,0],[4,0,48,0]],rightHand:[[0,6,0,-6],[2,8,0,-5],[4,6,0,-6]]}));
-  clips.set('crouch',makeClip('crouch',2,{hips:[[0,5,0,0],[2,5,0,0]],spine:[[0,9,0,0],[2,9,0,0]],leftUpperLeg:[[0,30,0,0],[2,30,0,0]],rightUpperLeg:[[0,30,0,0],[2,30,0,0]],leftLowerLeg:[[0,58,0,0],[2,58,0,0]],rightLowerLeg:[[0,58,0,0],[2,58,0,0]],leftFoot:[[0,-24,0,0],[2,-24,0,0]],rightFoot:[[0,-24,0,0],[2,-24,0,0]],head:[[0,-5,0,0],[2,-5,0,0]]}));
-  clips.set('recovery',makeClip('recovery',3,{hips:[[0,8,0,0],[3,8,0,0]],spine:[[0,28,0,0],[3,28,0,0]],chest:[[0,12,0,0],[3,12,0,0]],neck:[[0,-10,0,0],[3,-10,0,0]],leftUpperLeg:[[0,22,0,0],[3,22,0,0]],rightUpperLeg:[[0,22,0,0],[3,22,0,0]],leftLowerLeg:[[0,42,0,0],[3,42,0,0]],rightLowerLeg:[[0,42,0,0],[3,42,0,0]],leftFoot:[[0,-17,0,0],[3,-17,0,0]],rightFoot:[[0,-17,0,0],[3,-17,0,0]],leftUpperArm:[[0,18,0,-8],[3,18,0,-8]],rightUpperArm:[[0,18,0,8],[3,18,0,8]],leftLowerArm:[[0,0,-32,0],[3,0,-32,0]],rightLowerArm:[[0,0,32,0],[3,0,32,0]],head:[[0,-8,0,0],[3,-8,0,0]]}));
+  clips.set('crouch',makeClip('crouch',2,{spine:[[0,4,0,0],[2,4,0,0]],chest:[[0,2,0,0],[2,2,0,0]],leftUpperLeg:[[0,8,0,0],[2,8,0,0]],rightUpperLeg:[[0,8,0,0],[2,8,0,0]],leftLowerLeg:[[0,18,0,0],[2,18,0,0]],rightLowerLeg:[[0,18,0,0],[2,18,0,0]],leftFoot:[[0,-5,0,0],[2,-5,0,0]],rightFoot:[[0,-5,0,0],[2,-5,0,0]],head:[[0,-2,0,0],[2,-2,0,0]]}));
+  clips.set('recovery',makeClip('recovery',3,{spine:[[0,18,0,0],[3,18,0,0]],chest:[[0,7,0,0],[3,7,0,0]],neck:[[0,-5,0,0],[3,-5,0,0]],leftUpperLeg:[[0,8,0,0],[3,8,0,0]],rightUpperLeg:[[0,8,0,0],[3,8,0,0]],leftLowerLeg:[[0,18,0,0],[3,18,0,0]],rightLowerLeg:[[0,18,0,0],[3,18,0,0]],leftFoot:[[0,-5,0,0],[3,-5,0,0]],rightFoot:[[0,-5,0,0],[3,-5,0,0]],leftUpperArm:[[0,10,0,-7],[3,10,0,-7]],rightUpperArm:[[0,10,0,7],[3,10,0,7]],leftLowerArm:[[0,0,-24,0],[3,0,-24,0]],rightLowerArm:[[0,0,24,0],[3,0,24,0]],head:[[0,-6,0,0],[3,-6,0,0]]}));
 }
 function playClip(name,{loop=false,duration=null}={}){
   if(!mixer || !clips.has(name) || speaking || performance.now()<manualOverrideUntil) return false;
@@ -253,6 +264,7 @@ loader.load(MODEL_URL,(gltf)=>{
   mixer=new THREE.AnimationMixer(vrm.humanoid.normalizedHumanBonesRoot || vrm.scene); buildClips();
   modelReady=true; runtimeSummary.textContent='Free Life Runtime · Ready';
   showToast('NIVA 已就绪');
+  NivaPhysicsBodySystem.create({vrm,getBone,modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physics Ready';showToast('NIVA 物理身体已就绪');}).catch((err)=>{physicsReady=false;physicsError=String(err?.message||err);console.error('NIVA physics init failed',err);runtimeSummary.textContent='Free Life Runtime · Physics fallback';});
 },undefined,(e)=>{ console.error(e); runtimeSummary.textContent='模型加载失败'; showToast('NIVA.vrm 加载失败'); });
 
 function resize(){ const r=stage.getBoundingClientRect(); renderer.setSize(r.width,r.height,false); camera.aspect=r.width/r.height; camera.updateProjectionMatrix(); }
@@ -365,9 +377,16 @@ const lifeSim={
     const baseX=modelHome.x+settings.modelX,baseZ=modelHome.z+settings.modelZ;
     const pos=new THREE.Vector3(vrm.scene.position.x-baseX,0,vrm.scene.position.z-baseZ),to=this.stageTarget.clone().sub(pos);to.y=0;
     if(to.length()<.14){this.chooseStageTarget();return;}
-    const dir=to.normalize(),fatigueSlow=1-clamp((this.fatigue-35)/170,0,.28),speed=(a==='run'?.43:.20)*fatigueSlow;
-    pos.addScaledVector(dir,speed*dt);const maxR=1.18*Math.max(.4,floor.scale.x||1);if(pos.length()>maxR)pos.setLength(maxR);
-    vrm.scene.position.x=baseX+pos.x;vrm.scene.position.z=baseZ+pos.z;
+    const dir=to.normalize(),fatigueSlow=1-clamp((this.fatigue-35)/170,0,.28);
+    const speed=(a==='run'?settings.runWorldSpeed:settings.walkWorldSpeed)*fatigueSlow;
+    if(settings.physicsEnabled){
+      if(!physicsReady||!bodyPhysics)return;
+      bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});
+      bodyPhysics.move(dt,dir,speed);
+    }else{
+      pos.addScaledVector(dir,speed*dt);const maxR=1.18*Math.max(.4,floor.scale.x||1);if(pos.length()>maxR)pos.setLength(maxR);
+      vrm.scene.position.x=baseX+pos.x;vrm.scene.position.z=baseZ+pos.z;
+    }
     const targetYaw=rad(settings.modelRotY)+Math.atan2(dir.x,dir.z),cur=vrm.scene.rotation.y,diff=Math.atan2(Math.sin(targetYaw-cur),Math.cos(targetYaw-cur));vrm.scene.rotation.y=cur+diff*(1-Math.exp(-dt*7));
   },
   forceRecovery(now){
@@ -375,12 +394,14 @@ const lifeSim={
     if(currentAction)currentAction.fadeOut(.28);setTimeout(()=>{if(this.recovering&&persistentPreview==='run')playClip('recovery',{loop:true});},80);
   },
   applyGroundContact(dt){
-    if(!vrm)return;const mode=['crouch','recovery'].includes(currentActionName);const baseY=modelHome.y+settings.modelY;
-    if(!mode){this.groundMode='';this.footAnchor=null;vrm.scene.position.y+=((baseY-vrm.scene.position.y)*(1-Math.exp(-dt*8)));return;}
-    if(this.groundMode!==currentActionName){this.groundMode=currentActionName;if(!this.footAnchor)this.captureFootAnchor();}
-    if(!this.footAnchor)return;vrm.scene.updateMatrixWorld(true);const ps=['leftFoot','rightFoot'].map(getBone).filter(Boolean).map(b=>b.getWorldPosition(new THREE.Vector3()));if(!ps.length)return;
-    const c=ps.reduce((s,p)=>s.add(p),new THREE.Vector3()).multiplyScalar(1/ps.length),err=this.footAnchor.clone().sub(c),w=1-Math.exp(-dt*18);
-    vrm.scene.position.x+=err.x*w;vrm.scene.position.z+=err.z*w;vrm.scene.position.y=clamp(vrm.scene.position.y+err.y*w,baseY-.62,baseY+.12);
+    if(!vrm)return;
+    if(settings.physicsEnabled&&settings.physicsGroundContact&&bodyPhysics&&physicsReady){
+      bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});
+      if(!['walk','run'].includes(this.activity()))bodyPhysics.holdPosition(dt);
+      return;
+    }
+    const baseY=modelHome.y+settings.modelY;
+    vrm.scene.position.y+=((baseY-vrm.scene.position.y)*(1-Math.exp(-dt*8)));
   },
   applyFatigueFace(){
     if(!vrm?.expressionManager||speaking||activeExpression!=='neutral')return;const tired=clamp((this.fatigue-32)/115,0,.42);
@@ -461,7 +482,7 @@ function bindToggles(){controlPage.querySelectorAll('[data-setting]').forEach(el
 function renderControl(){
   [...controlTabs.children].forEach(b=>b.classList.toggle('active',b.textContent===activeTab));
   if(activeTab==='基础'){
-    controlPage.innerHTML=`<section class="panel-section"><h3>基础体验</h3>${toggleHtml('生命状态','lifeEnabled')}${toggleHtml('自动眨眼','blinkEnabled')}${toggleHtml('注视用户','gazeEnabled')}${toggleHtml('跟随鼠标','mouseGaze')}${toggleHtml('呼吸','breathingEnabled')}${toggleHtml('心跳','heartbeatEnabled')}${toggleHtml('声音','soundEnabled')}${toggleHtml('对白气泡','bubblesEnabled')}<button id="resetFree" class="secondary-btn wide">恢复默认设置</button></section>`;bindToggles();$('#resetFree').onclick=()=>{localStorage.removeItem('niva.free.settings');location.reload();};
+    controlPage.innerHTML=`<section class="panel-section"><h3>基础体验</h3>${toggleHtml('生命状态','lifeEnabled')}${toggleHtml('自动眨眼','blinkEnabled')}${toggleHtml('注视用户','gazeEnabled')}${toggleHtml('跟随鼠标','mouseGaze')}${toggleHtml('呼吸','breathingEnabled')}${toggleHtml('心跳','heartbeatEnabled')}${toggleHtml('声音','soundEnabled')}${toggleHtml('对白气泡','bubblesEnabled')}${toggleHtml('Rapier 角色物理','physicsEnabled')}${toggleHtml('脚底 IK','footIKEnabled')}${toggleHtml('地面接触','physicsGroundContact')}<button id="resetFree" class="secondary-btn wide">恢复默认设置</button></section>`;bindToggles();$('#resetFree').onclick=()=>{localStorage.removeItem('niva.free.settings');location.reload();};
   } else if(activeTab==='人物') renderBodyControls();
   else if(activeTab==='表情') renderExpressionControls();
   else if(activeTab==='生命') renderLifeControls();
@@ -497,7 +518,7 @@ function renderLifeControls(){
   controlPage.innerHTML=`<section class="panel-section"><h3>真实生命系统</h3>${toggleHtml('生命模拟','lifeSimulation')}${toggleHtml('极限疲劳自动恢复','autoFatigueRecovery')}${rowSlider('生命时间倍率',.25,3,.05,settings.lifeTimeScale)}<div class="life-readout">实时：心率 <b>${Math.round(lifeSim.heartRate)}</b> · 呼吸 <b>${Math.round(lifeSim.breathRate)}</b> · 疲劳 <b>${Math.round(lifeSim.fatigue)}%</b> · 能量 <b>${Math.round(lifeSim.energy)}%</b></div></section><section class="panel-section"><h3>基础生命参数</h3>${toggleHtml('自然行为系统','lifeEnabled')}${toggleHtml('跟随鼠标','mouseGaze')}${toggleHtml('允许摸鼠标','allowReach')}${toggleHtml('允许走路','allowWalk')}${toggleHtml('允许跑步','allowRun')}${rowSlider('基础心率 BPM',45,120,1,settings.bpm)}${rowSlider('基础呼吸 / min',6,24,1,settings.breaths)}${rowSlider('呼吸幅度',0,.8,.05,settings.breathAmp)}${rowSlider('微动作频率',0,1,.05,settings.microFreq)}${rowSlider('大动作频率',0,1,.05,settings.majorFreq)}</section>`;bindToggles();const ins=controlPage.querySelectorAll('input[type=range]');const keys=['lifeTimeScale','bpm','breaths','breathAmp','microFreq','majorFreq'];ins.forEach((el,i)=>{el.oninput=()=>{settings[keys[i]]=Number(el.value);el.parentElement.querySelector('output').textContent=el.value;saveSettings();};});
 }
 function renderMotionControls(){controlPage.innerHTML=`<section class="panel-section"><h3>持续动作预览</h3><div class="button-grid"><button data-preview="stop">停止</button><button data-preview="thinkLoop">思考</button><button data-preview="walk">走路</button><button data-preview="run">跑步</button><button data-preview="crouch">蹲下</button></div>${rowSlider('动作速度',.6,1.5,.05,settings.motionSpeed)}<small>选择后持续播放，直到切换或停止。</small></section><section class="panel-section"><h3>单次动作</h3><div class="button-grid"><button data-once="nod">点头</button><button data-once="wave">挥手</button><button data-once="reach">摸鼠标</button><button data-once="weight">重心切换</button></div></section>`;controlPage.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>startPreviewMotion(b.dataset.preview));controlPage.querySelectorAll('[data-once]').forEach(b=>b.onclick=()=>playClip(b.dataset.once,{duration:clips.get(b.dataset.once)?.duration||2}));const speed=controlPage.querySelector('input[type=range]');speed.oninput=()=>{settings.motionSpeed=Number(speed.value);speed.parentElement.querySelector('output').textContent=speed.value;if(currentAction)currentAction.setEffectiveTimeScale(settings.motionSpeed);saveSettings();};}
-function renderStageControls(){controlPage.innerHTML=`<section class="panel-section"><h3>舞台总控</h3>${toggleHtml('显示舞台','stageVisible')}${rowSlider('舞台半径',.6,3,.05,1.55)}${rowSlider('地板透明度',0,1,.01,floorMat.opacity)}${rowSlider('地板粗糙度',0,1,.01,floorMat.roughness)}${rowSlider('地板金属度',0,1,.01,floorMat.metalness)}${rowSlider('主圆环亮度',0,1,.01,ringMat.opacity)}${rowSlider('内圆环亮度',0,1,.01,innerRing.material.opacity)}<label class="color-row"><span>背景颜色</span><input id="bgColor" type="color" value="#${scene.background.getHexString()}"></label><label class="color-row"><span>地板颜色</span><input id="floorColor" type="color" value="#${floorMat.color.getHexString()}"></label><label class="color-row"><span>主圆环颜色</span><input id="ringColor" type="color" value="#${ringMat.color.getHexString()}"></label><label class="color-row"><span>内圆环颜色</span><input id="innerColor" type="color" value="#${innerRing.material.color.getHexString()}"></label><button id="stageReset" class="secondary-btn wide">舞台复位</button></section>`;bindToggles();const vis=controlPage.querySelector('[data-setting="stageVisible"]');vis.onchange=e=>{settings.stageVisible=e.target.checked;floor.visible=ring.visible=innerRing.visible=settings.stageVisible;saveSettings();};const a=[...controlPage.querySelectorAll('input[type=range]')];a[0].oninput=()=>{const z=+a[0].value/1.55;floor.scale.setScalar(z);ring.scale.setScalar(z);innerRing.scale.setScalar(z);a[0].parentElement.querySelector('output').textContent=a[0].value;};a[1].oninput=()=>{floorMat.opacity=+a[1].value;a[1].parentElement.querySelector('output').textContent=a[1].value;};a[2].oninput=()=>{floorMat.roughness=+a[2].value;a[2].parentElement.querySelector('output').textContent=a[2].value;};a[3].oninput=()=>{floorMat.metalness=+a[3].value;a[3].parentElement.querySelector('output').textContent=a[3].value;};a[4].oninput=()=>{ringMat.opacity=+a[4].value;a[4].parentElement.querySelector('output').textContent=a[4].value;};a[5].oninput=()=>{innerRing.material.opacity=+a[5].value;a[5].parentElement.querySelector('output').textContent=a[5].value;};$('#bgColor').oninput=e=>{scene.background.set(e.target.value);renderer.setClearColor(e.target.value);};$('#floorColor').oninput=e=>floorMat.color.set(e.target.value);$('#ringColor').oninput=e=>ringMat.color.set(e.target.value);$('#innerColor').oninput=e=>innerRing.material.color.set(e.target.value);$('#stageReset').onclick=()=>{floor.scale.setScalar(1);ring.scale.setScalar(1);innerRing.scale.setScalar(1);floorMat.opacity=.94;floorMat.roughness=.78;floorMat.metalness=.08;ringMat.opacity=.75;innerRing.material.opacity=.32;scene.background.set(0x0b0d0e);renderer.setClearColor(0x0b0d0e);floorMat.color.set(0x10161d);ringMat.color.set(0x59dce0);innerRing.material.color.set(0x5665a7);renderStageControls();};}
+function renderStageControls(){controlPage.innerHTML=`<section class="panel-section"><h3>舞台总控</h3>${toggleHtml('显示舞台','stageVisible')}${rowSlider('舞台半径',.6,3,.05,1.55)}${rowSlider('地板透明度',0,1,.01,floorMat.opacity)}${rowSlider('地板粗糙度',0,1,.01,floorMat.roughness)}${rowSlider('地板金属度',0,1,.01,floorMat.metalness)}${rowSlider('主圆环亮度',0,1,.01,ringMat.opacity)}${rowSlider('内圆环亮度',0,1,.01,innerRing.material.opacity)}<label class="color-row"><span>背景颜色</span><input id="bgColor" type="color" value="#${scene.background.getHexString()}"></label><label class="color-row"><span>地板颜色</span><input id="floorColor" type="color" value="#${floorMat.color.getHexString()}"></label><label class="color-row"><span>主圆环颜色</span><input id="ringColor" type="color" value="#${ringMat.color.getHexString()}"></label><label class="color-row"><span>内圆环颜色</span><input id="innerColor" type="color" value="#${innerRing.material.color.getHexString()}"></label><button id="stageReset" class="secondary-btn wide">舞台复位</button></section>`;bindToggles();const vis=controlPage.querySelector('[data-setting="stageVisible"]');vis.onchange=e=>{settings.stageVisible=e.target.checked;floor.visible=ring.visible=innerRing.visible=settings.stageVisible;saveSettings();};const a=[...controlPage.querySelectorAll('input[type=range]')];a[0].oninput=()=>{const z=+a[0].value/1.55;floor.scale.setScalar(z);ring.scale.setScalar(z);innerRing.scale.setScalar(z);bodyPhysics?.rebuildGround?.(+a[0].value);a[0].parentElement.querySelector('output').textContent=a[0].value;};a[1].oninput=()=>{floorMat.opacity=+a[1].value;a[1].parentElement.querySelector('output').textContent=a[1].value;};a[2].oninput=()=>{floorMat.roughness=+a[2].value;a[2].parentElement.querySelector('output').textContent=a[2].value;};a[3].oninput=()=>{floorMat.metalness=+a[3].value;a[3].parentElement.querySelector('output').textContent=a[3].value;};a[4].oninput=()=>{ringMat.opacity=+a[4].value;a[4].parentElement.querySelector('output').textContent=a[4].value;};a[5].oninput=()=>{innerRing.material.opacity=+a[5].value;a[5].parentElement.querySelector('output').textContent=a[5].value;};$('#bgColor').oninput=e=>{scene.background.set(e.target.value);renderer.setClearColor(e.target.value);};$('#floorColor').oninput=e=>floorMat.color.set(e.target.value);$('#ringColor').oninput=e=>ringMat.color.set(e.target.value);$('#innerColor').oninput=e=>innerRing.material.color.set(e.target.value);$('#stageReset').onclick=()=>{floor.scale.setScalar(1);ring.scale.setScalar(1);innerRing.scale.setScalar(1);floorMat.opacity=.94;floorMat.roughness=.78;floorMat.metalness=.08;ringMat.opacity=.75;innerRing.material.opacity=.32;scene.background.set(0x0b0d0e);renderer.setClearColor(0x0b0d0e);floorMat.color.set(0x10161d);ringMat.color.set(0x59dce0);innerRing.material.color.set(0x5665a7);renderStageControls();};}
 function renderLightControls(){controlPage.innerHTML=`<section class="panel-section"><h3>灯光总控</h3><div class="preset-row"><button data-light="natural">自然</button><button data-light="soft">柔和</button><button data-light="warm">暖色</button><button data-light="cool">冷色</button><button data-light="stage">舞台</button></div>${rowSlider('环境光',0,2,.01,settings.ambient)}${rowSlider('主光',0,4,.01,settings.key)}<label class="color-row"><span>主光颜色</span><input id="keyColor" type="color" value="${settings.keyColor}"></label>${rowSlider('主光 X',-6,6,.1,settings.keyX)}${rowSlider('主光 Y',-2,8,.1,settings.keyY)}${rowSlider('主光 Z',-6,6,.1,settings.keyZ)}${rowSlider('补光',0,3,.01,settings.fill)}<label class="color-row"><span>补光颜色</span><input id="fillColor" type="color" value="${settings.fillColor}"></label>${rowSlider('补光 X',-6,6,.1,settings.fillX)}${rowSlider('补光 Y',-2,8,.1,settings.fillY)}${rowSlider('补光 Z',-6,6,.1,settings.fillZ)}${rowSlider('轮廓光',0,3,.01,settings.rim)}<label class="color-row"><span>轮廓颜色</span><input id="rimColor" type="color" value="${settings.rimColor}"></label>${rowSlider('轮廓 X',-6,6,.1,settings.rimX)}${rowSlider('轮廓 Y',-2,8,.1,settings.rimY)}${rowSlider('轮廓 Z',-6,6,.1,settings.rimZ)}${rowSlider('舞台聚光',0,8,.01,settings.stageLight)}<label class="color-row"><span>舞台灯颜色</span><input id="spotColor" type="color" value="${settings.stageColor}"></label>${rowSlider('聚光 X',-6,6,.1,settings.spotX)}${rowSlider('聚光 Y',0,10,.1,settings.spotY)}${rowSlider('聚光 Z',-6,6,.1,settings.spotZ)}${rowSlider('目标 X',-3,3,.1,settings.spotTargetX)}${rowSlider('目标 Y',0,3,.1,settings.spotTargetY)}${rowSlider('目标 Z',-3,3,.1,settings.spotTargetZ)}${rowSlider('聚光角度',.1,1.2,.01,settings.spotAngle)}${rowSlider('边缘柔和',0,1,.01,settings.spotPenumbra)}${rowSlider('距离',1,20,.1,settings.spotDistance)}${rowSlider('曝光',.5,1.5,.01,settings.exposure)}<label class="switch-row"><span>阴影</span><input id="shadowToggle" type="checkbox" ${renderer.shadowMap.enabled?'checked':''}></label><label>像素倍率<select id="pixelRatio"><option value="auto">Auto</option><option value="1">1x</option><option value="1.5">1.5x</option><option value="2">2x</option></select></label></section>`;const keys=['ambient','key','keyX','keyY','keyZ','fill','fillX','fillY','fillZ','rim','rimX','rimY','rimZ','stageLight','spotX','spotY','spotZ','spotTargetX','spotTargetY','spotTargetZ','spotAngle','spotPenumbra','spotDistance','exposure'];const ranges=[...controlPage.querySelectorAll('input[type=range]')];ranges.forEach((el,i)=>el.oninput=()=>{settings[keys[i]]=+el.value;el.parentElement.querySelector('output').textContent=el.value;applyLighting();saveSettings();});for(const [id,k] of [['keyColor','keyColor'],['fillColor','fillColor'],['rimColor','rimColor'],['spotColor','stageColor']])$('#'+id).oninput=e=>{settings[k]=e.target.value;applyLighting();saveSettings();};$('#shadowToggle').onchange=e=>renderer.shadowMap.enabled=e.target.checked;$('#pixelRatio').onchange=e=>{renderer.setPixelRatio(e.target.value==='auto'?Math.min(devicePixelRatio||1,2):+e.target.value);resize();};controlPage.querySelectorAll('[data-light]').forEach(b=>b.onclick=()=>applyLightPreset(b.dataset.light));}
 function applyLighting(){ambient.intensity=settings.ambient;key.intensity=settings.key;fill.intensity=settings.fill;rim.intensity=settings.rim;stageSpot.intensity=settings.stageLight;key.color.set(settings.keyColor);fill.color.set(settings.fillColor);rim.color.set(settings.rimColor);stageSpot.color.set(settings.stageColor);key.position.set(settings.keyX,settings.keyY,settings.keyZ);fill.position.set(settings.fillX,settings.fillY,settings.fillZ);rim.position.set(settings.rimX,settings.rimY,settings.rimZ);stageSpot.position.set(settings.spotX,settings.spotY,settings.spotZ);stageSpot.target.position.set(settings.spotTargetX,settings.spotTargetY,settings.spotTargetZ);stageSpot.angle=settings.spotAngle;stageSpot.penumbra=settings.spotPenumbra;stageSpot.distance=settings.spotDistance;renderer.toneMappingExposure=settings.exposure;}
 function applyLightPreset(p){const m={natural:[.32,1.15,.42,.55,0,.9],soft:[.42,.85,.55,.35,0,.9],warm:[.28,1.25,.35,.5,0,.88],cool:[.25,1,.6,.75,0,.88],stage:[.18,.8,.25,.8,2.2,.82]}[p];if(!m)return;[settings.ambient,settings.key,settings.fill,settings.rim,settings.stageLight,settings.exposure]=m;if(p==='warm'){settings.keyColor='#ffddc7';settings.fillColor='#ffd9c8';}else if(p==='cool'){settings.keyColor='#dceaff';settings.fillColor='#a6d9ff';}else{settings.keyColor='#fff4eb';settings.fillColor='#bfdcff';}applyLighting();saveSettings();renderLightControls();}
@@ -515,8 +536,8 @@ applyLighting();floor.visible=ring.visible=innerRing.visible=settings.stageVisib
 function animate(){
   requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(); controls.update(); if(mixer)mixer.update(dt); lifeSim.update(dt,now); life.update(now); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
   if(speaking&&vrm?.expressionManager){ mouthLevel=.12+Math.abs(Math.sin(now*.012))*0.32+Math.abs(Math.sin(now*.027))*0.14;vrm.expressionManager.setValue('aa',mouthLevel); } else if(vrm?.expressionManager){mouthLevel*=.78;vrm.expressionManager.setValue('aa',mouthLevel);}
-  applyManualAndLife(); if(vrm){vrm.update(dt);lifeSim.applyGroundContact(dt);} renderer.render(scene,camera);
+  applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);if(settings.physicsEnabled&&bodyPhysics&&physicsReady){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});bodyPhysics.solvePostAnimation(dt,{action:currentActionName,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth});}vrm.update(dt);} renderer.render(scene,camera);
 }
 animate();
 
-window.NIVA={version:'0.93-free-life',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
+window.NIVA={version:'0.94-physics-body',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
