@@ -38,6 +38,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/main.js src/style.css index.html docs/LIFE_SYSTEM_V1.md
-          git rm .github/scripts/upgrade_life_system_v1.py .github/workflows/upgrade-life-system-v1.yml
+          git rm -f .github/scripts/upgrade_life_system_v1.py .github/workflows/upgrade-life-system-v1.yml
           git commit -m "feat(life): add fatigue recovery locomotion crouch and guide"
           git push origin HEAD:main
