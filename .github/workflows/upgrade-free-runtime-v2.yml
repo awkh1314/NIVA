@@ -15,15 +15,15 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Apply runtime patch
-        run: python .github/scripts/upgrade_free_runtime_v2.py
+      - name: Apply comprehensive control patch
+        run: python .github/scripts/upgrade_free_runtime_v2_controls.py
       - run: npm install
       - run: npm test
       - run: npm run build
-      - name: Commit upgraded runtime
+      - name: Commit upgraded controls
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/main.js src/style.css
-          git commit -m "feat(web): natural pose full controls and layered motion demos"
+          git commit -m "feat(web): comprehensive model stage light camera controls"
           git push origin HEAD:main
