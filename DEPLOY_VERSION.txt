@@ -1,3 +1,4 @@
-NIVA Free Life v1.00
-Runtime commit: 8dd7b7c25f1f45fc5ff945863ede740d68614709
-Features: state-driven fatigue/energy, dynamic heart rate and breathing, fatigue face/posture and pace variation, exhaustion recovery, real stage locomotion, crouch with foot-anchor grounding, left-top operation guide, plus existing full model/stage/light/camera controls.
+NIVA Free Life v1.01 · Biomechanics V3
+Motion runtime: 654fd91a000a16e602cbfb8c06c4d59f18c396a1
+Physics solver: pole-guided-ccd-v3
+Features: planted-foot crouch captured before pelvis lowering, independent left/right foot IK, knee/elbow pole vectors, world-space safe wave target, physical walk/run arm counter-swing, Rapier character movement and stage collision, fatigue/recovery life system, full model/stage/light/camera controls.
