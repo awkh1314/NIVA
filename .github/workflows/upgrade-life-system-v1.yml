@@ -15,6 +15,18 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
+      - name: Normalize one-shot patch
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('.github/scripts/upgrade_life_system_v1.py')
+          s=p.read_text(encoding='utf-8')
+          a=s.index('# Add crouch to control action preview.')
+          b=s.index('# Guide handlers', a)
+          s=s[:a]+'# Crouch is exposed in the persistent preview bar.\n\n'+s[b:]
+          p.write_text(s,encoding='utf-8')
+          PY
       - name: Apply life system V1
         run: python .github/scripts/upgrade_life_system_v1.py
       - run: npm install
