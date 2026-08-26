@@ -102,7 +102,9 @@ function projectShoulderComplex(pose,side){
     const upperChest=pose.upperChest;
     if(upperChest&&elevation>120){
       const thoracic=Math.min(10,(elevation-120)*0.25);
-      if(Math.abs(upperChest.z)<thoracic)upperChest.z=sign*thoracic;
+      // Overhead reach recruits a small thoracic extension component. Do not
+      // side-bend the chest based on arm side: bilateral elevation must remain symmetric.
+      upperChest.x=Math.min(upperChest.x,-thoracic);
     }
   }
   // At high elevation the remaining free axial rotation narrows. This prevents
@@ -184,6 +186,12 @@ export function projectAnatomicalPose(inputPose={}){
     projectShoulderComplex(pose,side);projectHip(pose,side);projectKnee(pose,side);projectWrist(pose,side);projectThumb(pose,side);
     for(const finger of ['Index','Middle','Ring','Little'])projectFinger(pose,side,finger);
   }
+
+  // Coupled shoulder recruitment may alter upperChest. Re-project the serial
+  // trunk totals so no secondary coupling can escape the global spine envelope.
+  limitCombined(pose,['spine','chest','upperChest'],'x',-30,60);
+  limitCombined(pose,['spine','chest','upperChest'],'y',-25,25);
+  limitCombined(pose,['spine','chest','upperChest'],'z',-30,30);
 
   return pose;
 }

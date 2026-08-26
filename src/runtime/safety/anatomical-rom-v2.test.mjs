@@ -35,7 +35,15 @@ test('high arm elevation recruits shoulder complex and narrows free axial rotati
   const out=projectAnatomicalPose(pose({leftShoulder:{},leftUpperArm:{z:-130,y:90},upperChest:{}}));
   assert.ok(Math.abs(out.leftShoulder.z)>20);
   assert.ok(Math.abs(out.leftUpperArm.y)<70);
-  assert.ok(Math.abs(out.upperChest.z)>0);
+  assert.ok(out.upperChest.x<0);
+});
+
+test('bilateral overhead reach recruits both shoulders without lateral chest bias',()=>{
+  const out=projectAnatomicalPose(pose({leftShoulder:{},rightShoulder:{},leftUpperArm:{z:-130},rightUpperArm:{z:130},upperChest:{}}));
+  assert.ok(out.leftShoulder.z<0);
+  assert.ok(out.rightShoulder.z>0);
+  assert.ok(Math.abs(out.upperChest.z)<1e-6);
+  assert.ok(out.upperChest.x<0);
 });
 
 test('deep hip flexion reduces remaining rotation and abduction room',()=>{
