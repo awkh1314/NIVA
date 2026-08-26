@@ -19,11 +19,12 @@ test('per-frame limiter caps angular speed as well as final angle',()=>{
   assert.ok(out.y>=-2.01&&out.y<0);
 });
 
-test('runtime envelopes prohibit pathological limb twists',()=>{
-  assert.ok(NIVA_RUNTIME_JOINT_LIMITS.leftUpperArm.z.max<=125);
-  assert.ok(NIVA_RUNTIME_JOINT_LIMITS.rightUpperArm.z.min>=-125);
-  assert.ok(NIVA_RUNTIME_JOINT_LIMITS.leftLowerLeg.x.max<=125);
-  assert.ok(NIVA_RUNTIME_JOINT_LIMITS.rightFoot.z.max<=28);
+test('runtime envelopes prohibit pathological limb twists while preserving human ROM',()=>{
+  assert.ok(NIVA_RUNTIME_JOINT_LIMITS.leftUpperArm.z.max<=130);
+  assert.ok(NIVA_RUNTIME_JOINT_LIMITS.rightUpperArm.y.max<=90);
+  assert.ok(NIVA_RUNTIME_JOINT_LIMITS.leftLowerLeg.x.max<=135);
+  assert.ok(NIVA_RUNTIME_JOINT_LIMITS.rightFoot.z.max<=25);
+  assert.equal(NIVA_RUNTIME_JOINT_LIMITS.leftToes.x.max,75);
 });
 
 test('final guard clamps a post-IK quaternion relative to calibrated base pose',()=>{
@@ -36,8 +37,22 @@ test('final guard clamps a post-IK quaternion relative to calibrated base pose',
   assert.deepEqual(corrected,['leftUpperArm']);
   const rel=base.clone().invert().multiply(bone.quaternion);
   const e=new THREE.Euler().setFromQuaternion(rel,'XYZ');
-  assert.ok(Math.abs(deg(e.z))<=125.01);
+  assert.ok(Math.abs(deg(e.z))<=130.01);
   assert.equal(guard.state().active,true);
+  assert.equal(guard.state().anatomy.solver,'anatomical-rom-v2');
+});
+
+test('guard projects neck and head as one anatomical chain',()=>{
+  const base=new THREE.Quaternion();
+  const neck=new THREE.Object3D(),head=new THREE.Object3D();
+  neck.quaternion.setFromEuler(new THREE.Euler(0,rad(45),0,'XYZ'));
+  head.quaternion.setFromEuler(new THREE.Euler(0,rad(45),0,'XYZ'));
+  const map={neck,head};
+  const guard=new JointRotationGuard({getBone:(name)=>map[name],baseQuats:new Map([['neck',base.clone()],['head',base.clone()]])});
+  guard.apply(1/60);
+  const ny=deg(new THREE.Euler().setFromQuaternion(neck.quaternion,'XYZ').y);
+  const hy=deg(new THREE.Euler().setFromQuaternion(head.quaternion,'XYZ').y);
+  assert.ok(ny+hy<=75.1);
 });
 
 test('guard leaves ordinary small body motion untouched',()=>{
