@@ -88,6 +88,10 @@ function dotXZ(a, b) {
   return (a?.x || 0) * (b?.x || 0) + (a?.z || 0) * (b?.z || 0);
 }
 
+function pose(x = 0, y = 0, z = 0) {
+  return { x, y, z };
+}
+
 export class GaitBalanceController {
   constructor({ modelHeight = 1.6 } = {}) {
     this.modelHeight = Math.max(0.5, modelHeight);
@@ -96,6 +100,8 @@ export class GaitBalanceController {
     this.roll = new CriticallyDampedScalar(0, 12);
     this.pitch = new CriticallyDampedScalar(0, 10);
     this.vertical = new CriticallyDampedScalar(0, 14);
+    this.supportBias = new CriticallyDampedScalar(0, 13);
+    this.stabilityDemand = new CriticallyDampedScalar(0, 9);
     this.last = null;
   }
 
@@ -146,15 +152,62 @@ export class GaitBalanceController {
       ? clamp((targetForward / h) * 80 + (locomotion ? (running ? 5.2 : 1.8) : 0), -2.5, 8)
       : 0;
 
+    const rawDemand = grounded
+      ? clamp(Math.hypot(errorRight, errorForward) / Math.max(h * (running ? 0.050 : 0.042), 1e-6) + (locomotion ? 0.08 : 0), 0, 1)
+      : 0;
+    const demand = this.stabilityDemand.step(rawDemand, dt);
+    const supportBias = this.supportBias.step(supportSide, dt);
+    const roll = this.roll.step(targetRoll, dt);
+    const pitch = this.pitch.step(targetPitch, dt);
+    const leftLoad = clamp(0.5 - supportBias * 0.5, 0, 1);
+    const rightLoad = clamp(0.5 + supportBias * 0.5, 0, 1);
+
+    const kneeBase = locomotion ? (running ? 2.8 : 1.15) : 0;
+    const kneeAbsorb = demand * (running ? 3.0 : 1.9);
+    const leftKnee = clamp((kneeBase + kneeAbsorb) * (0.72 + leftLoad * 0.38), 0, 6.5);
+    const rightKnee = clamp((kneeBase + kneeAbsorb) * (0.72 + rightLoad * 0.38), 0, 6.5);
+    const anklePitch = clamp(-pitch * 0.11 - demand * 0.35, -1.8, 1.2);
+    const ankleRoll = clamp(roll * 0.12, -0.9, 0.9);
+    const armCounter = clamp(-roll * 0.36 - supportBias * (locomotion ? 0.52 : 0), -2.2, 2.2);
+    const hipSide = clamp(-roll * 0.12 - supportBias * demand * 0.45, -1.15, 1.15);
+
+    const fullBody = {
+      hips: pose(pitch * 0.18, 0, -roll * 0.48),
+      spine: pose(pitch * 0.31, 0, -roll * 0.28),
+      chest: pose(pitch * 0.25, 0, -roll * 0.16),
+      upperChest: pose(pitch * 0.13, 0, -roll * 0.07),
+      neck: pose(-pitch * 0.10, 0, roll * 0.10),
+      head: pose(-pitch * 0.08, 0, roll * 0.08),
+      leftShoulder: pose(0, 0, -armCounter * 0.22),
+      rightShoulder: pose(0, 0, armCounter * 0.22),
+      leftUpperArm: pose(0, 0, -armCounter * 0.62),
+      rightUpperArm: pose(0, 0, armCounter * 0.62),
+      leftLowerArm: pose(0, -armCounter * 0.14, 0),
+      rightLowerArm: pose(0, armCounter * 0.14, 0),
+      leftUpperLeg: pose(-pitch * 0.045, 0, hipSide),
+      rightUpperLeg: pose(-pitch * 0.045, 0, hipSide),
+      leftLowerLeg: pose(leftKnee, 0, 0),
+      rightLowerLeg: pose(rightKnee, 0, 0),
+      leftFoot: pose(anklePitch, 0, ankleRoll),
+      rightFoot: pose(anklePitch, 0, ankleRoll),
+    };
+
     this.last = {
       support: support?.support || 'none',
       com: centerOfMass ? { ...centerOfMass } : null,
       supportCenter: support ? { x: support.x, y: support.y, z: support.z } : null,
+      comErrorRight: errorRight,
+      comErrorForward: errorForward,
+      stabilityDemand: demand,
+      supportBias,
+      leftLoad,
+      rightLoad,
       rootShiftRight: this.shiftRight.step(targetRight, dt),
       rootShiftForward: this.shiftForward.step(targetForward, dt),
-      torsoRollDeg: this.roll.step(targetRoll, dt),
-      torsoPitchDeg: this.pitch.step(targetPitch, dt),
+      torsoRollDeg: roll,
+      torsoPitchDeg: pitch,
       verticalOffset: this.vertical.step(targetVertical, dt),
+      fullBody,
       phase: gait,
       grounded: Boolean(grounded),
     };
