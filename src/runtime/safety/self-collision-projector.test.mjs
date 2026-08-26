@@ -39,7 +39,7 @@ test('swept sample count grows with angular travel and is bounded',()=>{
   b.get('leftUpperArm').setFromAxisAngle(new THREE.Vector3(0,0,1),THREE.MathUtils.degToRad(100));
   const small=p.dynamicSampleCount(a,a);
   const large=p.dynamicSampleCount(a,b);
-  assert.ok(small>=4);
+  assert.equal(small,1);
   assert.ok(large>small);
   assert.ok(large<=24);
 });

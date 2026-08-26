@@ -105,7 +105,8 @@ export class SelfCollisionProjector {
       maxAngle=Math.max(maxAngle,quatAngleDeg(qa,qb));
     }
     // About one probe per 5 degrees, bounded for predictable realtime cost.
-    return clamp(Math.ceil(maxAngle/5),4,24);
+    if(maxAngle<.25)return 1;
+    return clamp(Math.ceil(maxAngle/5),2,24);
   }
 
   project(){

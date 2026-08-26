@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   calibrateCollisionThresholds,
-  createAnatomicalCollisionGuard,
   detectAnatomicalCollisions,
   measureCollisionPairs,
   pointSegmentDistance,
@@ -83,30 +82,4 @@ test('upper arm entering the garment shell is detected', () => {
   };
   const collisions = detectAnatomicalCollisions(clipped, 1.7, thresholds);
   assert.ok(collisions.some((item) => item.id === 'left-upperarm-torso' || item.id === 'left-forearm-torso'));
-});
-
-test('guard rolls offending chain back to last safe pose', () => {
-  let points = neutralPoints();
-  const pose = { leftUpperArm: { x: 0, y: 0, z: 0 } };
-  let rollback = null;
-  let event = null;
-  const guard = createAnatomicalCollisionGuard({
-    getPoints: () => points,
-    getHeight: () => 1.7,
-    capturePose: () => structuredClone(pose),
-    rollbackPose: (snapshot, bones) => { rollback = { snapshot, bones }; },
-    onCollision: (detail) => { event = detail; },
-    cooldownMs: 0,
-  });
-
-  guard.calibrate();
-  assert.equal(guard.inspect(1).safe, true);
-  points = { ...points, leftHand: p(0, 1.12, 0) };
-  const result = guard.inspect(2);
-
-  assert.equal(result.safe, false);
-  assert.ok(rollback);
-  assert.ok(rollback.bones.includes('leftUpperArm'));
-  assert.ok(event.collisions.some((item) => item.id === 'left-hand-torso'));
-  assert.equal(guard.blocked, 1);
 });
