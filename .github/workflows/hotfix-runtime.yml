@@ -1,4 +1,4 @@
-name: Hotfix NIVA Runtime
+name: Hotfix NIVA Structured Squat V4
 on:
   push:
     branches: [main]
@@ -7,45 +7,168 @@ on:
 permissions:
   contents: write
 jobs:
-  hotfix:
+  patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
-      - name: Patch startup order
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Patch structured squat biomechanics
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('src/main.js')
-          s = p.read_text(encoding='utf-8')
-          decl = "const TABS=['基础','人物','表情','生命','动作','舞台','灯光','相机','声音']; let activeTab='基础';\n"
-          marker = "let voices=[];\nfunction refreshVoices()"
-          if marker not in s:
-              raise SystemExit('voices startup marker missing')
-          s = s.replace(marker, decl + marker, 1)
-          late = decl + "for(const t of TABS)"
-          if late not in s:
-              raise SystemExit('late tab declaration missing')
-          s = s.replace(late, "for(const t of TABS)", 1)
-          p.write_text(s, encoding='utf-8')
+          import re
+          p=Path('src/runtime/physics/niva-body-physics.mjs')
+          s=p.read_text(encoding='utf-8')
+          s=s.replace("    this.targetPostureOffset = 0;\n","    this.targetPostureOffset = 0;\n    this.crouchBlend = 0;\n",1)
+          s=s.replace("    let forward = right.clone().cross(up).normalize();\n","    let forward = up.clone().cross(right).normalize();\n",1)
+          old='''  setPosture(action, dt, crouchDepth = 0.19) {
+    const target = action === 'crouch'
+      ? -this.modelHeight * clamp(crouchDepth, 0.10, 0.25)
+      : action === 'recovery'
+        ? -this.modelHeight * 0.10
+        : 0;
+    this.targetPostureOffset = target;
+    this.postureOffset = damp(this.postureOffset, this.targetPostureOffset, action === 'crouch' ? 6.2 : 5.5, dt);
+    this.vrm.scene.position.y = this.groundY + this.postureOffset;
+  }
+'''
+          new='''  setPosture(action, dt, crouchDepth = 0.19) {
+    const crouching = action === 'crouch';
+    this.crouchBlend = damp(this.crouchBlend, crouching ? 1 : 0, crouching ? 2.35 : 4.8, dt);
+    const t = clamp(this.crouchBlend, 0, 1);
+    const eased = t * t * (3 - 2 * t);
+    if (crouching) {
+      const depth = this.modelHeight * clamp(crouchDepth, 0.12, 0.24) * eased;
+      this.targetPostureOffset = -depth;
+      this.postureOffset = this.targetPostureOffset;
+    } else {
+      this.targetPostureOffset = action === 'recovery' ? -this.modelHeight * 0.10 : 0;
+      this.postureOffset = damp(this.postureOffset, this.targetPostureOffset, 5.5, dt);
+    }
+    this.vrm.scene.position.y = this.groundY + this.postureOffset;
+    return eased;
+  }
+'''
+          if old not in s: raise SystemExit('setPosture block not found')
+          s=s.replace(old,new,1)
+          s=s.replace("    this.setPosture(action, dt, crouchDepth);\n    this.vrm.scene.updateMatrixWorld(true);\n","    const crouchAmount = this.setPosture(action, dt, crouchDepth);\n    if (action === 'crouch') this.applyCrouchBalance(crouchAmount);\n    this.vrm.scene.updateMatrixWorld(true);\n",1)
+          s=s.replace("        if (stance && this.footAnchor[side]) this.solveLeg(side, this.footAnchor[side], this.ikStrength, action);\n      }\n    }\n\n    // Upper-body action IK is independent from the foot-IK toggle.\n","        if (stance && this.footAnchor[side]) this.solveLeg(side, this.footAnchor[side], this.ikStrength, action);\n      }\n      if (action === 'crouch') this.stabilizeCrouchFeet(crouchAmount);\n    }\n\n    // Upper-body action IK is independent from the foot-IK toggle.\n",1)
+          s=s.replace("    if (action === 'crouch') this.solveCrouchHandsToHead(0.96);\n","    if (action === 'crouch') this.solveCrouchHandsToHead(0.96 * crouchAmount);\n",1)
+          old_leg='''    const { right, forward } = this.bodyBasis();
+    const sign = side === 'left' ? -1 : 1;
+    const hip = upper.getWorldPosition(new THREE.Vector3());
+    const kneePole = hip.clone()
+      .addScaledVector(forward, this.modelHeight * (action === 'crouch' ? 0.34 : 0.27))
+      .addScaledVector(right, sign * this.modelHeight * 0.055)
+      .add(new THREE.Vector3(0, -this.modelHeight * 0.10, 0));
+    this.solveChain(upper, lower, foot, target, kneePole, weight, action === 'crouch' ? 6 : 4);
+'''
+          new_leg='''    const { right, forward } = this.bodyBasis();
+    const sign = side === 'left' ? -1 : 1;
+    const hip = upper.getWorldPosition(new THREE.Vector3());
+    const kneeForward = action === 'crouch' ? 0.145 : 0.27;
+    const kneePole = hip.clone()
+      .addScaledVector(forward, this.modelHeight * kneeForward)
+      .addScaledVector(right, sign * this.modelHeight * 0.040)
+      .add(new THREE.Vector3(0, -this.modelHeight * (action === 'crouch' ? 0.055 : 0.10), 0));
+    this.solveChain(upper, lower, foot, target, kneePole, weight, action === 'crouch' ? 7 : 4);
+'''
+          if old_leg not in s: raise SystemExit('solveLeg marker not found')
+          s=s.replace(old_leg,new_leg,1)
+          marker="  solveCrouchHandsToHead(weight = 0.96) {\n"
+          methods='''  rotateWorldAround(bone, axis, radians, weight = 1) {
+    if (!bone || !bone.parent || Math.abs(radians) < 1e-5 || weight <= 0) return;
+    this.vrm.scene.updateMatrixWorld(true);
+    const current = bone.getWorldQuaternion(new THREE.Quaternion());
+    const delta = new THREE.Quaternion().setFromAxisAngle(axis.clone().normalize(), radians);
+    this.setBoneWorldQuaternion(bone, delta.multiply(current), clamp(weight, 0, 1));
+  }
 
-          p = Path('index.html')
-          h = p.read_text(encoding='utf-8')
-          old = "if (text && elapsed > 30000) text.textContent = '3D 模型载入超时。请强制刷新页面（Ctrl+F5）后重试。';"
-          new = "if (text && elapsed > 30000) text.textContent = window.__NIVA_BOOT_ERROR__ ? `启动错误：${window.__NIVA_BOOT_ERROR__}` : 'NIVA 仍在初始化模型，请继续等待；首次加载约 15 MB。';"
-          if old in h:
-              h = h.replace(old, new, 1)
-          needle = "  <script>\n    (() => {"
-          hook = "  <script>\n    window.addEventListener('error', (event) => { window.__NIVA_BOOT_ERROR__ = event.message || '未知脚本错误'; });\n    window.addEventListener('unhandledrejection', (event) => { window.__NIVA_BOOT_ERROR__ = String(event.reason?.message || event.reason || 'Promise rejection'); });\n    (() => {"
-          if needle in h:
-              h = h.replace(needle, hook, 1)
-          p.write_text(h, encoding='utf-8')
+  applyCrouchBalance(amount) {
+    const a = clamp(amount, 0, 1);
+    if (a <= 0.001) return;
+    const { right } = this.bodyBasis();
+    this.rotateWorldAround(this.getBone('spine'), right, THREE.MathUtils.degToRad(8.0 * a), 0.90);
+    this.rotateWorldAround(this.getBone('chest'), right, THREE.MathUtils.degToRad(5.0 * a), 0.82);
+    this.rotateWorldAround(this.getBone('upperChest'), right, THREE.MathUtils.degToRad(2.5 * a), 0.72);
+  }
+
+  flattenFoot(side, amount = 1) {
+    const foot = this.getBone(`${side}Foot`);
+    const toes = this.getBone(`${side}Toes`);
+    if (!foot || !toes) return;
+    this.vrm.scene.updateMatrixWorld(true);
+    const footPos = foot.getWorldPosition(new THREE.Vector3());
+    const toePos = toes.getWorldPosition(new THREE.Vector3());
+    const raw = toePos.clone().sub(footPos);
+    const len = raw.length();
+    if (len < 1e-5) return;
+    const up = this.lastGroundNormal.clone().normalize();
+    const planar = raw.clone().addScaledVector(up, -raw.dot(up));
+    if (planar.lengthSq() < 1e-8) planar.copy(this.bodyBasis().forward);
+    planar.normalize();
+    const targetToe = footPos.clone().addScaledVector(planar, len);
+    const anchor = this.footAnchor[side];
+    if (anchor) targetToe.y = anchor.y;
+    this.rotateBoneTowardEnd(foot, toes, targetToe, 0.78 * clamp(amount, 0, 1), 0.10);
+  }
+
+  correctRootToPlantedFeet(amount = 1) {
+    const errors = [];
+    this.vrm.scene.updateMatrixWorld(true);
+    for (const side of ['left', 'right']) {
+      const foot = this.getBone(`${side}Foot`);
+      const anchor = this.footAnchor[side];
+      if (!foot || !anchor) continue;
+      errors.push(foot.getWorldPosition(new THREE.Vector3()).y - anchor.y);
+    }
+    if (!errors.length) return;
+    const avg = errors.reduce((x, y) => x + y, 0) / errors.length;
+    const correction = clamp(avg, -this.modelHeight * 0.028, this.modelHeight * 0.028) * 0.88 * clamp(amount, 0, 1);
+    this.vrm.scene.position.y -= correction;
+    this.vrm.scene.updateMatrixWorld(true);
+  }
+
+  stabilizeCrouchFeet(amount = 1) {
+    const a = clamp(amount, 0, 1);
+    if (a <= 0.001) return;
+    this.flattenFoot('left', a);
+    this.flattenFoot('right', a);
+    this.correctRootToPlantedFeet(a);
+    for (const side of ['left', 'right']) {
+      if (this.footAnchor[side]) this.solveLeg(side, this.footAnchor[side], this.ikStrength * 0.72, 'crouch');
+      this.flattenFoot(side, a);
+    }
+  }
+
+'''
+          if marker not in s: raise SystemExit('crouch hands marker not found')
+          s=s.replace(marker,methods+marker,1)
+          s=s.replace("solver: 'pole-guided-ccd-v3.1-hands-on-head',","solver: 'structured-squat-v4-flat-feet',",1)
+          p.write_text(s,encoding='utf-8')
+
+          p=Path('src/main.js'); m=p.read_text(encoding='utf-8')
+          pattern=r"(?m)^\s*clips\.set\('crouch'.*$"
+          repl="  clips.set('crouch',makeClip('crouch',2,{leftUpperLeg:[[0,2,0,0],[2,2,0,0]],rightUpperLeg:[[0,2,0,0],[2,2,0,0]],leftLowerLeg:[[0,6,0,0],[2,6,0,0]],rightLowerLeg:[[0,6,0,0],[2,6,0,0]],leftFoot:[[0,0,0,0],[2,0,0,0]],rightFoot:[[0,0,0,0],[2,0,0,0]],spine:[[0,0,0,0],[2,0,0,0]],chest:[[0,0,0,0],[2,0,0,0]],head:[[0,0,0,0],[2,0,0,0]]}));"
+          m,n=re.subn(pattern,repl,m,count=1)
+          if n!=1: raise SystemExit('main crouch clip line not found')
+          m=m.replace("crouchDepth:0.19,","crouchDepth:0.20,",1)
+          m=m.replace("version:'0.95-biomechanics-v3'","version:'0.96-structured-squat-v4'",1)
+          p.write_text(m,encoding='utf-8')
+          Path('DEPLOY_VERSION.txt').write_text('NIVA Biomechanics V4\nStructured squat: corrected anatomical front/back; synchronized pelvis drop + forward torso balance + knee bend; feet/toes stay flat; root Y compensates from real foot-anchor error; hands remain on head.\n',encoding='utf-8')
           PY
+      - run: npm install
+      - run: npm test
+      - run: npm run build
       - name: Commit fix
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/main.js index.html
-          git commit -m "fix(web): initialize tabs before system speech"
+          rm -f .github/workflows/hotfix-runtime.yml .github/workflows/fix-crouch-structured-v4.yml
+          git add src/runtime/physics/niva-body-physics.mjs src/main.js DEPLOY_VERSION.txt .github/workflows/hotfix-runtime.yml .github/workflows/fix-crouch-structured-v4.yml
+          git commit -m "fix(biomechanics): structured balanced flat-foot squat"
           git push origin HEAD:main
