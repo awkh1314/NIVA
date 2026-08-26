@@ -7,7 +7,7 @@ const smooth=(t)=>{const x=clamp(t,0,1);return x*x*(3-2*x);};
 export class PhysicalEmbodimentController{
   constructor({world,getVrm,getBodyPhysics,getActionState,playClip,stopAction,faceDirection,walkSpeed=.48}={}){
     this.world=world;this.getVrm=getVrm;this.getBodyPhysics=getBodyPhysics;this.getActionState=getActionState;this.playClip=playClip;this.stopAction=stopAction;this.faceDirection=faceDirection;this.walkSpeed=walkSpeed;
-    this.gait=new ContactGaitController();this.gaitPlan=null;this.task='idle';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;this._startPos=new THREE.Vector3();this._startQuat=new THREE.Quaternion();
+    this.gait=new ContactGaitController();this.gaitPlan=null;this.task='idle';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;this._startPos=new THREE.Vector3();this._startQuat=new THREE.Quaternion();this._startYaw=0;
   }
   currentPhase(){const s=this.getActionState?.()||{};const d=Math.max(.01,s.duration||1);return (((s.time||0)%d)/d+1)%1;}
   drive(dt,direction,speed=this.walkSpeed,action='walk'){
@@ -33,11 +33,11 @@ export class PhysicalEmbodimentController{
     if(dist<.16){this.stopAction?.();this.idleGait(dt);this.transition(next);return;}
     const dir=to.normalize();this.drive(dt,dir,this.walkSpeed,'walk');this.faceDirection?.(dir,dt,6.5);
   }
-  captureRoot(){const vrm=this.getVrm?.();if(!vrm)return;this._startPos.copy(vrm.scene.position);this._startQuat.copy(vrm.scene.quaternion);}
+  captureRoot(){const vrm=this.getVrm?.();if(!vrm)return;this._startPos.copy(vrm.scene.position);this._startQuat.copy(vrm.scene.quaternion);this._startYaw=vrm.scene.rotation.y||0;}
   setBedRoot(t,lying=false){
     const vrm=this.getVrm?.();if(!vrm)return;const k=smooth(t);const anchor=this.world?.anchor(lying?'bedLie':'bedSit');if(!anchor)return;
     vrm.scene.position.lerpVectors(this._startPos,anchor,k);
-    const q=lying?new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI/2,0,vrm.scene.rotation.y,'XYZ')):new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,0,'XYZ'));
+    const q=new THREE.Quaternion().setFromEuler(new THREE.Euler(lying?-Math.PI/2:0,this._startYaw,0,'XYZ'));
     vrm.scene.quaternion.slerpQuaternions(this._startQuat,q,k);vrm.scene.updateMatrixWorld(true);
   }
   update(dt){
