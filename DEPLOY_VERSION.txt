@@ -1,0 +1,3 @@
+NIVA Free Life v0.92
+Runtime commit: 8cf53cc4d748670e5ecedeb8c9ab6058a0344b93
+Features: natural relaxed pose, corrected gaze, continuous motion previews, speech performances, comprehensive model/stage/light/camera/expression controls.
