@@ -75,7 +75,9 @@ export class BedroomWorld{
     this.addBox('chairBack',new THREE.Vector3(.65,.85,.10),new THREE.Vector3(-1.55,.92,-1.19),0x705e50,true);
     this.anchors.bedApproach=new THREE.Vector3(.55,0,-.45);
     this.anchors.bedSit=new THREE.Vector3(.88,.56,-.45);
-    this.anchors.bedLie=new THREE.Vector3(1.55,.72,-.72);
+    // The VRM root is near the feet. Put the lying root at the foot of the bed;
+    // pitching the root -90deg then extends the body along -Z across the mattress.
+    this.anchors.bedLie=new THREE.Vector3(1.55,.68,.18);
     this.anchors.blanketGrab=new THREE.Vector3(.92,.72,-1.42);
     this.anchors.roomCenter=new THREE.Vector3(0,0,.55);
     this.blanket=new BlanketCloth({scene:this.group,center:new THREE.Vector3(1.55,.68,-.68)});
