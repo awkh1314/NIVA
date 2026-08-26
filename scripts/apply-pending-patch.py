@@ -24,8 +24,6 @@ def replace_once(text, old, new, label):
     return text.replace(old, new, 1)
 
 
-# 1) Public Motion Bridge: preserve string play(name) while restoring the
-#    documented NIVA.play({ text, emotion, motion }) contract.
 bridge = r'''function cleanString(value) {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -40,13 +38,8 @@ function motionFrom(value) {
 }
 
 export function normalizePublicCue(input) {
-  if (typeof input === 'string') {
-    return { text: '', emotion: '', motion: cleanString(input) };
-  }
-  if (!input || typeof input !== 'object') {
-    return { text: '', emotion: '', motion: '' };
-  }
-
+  if (typeof input === 'string') return { text: '', emotion: '', motion: cleanString(input) };
+  if (!input || typeof input !== 'object') return { text: '', emotion: '', motion: '' };
   return {
     text: cleanString(input.text),
     emotion: cleanString(input.emotion),
@@ -63,17 +56,14 @@ export function createPublicMotionBridge({
   return function play(input = {}) {
     const cue = normalizePublicCue(input);
     let motionStarted = false;
-
     if (cue.motion === 'idle') {
       stopMotion();
       motionStarted = true;
     } else if (cue.motion) {
       motionStarted = runMotion(cue.motion, true) !== false;
     }
-
     if (cue.emotion) setEmotion(cue.emotion);
     if (cue.text) speakText(cue.text, Boolean(cue.motion));
-
     return { ...cue, motionStarted };
   };
 }
@@ -100,7 +90,6 @@ test('public play starts motion before emotion and voice', () => {
     setEmotion: (name) => events.push(['emotion', name]),
     speakText: (text, allowAction) => events.push(['speak', text, allowAction]),
   });
-
   const result = play({ text: '你好', emotion: 'happy', motion: 'wave' });
   assert.deepEqual(events, [
     ['motion', 'wave', true],
@@ -115,7 +104,6 @@ test('idle stops current action and object contract is wired into main runtime',
   const play = createPublicMotionBridge({ stopMotion: () => { stopped += 1; } });
   assert.equal(play({ motion: 'idle' }).motionStarted, true);
   assert.equal(stopped, 1);
-
   const source = await fs.readFile(new URL('../../main.js', import.meta.url), 'utf8');
   assert.match(source, /createPublicMotionBridge/);
   assert.match(source, /play:publicPlay/);
@@ -174,14 +162,14 @@ main = replace_once(
 )
 main = replace_once(
     main,
-    "playClip('walk',{loop:true})",
-    "playClip('walk',{loop:true,allowWhileSpeaking})",
+    "if(action==='walk'){ if(playClip('walk',{loop:true})){setTimeout(stopAction,3100);} return; }",
+    "if(action==='walk'){ if(playClip('walk',{loop:true,allowWhileSpeaking})){setTimeout(stopAction,3100);} return; }",
     "performAction walk",
 )
 main = replace_once(
     main,
-    "playClip('run',{loop:true})",
-    "playClip('run',{loop:true,allowWhileSpeaking})",
+    "if(action==='run'){ if(playClip('run',{loop:true})){setTimeout(stopAction,2500);} return; }",
+    "if(action==='run'){ if(playClip('run',{loop:true,allowWhileSpeaking})){setTimeout(stopAction,2500);} return; }",
     "performAction run",
 )
 
@@ -203,7 +191,6 @@ window.NIVA={version:'0.99.0',speak,act:(name)=>performAction(name),play:publicP
 main = replace_once(main, old_api, new_api, "public API")
 write("src/main.js", main)
 
-# 2) Include the bridge regression suite in npm test.
 package_path = ROOT / "package.json"
 package = json.loads(package_path.read_text(encoding="utf-8"))
 package["version"] = "0.99.0"
@@ -213,8 +200,6 @@ if bridge_test_path not in test_cmd:
     package["scripts"]["test"] = test_cmd + " " + bridge_test_path
 package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-# 3) Pin the offline Kokoro desktop payload to a stable upstream revision and
-#    verify both the model and the canonical zf_001 voice.
 desktop = read(".github/workflows/desktop.yml")
 desktop = desktop.replace(
     '$Base = "https://huggingface.co/onnx-community/Kokoro-82M-v1.1-zh-ONNX/resolve/main"',
@@ -233,7 +218,6 @@ desktop = desktop.replace(
 )
 write(".github/workflows/desktop.yml", desktop)
 
-# 4) Keep desktop/application version metadata and README aligned.
 tauri_path = ROOT / "src-tauri/tauri.conf.json"
 tauri = json.loads(tauri_path.read_text(encoding="utf-8"))
 tauri["version"] = "0.99.0"
@@ -255,7 +239,5 @@ if addition not in readme:
     readme = readme.replace(needle, needle + addition, 1)
 write("README.md", readme)
 
-# Remove this one-shot patch from the resulting commit so subsequent deploys
-# are normal source builds rather than mutation builds.
 Path(__file__).unlink()
 print("NIVA v0.99 completion patch applied")
