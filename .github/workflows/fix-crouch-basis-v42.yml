@@ -1,0 +1,123 @@
+name: Fix NIVA crouch basis V4.2
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fix-crouch-basis-v42.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Patch crouch frame stability
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('src/runtime/physics/niva-body-physics.mjs')
+          s = p.read_text(encoding='utf-8')
+
+          old = '''  bodyBasis() {
+    this.vrm.scene.updateMatrixWorld(true);
+    const l = this.getBone('leftUpperArm');
+    const r = this.getBone('rightUpperArm');
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.vrm.scene.getWorldQuaternion(new THREE.Quaternion())).normalize();
+    let right;
+    if (l && r) {
+      right = r.getWorldPosition(new THREE.Vector3()).sub(l.getWorldPosition(new THREE.Vector3())).normalize();
+    } else {
+      right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.vrm.scene.getWorldQuaternion(new THREE.Quaternion())).normalize();
+    }
+    let forward = up.clone().cross(right).normalize();
+    if (forward.lengthSq() < 1e-6) forward.set(0, 0, 1).applyQuaternion(this.vrm.scene.quaternion).normalize();
+    return { right, up, forward };
+  }
+'''
+          new = '''  bodyBasis() {
+    // Never derive the character frame from animated limbs. During hands-on-head crouch,
+    // upper-arm positions move every frame and previously fed back into right/forward,
+    // making the IK targets rotate around the body indefinitely.
+    this.vrm.scene.updateMatrixWorld(true);
+    const q = this.vrm.scene.getWorldQuaternion(new THREE.Quaternion());
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q).normalize();
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q).normalize();
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(q).normalize();
+    return { right, up, forward };
+  }
+'''
+          if old not in s:
+              raise SystemExit('bodyBasis marker not found')
+          s = s.replace(old, new, 1)
+
+          s = s.replace(
+              "    this.crouchReference = null;\n",
+              "    this.crouchReference = null;\n    this.crouchRootYaw = null;\n",
+              1,
+          )
+
+          old_changed = """      if (action === 'crouch' || action === 'recovery') { this.captureBothFeet(); if (action === 'crouch') this.captureCrouchReference(); }
+      else this.clearFeet();
+      this.lastAction = action;
+"""
+          new_changed = """      if (action === 'crouch' || action === 'recovery') {
+        this.captureBothFeet();
+        if (action === 'crouch') {
+          this.crouchRootYaw = this.vrm.scene.rotation.y;
+          this.captureCrouchReference();
+        }
+      } else {
+        this.clearFeet();
+        this.crouchRootYaw = null;
+      }
+      this.lastAction = action;
+"""
+          if old_changed not in s:
+              raise SystemExit('action-change marker not found')
+          s = s.replace(old_changed, new_changed, 1)
+
+          old_post = """    if (action === 'walk' || action === 'run') this.solveLocomotionArms(action, phase);
+    if (action === 'wave') this.solveWavePose(phase);
+    if (action === 'crouch') this.solveCrouchHandsToHead(0.96 * crouchAmount);
+    if (action === 'recovery') this.solveHandsToKnees(0.86);
+  }
+"""
+          new_post = """    if (action === 'walk' || action === 'run') this.solveLocomotionArms(action, phase);
+    if (action === 'wave') this.solveWavePose(phase);
+    if (action === 'crouch') {
+      this.solveCrouchHandsToHead(0.96 * crouchAmount);
+      // A stationary squat must not acquire yaw from IK feedback or other ambient systems.
+      if (Number.isFinite(this.crouchRootYaw)) this.vrm.scene.rotation.y = this.crouchRootYaw;
+    }
+    if (action === 'recovery') this.solveHandsToKnees(0.86);
+  }
+"""
+          if old_post not in s:
+              raise SystemExit('post-animation marker not found')
+          s = s.replace(old_post, new_post, 1)
+
+          p.write_text(s, encoding='utf-8')
+
+          Path('DEPLOY_VERSION.txt').write_text(
+              'NIVA Biomechanics V4.2\n'
+              'Crouch rotation hotfix: body basis now comes only from the VRM root transform, never animated arms; crouch captures and holds its entry yaw so hands-on-head IK cannot create a self-rotating feedback loop.\n',
+              encoding='utf-8',
+          )
+          PY
+      - run: npm install
+      - run: npm test
+      - run: npm run build
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/fix-crouch-basis-v42.yml
+          git add src/runtime/physics/niva-body-physics.mjs DEPLOY_VERSION.txt
+          git commit -m "fix(biomechanics): stop crouch IK rotation feedback"
+          git push origin HEAD:main
