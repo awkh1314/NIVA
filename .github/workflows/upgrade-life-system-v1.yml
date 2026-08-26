@@ -25,6 +25,7 @@ jobs:
           a=s.index('# Add crouch to control action preview.')
           b=s.index('# Guide handlers', a)
           s=s[:a]+'# Crouch is exposed in the persistent preview bar.\n\n'+s[b:]
+          s=s.replace("'''state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state})'''","'''state:()=>({modelReady,speaking,currentAction:currentActionName,persistentPreview,director:director.state})'''")
           p.write_text(s,encoding='utf-8')
           PY
       - name: Apply life system V1
