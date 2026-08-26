@@ -487,7 +487,9 @@ function applyManualAndLife(){
     const delta=new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(lx),rad(ly),rad(lz),'XYZ'));
     const actionOwns=currentAction&&['walk','run','wave','think','thinkLoop','reach','weight','nod','crouch','recovery'].includes(currentActionName)&&!manualOffsets.has(name);
     if(actionOwns){if(Math.abs(lx)+Math.abs(ly)+Math.abs(lz)>1e-7)node.quaternion.multiply(delta);continue;}
-    const m=manualOffsets.get(name)||[0,0,0];node.quaternion.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(m[0]),rad(m[1]),rad(m[2]),'XYZ'))).multiply(delta));
+    const m=manualOffsets.get(name)||[0,0,0];
+    const manualQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(m[0]),rad(m[1]),rad(m[2]),'XYZ'));
+    node.quaternion.copy(base).multiply(manualQ).multiply(delta);
   }
   additiveScratch.clear();
 }
