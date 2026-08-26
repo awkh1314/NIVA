@@ -79,7 +79,7 @@ const settings = Object.assign({
   footIKEnabled:true,
   physicsGroundContact:true,
   footIKStrength:0.9,
-  crouchDepth:0.20,
+  crouchDepth:0.14,
   walkWorldSpeed:0.55,
   runWorldSpeed:1.25,
   exposure:0.9,
@@ -540,4 +540,4 @@ function animate(){
 }
 animate();
 
-window.NIVA={version:'0.96-structured-squat-v4',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
+window.NIVA={version:'0.961-stable-squat-v41',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};

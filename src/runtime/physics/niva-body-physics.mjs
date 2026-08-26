@@ -42,6 +42,7 @@ export class NivaPhysicsBodySystem {
     this.lastStance = { left: false, right: false };
     this.lastAction = 'idle';
     this.lastGroundNormal = new THREE.Vector3(0, 1, 0);
+    this.crouchReference = null;
     this.tmp = {
       p0: new THREE.Vector3(), p1: new THREE.Vector3(), p2: new THREE.Vector3(), p3: new THREE.Vector3(),
       q0: new THREE.Quaternion(), q1: new THREE.Quaternion(), q2: new THREE.Quaternion(),
@@ -233,7 +234,7 @@ export class NivaPhysicsBodySystem {
     const t = clamp(this.crouchBlend, 0, 1);
     const eased = t * t * (3 - 2 * t);
     if (crouching) {
-      const depth = this.modelHeight * clamp(crouchDepth, 0.12, 0.24) * eased;
+      const depth = this.modelHeight * clamp(crouchDepth, 0.10, 0.145) * eased;
       this.targetPostureOffset = -depth;
       this.postureOffset = this.targetPostureOffset;
     } else {
@@ -250,7 +251,7 @@ export class NivaPhysicsBodySystem {
     const changed = action !== this.lastAction;
     if (changed) {
       // Critical: planted actions capture the standing feet BEFORE the root/pelvis is lowered.
-      if (action === 'crouch' || action === 'recovery') this.captureBothFeet();
+      if (action === 'crouch' || action === 'recovery') { this.captureBothFeet(); if (action === 'crouch') this.captureCrouchReference(); }
       else this.clearFeet();
       this.lastAction = action;
     }
@@ -261,14 +262,17 @@ export class NivaPhysicsBodySystem {
 
     const phase = duration > 0 ? ((actionTime % duration) / duration + 1) % 1 : 0;
     if (this.ikEnabled) {
-      for (const side of ['left', 'right']) {
-        const stance = this.stanceFor(action, phase, side);
-        if (stance && !this.lastStance[side]) this.captureFoot(side);
-        if (!stance && this.lastStance[side] && !['crouch', 'recovery'].includes(action)) this.footAnchor[side] = null;
-        this.lastStance[side] = stance;
-        if (stance && this.footAnchor[side]) this.solveLeg(side, this.footAnchor[side], this.ikStrength, action);
+      if (action === 'crouch') {
+        this.solveStableCrouch(crouchAmount);
+      } else {
+        for (const side of ['left', 'right']) {
+          const stance = this.stanceFor(action, phase, side);
+          if (stance && !this.lastStance[side]) this.captureFoot(side);
+          if (!stance && this.lastStance[side] && !['crouch', 'recovery'].includes(action)) this.footAnchor[side] = null;
+          this.lastStance[side] = stance;
+          if (stance && this.footAnchor[side]) this.solveLeg(side, this.footAnchor[side], this.ikStrength, action);
+        }
       }
-      if (action === 'crouch') this.stabilizeCrouchFeet(crouchAmount);
     }
 
     // Upper-body action IK is independent from the foot-IK toggle.
@@ -431,6 +435,54 @@ export class NivaPhysicsBodySystem {
     this.solveArm('right', target, 0.90 * blend, pole);
   }
 
+  captureCrouchReference() {
+    this.vrm.scene.updateMatrixWorld(true);
+    const ref = { kneeDir: {}, footVector: {} };
+    for (const side of ['left', 'right']) {
+      const upper = this.getBone(`${side}UpperLeg`);
+      const lower = this.getBone(`${side}LowerLeg`);
+      const foot = this.getBone(`${side}Foot`);
+      const toes = this.getBone(`${side}Toes`);
+      if (upper && lower) {
+        const hip = upper.getWorldPosition(new THREE.Vector3());
+        const knee = lower.getWorldPosition(new THREE.Vector3());
+        const d = knee.sub(hip); d.y = 0;
+        if (d.lengthSq() > 1e-6) ref.kneeDir[side] = d.normalize().clone();
+      }
+      if (foot && toes) {
+        const fp = foot.getWorldPosition(new THREE.Vector3());
+        const tp = toes.getWorldPosition(new THREE.Vector3());
+        const d = tp.sub(fp); d.y = 0;
+        if (d.lengthSq() > 1e-6) ref.footVector[side] = d.normalize().clone();
+      }
+    }
+    this.crouchReference = ref;
+  }
+
+  solveStableCrouch(amount = 1) {
+    const a = clamp(amount, 0, 1);
+    if (a <= 0.001) return;
+    const { right, forward } = this.bodyBasis();
+    for (const side of ['left', 'right']) {
+      const upper = this.getBone(`${side}UpperLeg`);
+      const lower = this.getBone(`${side}LowerLeg`);
+      const foot = this.getBone(`${side}Foot`);
+      const anchor = this.footAnchor[side];
+      if (!upper || !lower || !foot || !anchor) continue;
+      const hip = upper.getWorldPosition(new THREE.Vector3());
+      const sign = side === 'left' ? -1 : 1;
+      const kneeDir = this.crouchReference?.kneeDir?.[side]?.clone() || forward.clone();
+      if (kneeDir.dot(forward) < 0) kneeDir.negate();
+      const pole = hip.clone()
+        .addScaledVector(kneeDir, this.modelHeight * (0.075 + 0.035 * a))
+        .addScaledVector(right, sign * this.modelHeight * 0.026)
+        .addScaledVector(new THREE.Vector3(0, -1, 0), this.modelHeight * 0.035);
+      this.solveChain(upper, lower, foot, anchor, pole, 0.52 + 0.26 * a, 3);
+      this.flattenFoot(side, 0.55 + 0.35 * a);
+    }
+    this.correctRootToPlantedFeet(Math.min(0.55, a));
+  }
+
   rotateWorldAround(bone, axis, radians, weight = 1) {
     if (!bone || !bone.parent || Math.abs(radians) < 1e-5 || weight <= 0) return;
     this.vrm.scene.updateMatrixWorld(true);
@@ -442,10 +494,10 @@ export class NivaPhysicsBodySystem {
   applyCrouchBalance(amount) {
     const a = clamp(amount, 0, 1);
     if (a <= 0.001) return;
-    const { right } = this.bodyBasis();
-    this.rotateWorldAround(this.getBone('spine'), right, THREE.MathUtils.degToRad(8.0 * a), 0.90);
-    this.rotateWorldAround(this.getBone('chest'), right, THREE.MathUtils.degToRad(5.0 * a), 0.82);
-    this.rotateWorldAround(this.getBone('upperChest'), right, THREE.MathUtils.degToRad(2.5 * a), 0.72);
+    const right = this.bodyBasis().right;
+    this.rotateWorldAround(this.getBone('spine'), right, THREE.MathUtils.degToRad(3.5 * a), 0.72);
+    this.rotateWorldAround(this.getBone('chest'), right, THREE.MathUtils.degToRad(2.0 * a), 0.58);
+    this.rotateWorldAround(this.getBone('upperChest'), right, THREE.MathUtils.degToRad(1.0 * a), 0.45);
   }
 
   flattenFoot(side, amount = 1) {
@@ -489,11 +541,7 @@ export class NivaPhysicsBodySystem {
     if (a <= 0.001) return;
     this.flattenFoot('left', a);
     this.flattenFoot('right', a);
-    this.correctRootToPlantedFeet(a);
-    for (const side of ['left', 'right']) {
-      if (this.footAnchor[side]) this.solveLeg(side, this.footAnchor[side], this.ikStrength * 0.72, 'crouch');
-      this.flattenFoot(side, a);
-    }
+    this.correctRootToPlantedFeet(Math.min(a, 0.5));
   }
 
   solveCrouchHandsToHead(weight = 0.96) {
@@ -550,7 +598,7 @@ export class NivaPhysicsBodySystem {
       postureOffset: this.postureOffset,
       leftFootPlanted: Boolean(this.footAnchor.left),
       rightFootPlanted: Boolean(this.footAnchor.right),
-      solver: 'structured-squat-v4-flat-feet',
+      solver: 'stable-squat-v4.1-standing-reference',
     };
   }
 }

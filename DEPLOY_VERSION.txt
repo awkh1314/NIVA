@@ -1,2 +1,2 @@
-NIVA Biomechanics V4
-Structured squat: corrected anatomical front/back; synchronized pelvis drop + forward torso balance + knee bend; feet/toes stay flat; root Y compensates from real foot-anchor error; hands remain on head.
+NIVA Biomechanics V4.1
+Stable squat hotfix: removed recursive crouch CCD, reduced squat depth, derives knee direction from the standing skeleton, uses one bounded leg solve per frame, keeps torso hinge small, flattens feet, and tightly limits root-Y correction. Hands remain on head.
