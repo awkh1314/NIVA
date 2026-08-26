@@ -26,14 +26,17 @@ jobs:
           $Onnx = "$Model\onnx"
           $Voices = "public\kokoro\voices"
           New-Item -ItemType Directory -Force -Path $Onnx,$Voices | Out-Null
-          $Base = "https://huggingface.co/onnx-community/Kokoro-82M-v1.1-zh-ONNX/resolve/main"
+          $Revision = "8b6f9672edefb3e00d1a946d79bb702c02519389"
+          $Base = "https://huggingface.co/onnx-community/Kokoro-82M-v1.1-zh-ONNX/resolve/$Revision"
           Invoke-WebRequest "$Base/config.json?download=true" -OutFile "$Model\config.json"
           Invoke-WebRequest "$Base/tokenizer.json?download=true" -OutFile "$Model\tokenizer.json"
           Invoke-WebRequest "$Base/tokenizer_config.json?download=true" -OutFile "$Model\tokenizer_config.json"
           Invoke-WebRequest "$Base/onnx/model_quantized.onnx?download=true" -OutFile "$Onnx\model_quantized.onnx"
           Invoke-WebRequest "$Base/voices/zf_001.bin?download=true" -OutFile "$Voices\zf_001.bin"
           $hash=(Get-FileHash "$Onnx\model_quantized.onnx" -Algorithm SHA256).Hash.ToLower()
-          if ($hash -ne "5dc461e2a932be290d1deb86bd7f507ef6dcff2358e618338fe77fd810b11714") { throw "Kokoro model SHA256 mismatch: $hash" }
+          if ($hash -ne "a39469be791eeaa3089c1ed5e58b8731d1f2462ea0e7dae2bc44388e58f973d8") { throw "Kokoro model SHA256 mismatch: $hash" }
+          $voiceHash=(Get-FileHash "$Voices\zf_001.bin" -Algorithm SHA256).Hash.ToLower()
+          if ($voiceHash -ne "0a89ec12bb93fb9c74077924daf02568baad64e1f869389f5aaee01a386035f8") { throw "Kokoro voice SHA256 mismatch: $voiceHash" }
       - name: Build portable EXE
         run: npm run desktop
       - name: Assemble portable package
@@ -43,13 +46,11 @@ jobs:
           Copy-Item src-tauri\target\release\niva.exe release\NIVA.exe
           Copy-Item tools\voice\* release\voice\
           @"
-          NIVA V0.85.1 Portable
-          1. 直接运行 NIVA.exe；不配置 API 时可使用内置 Performance Presets。
-          2. Brain 默认 DeepSeek，也支持 OpenAI 与 OpenAI-compatible 自定义接口。
-          3. Kokoro INT8 / zf_001 已嵌入桌面构建，TTS 不需要首次下载；语音异常时不会切换系统声线。
-          4. 音频真正开始播放时启动对应动作；若语音准备过慢，动作不会再无限等待。
-          5. Safe Pose Bank 分批异步预计算，界面不会在启动阶段长时间冻结。
-          6. 可选语音输入仍可运行 voice\install-and-start.ps1 安装 Vosk 中文 ASR。
+          NIVA V0.99.0 Portable
+          1. 直接运行 NIVA.exe；不配置 API 时可使用内置 Free Life Runtime。
+          2. Brain / Voice / Motion 保持隔离边界，公开接口支持 NIVA.play({ text, emotion, motion })。
+          3. Kokoro INT8 / zf_001 固定上游 revision 并校验 SHA256，桌面包离线携带模型资源。
+          4. Runtime Boundaries / Biomechanics V2 / Safe Pose / IK 测试必须全部通过后才产出包。
           "@ | Set-Content -Encoding UTF8 release\README.txt
           Compress-Archive -Path release\* -DestinationPath NIVA-Windows-x64.zip -Force
       - uses: actions/upload-artifact@v4
@@ -63,8 +64,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view v0.85-latest *> $null
+          gh release view v0.99-latest *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release delete v0.85-latest --yes --cleanup-tag
+            gh release delete v0.99-latest --yes --cleanup-tag
           }
-          gh release create v0.85-latest NIVA-Windows-x64.zip --title "NIVA V0.85.1 Latest" --notes "Brain Interface + Performance Director + responsive Safe Pose warmup + browser/desktop Kokoro audio repair."
+          gh release create v0.99-latest NIVA-Windows-x64.zip --title "NIVA V0.99.0 Latest" --notes "Free Life Runtime + public Motion Bridge + Runtime Boundaries + Biomechanics V2 + pinned offline Kokoro zf_001."
