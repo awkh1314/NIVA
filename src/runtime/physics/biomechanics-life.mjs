@@ -127,9 +127,6 @@ export class GaitBalanceController {
       errorForward = dotXZ(correction, forward);
     }
 
-    // Human gait moves the pelvis toward the support leg before the opposite
-    // leg swings. The measured COM error is primary; the stance-side term is
-    // a small anticipatory feed-forward component.
     const maxSide = h * (running ? 0.026 : 0.020);
     const maxForward = h * (running ? 0.030 : 0.018);
     const feedForwardSide = locomotion ? supportSide * h * (running ? 0.010 : 0.0075) : 0;
@@ -169,11 +166,13 @@ export class PhysiologyOscillator {
   constructor() {
     this.breathPhase = 0;
     this.heartPhase = 0;
+    this.breathEnvelope = 0;
   }
 
   reset() {
     this.breathPhase = 0;
     this.heartPhase = 0;
+    this.breathEnvelope = 0;
   }
 
   update(dt, {
@@ -188,18 +187,16 @@ export class PhysiologyOscillator {
     const hr = clamp(Number(heartRate) || 68, 35, 220);
     this.breathPhase = (this.breathPhase + h * br / 60) % 1;
     this.heartPhase = (this.heartPhase + h * hr / 60) % 1;
+    this.breathEnvelope += (1 - this.breathEnvelope) * (1 - Math.exp(-h * 3.2));
 
-    // Quiet breathing is asymmetric: inspiration is shorter than expiration.
     const inhaleFraction = deepBreath ? 0.46 : 0.40;
     const p = this.breathPhase;
     const lungVolume = p < inhaleFraction
       ? smoothstep(p / inhaleFraction)
       : 1 - smoothstep((p - inhaleFraction) / (1 - inhaleFraction));
-    const centeredBreath = (lungVolume - 0.45) * (deepBreath ? 1.65 : 1);
+    const centeredBreath = (lungVolume - 0.45) * (deepBreath ? 1.65 : 1) * this.breathEnvelope;
     const amp = clamp(Number(breathAmplitude) || 0, 0, 1.2) * (1 + clamp(load, 0, 1) * 0.25);
 
-    // Two compact mechanical impulses approximate systole + recoil. Their
-    // visual amplitude stays intentionally tiny so it reads as life, not shake.
     const hp = this.heartPhase;
     const heartbeat = gaussian(hp, 0.055, 0.026) * 0.72
       + gaussian(hp, 0.16, 0.038) * 0.28
