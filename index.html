@@ -15,7 +15,11 @@
         <div style="padding:10px 14px;border:1px solid #285063;border-radius:12px;background:#07141bcc;backdrop-filter:blur(10px)">正在载入 NIVA 3D 模型…</div>
       </div>
       <div class="topbar">
-        <span class="free-badge">FREE / 基础体验</span>
+        <div class="top-left-tools">
+          <span class="free-badge">FREE / 基础体验</span>
+          <button id="lifeGuideToggle" class="ghost-btn life-guide-btn">生命系统 · 操作文档</button>
+          <span id="lifeVitals" class="life-vitals">心率 68 · 呼吸 12 · 疲劳 0%</span>
+        </div>
         <div class="top-actions">
           <button id="panelToggle" class="ghost-btn">控制台</button>
           <button id="upgradeToggle" class="ghost-btn">升级 / 接入</button>
@@ -34,6 +38,20 @@
       </div>
       <div id="toast" class="toast hidden"></div>
     </div>
+    <aside id="lifeGuide" class="life-guide hidden" aria-hidden="true">
+      <div class="drawer-head">
+        <div><b>NIVA 真实生命系统 · V1</b><small>活动 → 负荷 → 疲劳 → 呼吸/心率 → 姿态 → 恢复</small></div>
+        <button id="closeLifeGuide" class="icon-btn">×</button>
+      </div>
+      <div class="life-guide-body">
+        <section><h3>怎么体验</h3><p>底部“动作预览”中的走路、跑步、思考、蹲下会持续执行，直到切换或停止。持续跑步会真实累积疲劳：动作逐渐减速、步频出现轻微波动、呼吸和心率升高、身体逐渐前倾；疲劳超过极限后会自动进入撑膝喘息恢复，恢复后若你没有停止“跑步”意图，会继续跑。</p></section>
+        <section><h3>生命状态</h3><p>左上角实时显示心率、呼吸频率和疲劳。疲劳不是随机表演，而是由当前活动负荷和持续时间计算；随机只用于疲劳后的轻微步频波动和微表情，让行为不机械。</p></section>
+        <section><h3>舞台移动</h3><p>走路/跑步不再只是原地踏步。角色会在舞台安全半径内选择目标点并移动，接近边缘会重新选择舞台内目标，身体朝移动方向转向。</p></section>
+        <section><h3>蹲下与脚底固定</h3><p>蹲下不是直接把整个模型向下平移。系统先记录左右脚的世界坐标中心作为“脚底锚点”，再弯曲髋、膝、踝和躯干；每帧根据脚底偏差反向补偿角色根节点，使脚底中心尽量锁在舞台上。这是 V1 的双脚平均锁定。后续升级为左右腿独立 Two-Bone IK，可进一步消除单脚滑动。</p></section>
+        <section><h3>疲劳分级</h3><p>0–30 正常；30–55 轻度疲劳；55–75 步频开始波动；75–88 明显疲劳并减速；≥88 自动撑膝喘息约 14 秒。静止、蹲下和恢复动作会降低疲劳。</p></section>
+        <section><h3>设计原则</h3><p>生命系统只产生高层状态和动作参数，不直接让语言模型写骨骼角度。舞台移动、脚底约束、姿态动画和表情分别由专门控制层执行，避免“生命逻辑”和“骨骼实现”耦合。</p></section>
+      </div>
+    </aside>
     <aside id="controlPanel" class="drawer hidden" aria-hidden="true">
       <div class="drawer-head">
         <div><b>NIVA 控制台</b><small id="runtimeSummary">Free Life Runtime</small></div>
