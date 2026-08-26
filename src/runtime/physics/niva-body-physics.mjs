@@ -268,8 +268,9 @@ export class NivaPhysicsBodySystem {
     const centerOfMass = this.estimateCenterOfMass();
     const leftFoot = this.readFoot('left');
     const rightFoot = this.readFoot('right');
-    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.vrm.scene.quaternion).setY(0);
-    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.vrm.scene.quaternion).setY(0);
+    const rootOrientation = this.vrm.scene.getWorldQuaternion(new THREE.Quaternion());
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(rootOrientation).setY(0);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(rootOrientation).setY(0);
     if (forward.lengthSq() > 1e-8) forward.normalize();
     if (right.lengthSq() > 1e-8) right.normalize();
     this.balancePlan = this.balanceController.update(dt, {
