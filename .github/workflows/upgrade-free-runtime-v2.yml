@@ -15,15 +15,15 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Apply comprehensive control patch
-        run: python .github/scripts/upgrade_free_runtime_v2_controls.py
+      - name: Lock continuous motion previews
+        run: python .github/scripts/fix_preview_lock.py
       - run: npm install
       - run: npm test
       - run: npm run build
-      - name: Commit upgraded controls
+      - name: Commit preview lock
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/main.js src/style.css
-          git commit -m "feat(web): comprehensive model stage light camera controls"
+          git add src/main.js
+          git commit -m "fix(web): keep motion preview active until switch or stop"
           git push origin HEAD:main
