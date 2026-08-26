@@ -1,0 +1,237 @@
+name: Upgrade NIVA Free Runtime V2
+on:
+  push:
+    branches: ["main"]
+    paths: [".github/workflows/upgrade-free-runtime-v2.yml"]
+permissions:
+  contents: write
+jobs:
+  upgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Patch natural pose, gaze, controls and two-layer demos
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('src/main.js')
+          s = p.read_text(encoding='utf-8')
+
+          # Expanded persisted controls.
+          s = s.replace(
+            "  voiceVolume:1,\n}, JSON.parse",
+            "  voiceVolume:1,\n  motionSpeed:1,\n  modelVisible:true,\n  modelScale:1,\n  modelX:0, modelY:0, modelZ:0, modelRotY:0,\n  skinBrightness:1,\n  floorOpacity:.94, floorRoughness:.78, floorMetalness:.08,\n  ringOpacity:.75, innerRingOpacity:.32,\n  keyColor:'#fff4eb', fillColor:'#bfdcff', rimColor:'#a9d8ff', stageColor:'#69e4e8',\n  keyX:2.4,keyY:4.2,keyZ:3.2, fillX:-2.8,fillY:2.3,fillZ:2.2, rimX:-2.3,rimY:3,rimZ:-2.7,\n  spotX:0,spotY:4,spotZ:2, spotTargetX:0,spotTargetY:1,spotTargetZ:0, spotAngle:.45,spotPenumbra:.7,spotDistance:8,\n  camDamping:.07, camRotate:1, camZoom:1, camPan:1, camMin:1.2, camMax:8,\n}, JSON.parse",
+            1
+          )
+
+          # Full VRM humanoid coverage including eyes, jaw, shoulders and fingers.
+          s = re.sub(
+            r"function rememberBones\(\)\{\n  const names = \[[^\n]+\];",
+            """function rememberBones(){
+  const names = ['hips','spine','chest','upperChest','neck','head','leftEye','rightEye','jaw','leftShoulder','rightShoulder','leftUpperArm','rightUpperArm','leftLowerArm','rightLowerArm','leftHand','rightHand','leftUpperLeg','rightUpperLeg','leftLowerLeg','rightLowerLeg','leftFoot','rightFoot','leftToes','rightToes','leftThumbMetacarpal','leftThumbProximal','leftThumbDistal','leftIndexProximal','leftIndexIntermediate','leftIndexDistal','leftMiddleProximal','leftMiddleIntermediate','leftMiddleDistal','leftRingProximal','leftRingIntermediate','leftRingDistal','leftLittleProximal','leftLittleIntermediate','leftLittleDistal','rightThumbMetacarpal','rightThumbProximal','rightThumbDistal','rightIndexProximal','rightIndexIntermediate','rightIndexDistal','rightMiddleProximal','rightMiddleIntermediate','rightMiddleDistal','rightRingProximal','rightRingIntermediate','rightRingDistal','rightLittleProximal','rightLittleIntermediate','rightLittleDistal'];""",
+            s, count=1
+          )
+
+          # Natural relaxed rest pose; arm-down sign is chosen from actual model geometry, not guessed.
+          marker = "function makeClip(name, duration, tracks){"
+          insert = r'''
+function offsetFromBase(name,x=0,y=0,z=0){
+  const node=getBone(name),base=baseQuats.get(name); if(!node||!base)return;
+  node.quaternion.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(x),rad(y),rad(z),'XYZ')));
+}
+function chooseArmDown(side){
+  const upper=getBone(`${side}UpperArm`),hand=getBone(`${side}Hand`),shoulder=getBone(`${side}Shoulder`); if(!upper||!hand||!shoulder)return side==='left'?68:-68;
+  const base=baseQuats.get(`${side}UpperArm`)?.clone(); if(!base)return side==='left'?68:-68;
+  let best={score:Infinity,z:side==='left'?68:-68};
+  for(const z of [68,-68]){
+    upper.quaternion.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,0,rad(z))));
+    vrm.scene.updateMatrixWorld(true);
+    const hp=hand.getWorldPosition(new THREE.Vector3()),sp=shoulder.getWorldPosition(new THREE.Vector3());
+    const score=(hp.y-sp.y)*5+Math.abs(hp.x-sp.x);
+    if(score<best.score)best={score,z};
+  }
+  upper.quaternion.copy(base); return best.z;
+}
+function applyFingerRelax(side){
+  const sign=side==='left'?-1:1;
+  const curls={Thumb:[4,7,6],Index:[5,8,7],Middle:[6,10,8],Ring:[7,11,9],Little:[8,12,10]};
+  for(const [finger,vals] of Object.entries(curls)){
+    const names=finger==='Thumb'?[`${side}ThumbMetacarpal`,`${side}ThumbProximal`,`${side}ThumbDistal`]:[`${side}${finger}Proximal`,`${side}${finger}Intermediate`,`${side}${finger}Distal`];
+    names.forEach((n,i)=>offsetFromBase(n,0,0,sign*(vals[i]||0)));
+  }
+}
+function applyRelaxedStandingPose(){
+  const lz=chooseArmDown('left'),rz=chooseArmDown('right');
+  offsetFromBase('leftUpperArm',2,0,lz); offsetFromBase('rightUpperArm',2,0,rz);
+  offsetFromBase('leftLowerArm',0,-10,0); offsetFromBase('rightLowerArm',0,10,0);
+  offsetFromBase('leftHand',0,0,4); offsetFromBase('rightHand',0,0,-4);
+  applyFingerRelax('left'); applyFingerRelax('right');
+  vrm.scene.updateMatrixWorld(true);
+}
+const materialSnapshots=new Map();
+function captureMaterials(){
+  materialSnapshots.clear();
+  vrm?.scene.traverse(o=>{if(!o.isMesh)return;const mats=Array.isArray(o.material)?o.material:[o.material];for(const m of mats){if(!m||materialSnapshots.has(m.uuid))continue;materialSnapshots.set(m.uuid,{mat:m,name:m.name||o.name||'material',color:m.color?.clone?.(),emissive:m.emissive?.clone?.(),opacity:m.opacity,roughness:m.roughness,metalness:m.metalness});}});
+}
+function isSkinMaterial(snap){return /(skin|face|head|body|肌|肤|颜)/i.test(snap.name||'');}
+function applySkinBrightness(){
+  if(!vrm)return; let matched=0;
+  for(const snap of materialSnapshots.values()){if(!snap.color||!isSkinMaterial(snap))continue;snap.mat.color.copy(snap.color).multiplyScalar(settings.skinBrightness);snap.mat.needsUpdate=true;matched++;}
+  return matched;
+}
+const modelHome=new THREE.Vector3();
+function applyModelSettings(){
+  if(!vrm)return; vrm.scene.visible=settings.modelVisible; vrm.scene.scale.setScalar(settings.modelScale);
+  vrm.scene.position.set(modelHome.x+settings.modelX,modelHome.y+settings.modelY,modelHome.z+settings.modelZ); vrm.scene.rotation.y=rad(settings.modelRotY); applySkinBrightness();
+}
+'''
+          if marker not in s: raise SystemExit('makeClip marker missing')
+          s = s.replace(marker, insert + "\n" + marker, 1)
+
+          # Improve gait while keeping authored AnimationClip + AnimationMixer architecture.
+          gait_pat = re.compile(r"  const walkTimes=\[0,.125,.25,.375,.5,.625,.75,.875,1\];.*?  clips\.set\('run', makeClip\('run',\.70,\{.*?\}\)\);", re.S)
+          gait_new = r'''  const walkTimes=[0,.125,.25,.375,.5,.625,.75,.875,1];
+  const legL=[22,12,1,-11,-20,-11,0,12,22],legR=[-20,-11,0,12,22,12,1,-11,-20];
+  const kneeL=[7,18,34,24,8,10,18,11,7],kneeR=[8,10,18,11,7,18,34,24,8];
+  const footL=[-4,-1,7,3,-3,-2,4,1,-4],footR=[-3,-2,4,1,-4,-1,7,3,-3];
+  const armL=[-14,-8,0,8,14,8,0,-8,-14],armR=[14,8,0,-8,-14,-8,0,8,14];
+  const f=(arr)=>walkTimes.map((t,i)=>[t,arr[i],0,0]);
+  clips.set('walk',makeClip('walk',1,{leftUpperLeg:f(legL),rightUpperLeg:f(legR),leftLowerLeg:f(kneeL),rightLowerLeg:f(kneeR),leftFoot:f(footL),rightFoot:f(footR),leftUpperArm:f(armL),rightUpperArm:f(armR),leftLowerArm:walkTimes.map(t=>[t,0,-14,0]),rightLowerArm:walkTimes.map(t=>[t,0,14,0]),hips:walkTimes.map((t,i)=>[t,0,(i<4?2:-2),0]),chest:walkTimes.map((t,i)=>[t,0,(i<4?-1.5:1.5),0])}));
+  const rt=[0,.09,.18,.26,.35,.44,.53,.61,.70];
+  const runL=[38,22,2,-22,-36,-20,2,22,38],runR=[-36,-20,2,22,38,22,2,-22,-36];
+  const rkL=[16,42,76,56,18,28,62,42,16],rkR=[18,28,62,42,16,42,76,56,18];
+  const rfL=[-7,-2,12,7,-5,-3,9,4,-7],rfR=[-5,-3,9,4,-7,-2,12,7,-5];
+  const raL=[-28,-16,0,19,28,16,0,-19,-28],raR=[28,16,0,-19,-28,-16,0,19,28];
+  const rf=(arr)=>rt.map((t,i)=>[t,arr[i],0,0]);
+  clips.set('run',makeClip('run',.70,{leftUpperLeg:rf(runL),rightUpperLeg:rf(runR),leftLowerLeg:rf(rkL),rightLowerLeg:rf(rkR),leftFoot:rf(rfL),rightFoot:rf(rfR),leftUpperArm:rf(raL),rightUpperArm:rf(raR),leftLowerArm:rt.map(t=>[t,0,-72,0]),rightLowerArm:rt.map(t=>[t,0,72,0]),spine:rt.map(t=>[t,5,0,0]),chest:rt.map((t,i)=>[t,1.5,(i<4?-2:2),0])}));
+  clips.set('thinkLoop',makeClip('thinkLoop',4,{head:[[0,-2,5,-7],[1,-3,6,-8],[2,-2,5,-7],[3,-3,7,-6],[4,-2,5,-7]],rightUpperArm:[[0,8,4,20],[4,8,4,20]],rightLowerArm:[[0,0,48,0],[4,0,48,0]],rightHand:[[0,6,0,-6],[2,8,0,-5],[4,6,0,-6]]}));'''
+          s, n = gait_pat.subn(gait_new, s, count=1)
+          if n != 1: raise SystemExit('gait block replacement failed')
+
+          s = s.replace("next.reset(); next.enabled=true; next.setEffectiveWeight(1); next.setEffectiveTimeScale(1);", "next.reset(); next.enabled=true; next.setEffectiveWeight(1); next.setEffectiveTimeScale(settings.motionSpeed||1);", 1)
+
+          # Load natural standing baseline first; recapture it as zero pose.
+          old = "scene.add(vrm.scene); centerModel(); rememberBones();\n  if(vrm.lookAt) vrm.lookAt.target=gazeTarget;\n  mixer=new THREE.AnimationMixer(vrm.humanoid.normalizedHumanBonesRoot || vrm.scene); buildClips();"
+          new = "scene.add(vrm.scene); rememberBones(); applyRelaxedStandingPose(); rememberBones(); centerModel(); modelHome.copy(vrm.scene.position); captureMaterials(); applyModelSettings();\n  gazeTarget.position.copy(camera.position); if(vrm.lookAt) vrm.lookAt.target=gazeTarget;\n  mixer=new THREE.AnimationMixer(vrm.humanoid.normalizedHumanBonesRoot || vrm.scene); buildClips();"
+          if old not in s: raise SystemExit('loader baseline marker missing')
+          s = s.replace(old,new,1)
+
+          # Fix white-eye problem by targeting the viewer plane at camera, not a point through/behind the head.
+          gaze_pat = re.compile(r"function updateGaze\(now\)\{.*?\n\}", re.S)
+          gaze_new = r'''function updateGaze(now){
+  if(!vrm||!settings.gazeEnabled)return;
+  let x=0,y=0;
+  if(lookOverride&&now<lookOverrideUntil){x=clamp(lookOverride.x,-.45,.45);y=clamp(lookOverride.y,-.22,.22);}else{lookOverride=null;if(settings.mouseGaze&&pointerInside&&(now-pointerMovedAt)<1200){x=clamp(pointerNdc.x,-.8,.8);y=clamp(pointerNdc.y,-.6,.6);}}
+  const right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion),up=new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+  const target=camera.position.clone().addScaledVector(right,x*modelHeight*.24).addScaledVector(up,y*modelHeight*.14);
+  gazeTarget.position.lerp(target,.12);
+}'''
+          s, n = gaze_pat.subn(gaze_new, s, count=1)
+          if n != 1: raise SystemExit('gaze replacement failed')
+
+          # Two-layer experience: persistent motion preview + speech performances.
+          chips_pat = re.compile(r"const chips=\[.*?\nfor\(const \[label,text\] of chips\).*?\n\nconst life=", re.S)
+          chips_new = r'''const experienceBar=$('#experienceBar');
+experienceBar.innerHTML='<div class="experience-row"><span class="experience-label">动作预览</span></div><div class="experience-row"><span class="experience-label">语音演出</span></div>';
+const previewRow=experienceBar.children[0],voiceRow=experienceBar.children[1];
+const previewActions=[['停止','stop'],['思考','thinkLoop'],['走路','walk'],['跑步','run']];
+function startPreviewMotion(name){
+  if(name==='stop'){stopAction();setExpression('neutral',0);return;}
+  stopAction(); setTimeout(()=>playClip(name,{loop:true}),190);
+}
+for(const [label,name] of previewActions){const b=document.createElement('button');b.className='chip';b.textContent=label;b.onclick=()=>startPreviewMotion(name);previewRow.appendChild(b);}
+const voiceScenes=[
+  ['打招呼',()=>{stopAction();setExpression('happy',.28);setTimeout(()=>playClip('wave',{duration:2.05}),120);setTimeout(()=>speak('你好，我是 NIVA。很高兴见到你。',true),220);}],
+  ['自我介绍',()=>{stopAction();setExpression('happy',.22);setTimeout(()=>playClip('nod',{duration:1}),120);setTimeout(()=>speak('我是妮瓦。你可以体验我的动作、表情、生命状态、舞台、灯光和完整模型控制。',true),220);}],
+  ['微笑说话',()=>{stopAction();setExpression('happy',.30);speak('嗯，我在这里。',true);}],
+  ['说明',()=>{stopAction();setExpression('neutral',.08);speak('免费基础体验不需要连接任何接口，你可以直接操控和观察我。',true);}]
+];
+for(const [label,fn] of voiceScenes){const b=document.createElement('button');b.className='chip';b.textContent=label;b.onclick=fn;voiceRow.appendChild(b);}
+
+const life='''
+          s, n = chips_pat.subn(chips_new, s, count=1)
+          if n != 1: raise SystemExit('experience layer replacement failed')
+
+          # Comprehensive model/bone/material controls.
+          body_pat = re.compile(r"function renderBodyControls\(\)\{.*?\n\}\nfunction renderExpressionControls", re.S)
+          body_new = r'''function renderBodyControls(){
+  const groups={躯干:['hips','spine','chest','upperChest'],头颈:['neck','head','leftEye','rightEye','jaw'],肩臂:['leftShoulder','rightShoulder','leftUpperArm','rightUpperArm','leftLowerArm','rightLowerArm','leftHand','rightHand'],下肢:['leftUpperLeg','rightUpperLeg','leftLowerLeg','rightLowerLeg','leftFoot','rightFoot','leftToes','rightToes'],左手指:['leftThumbMetacarpal','leftThumbProximal','leftThumbDistal','leftIndexProximal','leftIndexIntermediate','leftIndexDistal','leftMiddleProximal','leftMiddleIntermediate','leftMiddleDistal','leftRingProximal','leftRingIntermediate','leftRingDistal','leftLittleProximal','leftLittleIntermediate','leftLittleDistal'],右手指:['rightThumbMetacarpal','rightThumbProximal','rightThumbDistal','rightIndexProximal','rightIndexIntermediate','rightIndexDistal','rightMiddleProximal','rightMiddleIntermediate','rightMiddleDistal','rightRingProximal','rightRingIntermediate','rightRingDistal','rightLittleProximal','rightLittleIntermediate','rightLittleDistal']};
+  let html=`<section class="panel-section"><h3>模型总控</h3>${toggleHtml('显示模型','modelVisible')}${rowSlider('模型缩放',.5,1.8,.01,settings.modelScale)}${rowSlider('位置 X',-2,2,.01,settings.modelX)}${rowSlider('位置 Y',-.5,2,.01,settings.modelY)}${rowSlider('位置 Z',-2,2,.01,settings.modelZ)}${rowSlider('朝向 Y°',-180,180,1,settings.modelRotY)}${rowSlider('皮肤/面部亮度',.55,1.45,.01,settings.skinBrightness)}<button id="modelReset" class="secondary-btn wide">恢复自然站姿</button></section><div class="section-toolbar"><button id="bodyReset" class="secondary-btn">清除骨骼偏移</button><small>标准 VRM normalized bones</small></div>`;
+  for(const [g,bones] of Object.entries(groups)){html+=`<details class="bone-group"><summary>${g} · ${bones.filter(getBone).length} 骨骼</summary>`;for(const bone of bones){if(!getBone(bone))continue;html+=`<div class="bone-card"><b>${bone}</b>${['X','Y','Z'].map((a,i)=>`<label class="control-row compact"><span>${a}</span><input type="range" min="-60" max="60" step="1" value="${manualOffsets.get(bone)?.[i]||0}" data-bone="${bone}" data-axis="${i}"><output>${manualOffsets.get(bone)?.[i]||0}</output></label>`).join('')}<button class="mini-btn" data-reset-bone="${bone}">重置</button></div>`;}html+='</details>';}
+  html+='<details class="bone-group"><summary>材质高级控制</summary><div id="materialControls"></div></details>';
+  controlPage.innerHTML=html;bindToggles();
+  const modelRanges=[...controlPage.querySelectorAll('.panel-section input[type=range]')];const modelKeys=['modelScale','modelX','modelY','modelZ','modelRotY','skinBrightness'];modelRanges.forEach((el,i)=>el.oninput=()=>{settings[modelKeys[i]]=Number(el.value);el.parentElement.querySelector('output').textContent=el.value;applyModelSettings();saveSettings();});
+  controlPage.querySelector('[data-setting="modelVisible"]').onchange=e=>{settings.modelVisible=e.target.checked;applyModelSettings();saveSettings();};
+  controlPage.querySelectorAll('[data-bone]').forEach(el=>{el.onpointerdown=()=>{manualOverrideUntil=performance.now()+999999;stopAction();};el.onpointerup=()=>manualOverrideUntil=performance.now()+1500;el.oninput=()=>{const b=el.dataset.bone,i=Number(el.dataset.axis);const v=manualOffsets.get(b)||[0,0,0];v[i]=Number(el.value);manualOffsets.set(b,v);el.parentElement.querySelector('output').textContent=el.value;};});
+  controlPage.querySelectorAll('[data-reset-bone]').forEach(b=>b.onclick=()=>{manualOffsets.delete(b.dataset.resetBone);renderBodyControls();});
+  $('#bodyReset').onclick=()=>{manualOffsets.clear();renderBodyControls();};$('#modelReset').onclick=()=>{manualOffsets.clear();Object.assign(settings,{modelScale:1,modelX:0,modelY:0,modelZ:0,modelRotY:0,skinBrightness:1});applyModelSettings();saveSettings();renderBodyControls();};
+  const mc=$('#materialControls'); if(mc){for(const snap of materialSnapshots.values()){const m=snap.mat;const card=document.createElement('div');card.className='material-card';card.innerHTML=`<b>${snap.name}</b>${m.color?`<label class="color-row"><span>颜色</span><input type="color" value="#${m.color.getHexString()}" data-mat-color></label>`:''}${typeof m.opacity==='number'?rowSlider('透明度',0,1,.01,m.opacity):''}${typeof m.roughness==='number'?rowSlider('粗糙度',0,1,.01,m.roughness):''}${typeof m.metalness==='number'?rowSlider('金属度',0,1,.01,m.metalness):''}`;const c=card.querySelector('[data-mat-color]');if(c)c.oninput=e=>{m.color.set(e.target.value);m.needsUpdate=true;};const rr=[...card.querySelectorAll('input[type=range]')];let j=0;if(typeof m.opacity==='number'){rr[j].oninput=e=>{m.opacity=Number(e.target.value);m.transparent=m.opacity<1;e.target.parentElement.querySelector('output').textContent=e.target.value;m.needsUpdate=true;};j++;}if(typeof m.roughness==='number'){rr[j].oninput=e=>{m.roughness=Number(e.target.value);e.target.parentElement.querySelector('output').textContent=e.target.value;};j++;}if(typeof m.metalness==='number'){rr[j].oninput=e=>{m.metalness=Number(e.target.value);e.target.parentElement.querySelector('output').textContent=e.target.value;};}mc.appendChild(card);}}
+}
+function renderExpressionControls'''
+          s, n = body_pat.subn(body_new, s, count=1)
+          if n != 1: raise SystemExit('body controls replacement failed')
+
+          # Motion page with persistent preview semantics.
+          motion_pat = re.compile(r"function renderMotionControls\(\)\{.*?\}\nfunction renderStageControls", re.S)
+          motion_new = r'''function renderMotionControls(){controlPage.innerHTML=`<section class="panel-section"><h3>持续动作预览</h3><div class="button-grid"><button data-preview="stop">停止</button><button data-preview="thinkLoop">思考</button><button data-preview="walk">走路</button><button data-preview="run">跑步</button></div>${rowSlider('动作速度',.6,1.5,.05,settings.motionSpeed)}<small>选择后持续播放，直到切换或停止。</small></section><section class="panel-section"><h3>单次动作</h3><div class="button-grid"><button data-once="nod">点头</button><button data-once="wave">挥手</button><button data-once="reach">摸鼠标</button><button data-once="weight">重心切换</button></div></section>`;controlPage.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>startPreviewMotion(b.dataset.preview));controlPage.querySelectorAll('[data-once]').forEach(b=>b.onclick=()=>playClip(b.dataset.once,{duration:clips.get(b.dataset.once)?.duration||2}));const speed=controlPage.querySelector('input[type=range]');speed.oninput=()=>{settings.motionSpeed=Number(speed.value);speed.parentElement.querySelector('output').textContent=speed.value;if(currentAction)currentAction.setEffectiveTimeScale(settings.motionSpeed);saveSettings();};}
+function renderStageControls'''
+          s, n = motion_pat.subn(motion_new, s, count=1)
+          if n != 1: raise SystemExit('motion controls replacement failed')
+
+          # Stage controls: all meaningful stage appearance parameters.
+          stage_pat = re.compile(r"function renderStageControls\(\)\{.*?\}\nfunction renderLightControls", re.S)
+          stage_new = r'''function renderStageControls(){controlPage.innerHTML=`<section class="panel-section"><h3>舞台总控</h3>${toggleHtml('显示舞台','stageVisible')}${rowSlider('舞台半径',.6,3,.05,1.55)}${rowSlider('地板透明度',0,1,.01,floorMat.opacity)}${rowSlider('地板粗糙度',0,1,.01,floorMat.roughness)}${rowSlider('地板金属度',0,1,.01,floorMat.metalness)}${rowSlider('主圆环亮度',0,1,.01,ringMat.opacity)}${rowSlider('内圆环亮度',0,1,.01,innerRing.material.opacity)}<label class="color-row"><span>背景颜色</span><input id="bgColor" type="color" value="#${scene.background.getHexString()}"></label><label class="color-row"><span>地板颜色</span><input id="stageColor" type="color" value="#${floorMat.color.getHexString()}"></label><label class="color-row"><span>主圆环颜色</span><input id="ringColor" type="color" value="#${ringMat.color.getHexString()}"></label><label class="color-row"><span>内圆环颜色</span><input id="innerColor" type="color" value="#${innerRing.material.color.getHexString()}"></label><button id="stageReset" class="secondary-btn wide">舞台复位</button></section>`;bindToggles();const vis=controlPage.querySelector('[data-setting="stageVisible"]');vis.onchange=e=>{settings.stageVisible=e.target.checked;floor.visible=ring.visible=innerRing.visible=settings.stageVisible;saveSettings();};const a=[...controlPage.querySelectorAll('input[type=range]')];a[0].oninput=()=>{const z=Number(a[0].value)/1.55;floor.scale.setScalar(z);ring.scale.setScalar(z);innerRing.scale.setScalar(z);a[0].parentElement.querySelector('output').textContent=a[0].value;};a[1].oninput=()=>{floorMat.opacity=Number(a[1].value);a[1].parentElement.querySelector('output').textContent=a[1].value;};a[2].oninput=()=>{floorMat.roughness=Number(a[2].value);a[2].parentElement.querySelector('output').textContent=a[2].value;};a[3].oninput=()=>{floorMat.metalness=Number(a[3].value);a[3].parentElement.querySelector('output').textContent=a[3].value;};a[4].oninput=()=>{ringMat.opacity=Number(a[4].value);a[4].parentElement.querySelector('output').textContent=a[4].value;};a[5].oninput=()=>{innerRing.material.opacity=Number(a[5].value);a[5].parentElement.querySelector('output').textContent=a[5].value;};$('#bgColor').oninput=e=>{scene.background.set(e.target.value);renderer.setClearColor(e.target.value);};$('#stageColor').oninput=e=>floorMat.color.set(e.target.value);$('#ringColor').oninput=e=>ringMat.color.set(e.target.value);$('#innerColor').oninput=e=>innerRing.material.color.set(e.target.value);$('#stageReset').onclick=()=>{floor.scale.setScalar(1);ring.scale.setScalar(1);innerRing.scale.setScalar(1);floorMat.setValues({opacity:.94,roughness:.78,metalness:.08});ringMat.opacity=.75;innerRing.material.opacity=.32;scene.background.set(0x0b0d0e);renderer.setClearColor(0x0b0d0e);renderStageControls();};}
+function renderLightControls'''
+          s, n = stage_pat.subn(stage_new, s, count=1)
+          if n != 1: raise SystemExit('stage controls replacement failed')
+
+          # Lighting: intensity, color, positions and spotlight optics.
+          light_pat = re.compile(r"function renderLightControls\(\)\{.*?\nfunction applyLighting\(\)\{.*?\}\nfunction applyLightPreset\(p\)\{.*?\}\nfunction renderCameraControls", re.S)
+          light_new = r'''function renderLightControls(){controlPage.innerHTML=`<section class="panel-section"><h3>灯光总控</h3><div class="preset-row"><button data-light="natural">自然</button><button data-light="soft">柔和</button><button data-light="warm">暖色</button><button data-light="cool">冷色</button><button data-light="stage">舞台</button></div>${rowSlider('环境光',0,2,.01,settings.ambient)}${rowSlider('主光',0,4,.01,settings.key)}<label class="color-row"><span>主光颜色</span><input id="keyColor" type="color" value="${settings.keyColor}"></label>${rowSlider('主光 X',-6,6,.1,settings.keyX)}${rowSlider('主光 Y',-2,8,.1,settings.keyY)}${rowSlider('主光 Z',-6,6,.1,settings.keyZ)}${rowSlider('补光',0,3,.01,settings.fill)}<label class="color-row"><span>补光颜色</span><input id="fillColor" type="color" value="${settings.fillColor}"></label>${rowSlider('补光 X',-6,6,.1,settings.fillX)}${rowSlider('补光 Y',-2,8,.1,settings.fillY)}${rowSlider('补光 Z',-6,6,.1,settings.fillZ)}${rowSlider('轮廓光',0,3,.01,settings.rim)}<label class="color-row"><span>轮廓颜色</span><input id="rimColor" type="color" value="${settings.rimColor}"></label>${rowSlider('轮廓 X',-6,6,.1,settings.rimX)}${rowSlider('轮廓 Y',-2,8,.1,settings.rimY)}${rowSlider('轮廓 Z',-6,6,.1,settings.rimZ)}${rowSlider('舞台聚光',0,8,.01,settings.stageLight)}<label class="color-row"><span>舞台灯颜色</span><input id="spotColor" type="color" value="${settings.stageColor}"></label>${rowSlider('聚光 X',-6,6,.1,settings.spotX)}${rowSlider('聚光 Y',0,10,.1,settings.spotY)}${rowSlider('聚光 Z',-6,6,.1,settings.spotZ)}${rowSlider('目标 X',-3,3,.1,settings.spotTargetX)}${rowSlider('目标 Y',0,3,.1,settings.spotTargetY)}${rowSlider('目标 Z',-3,3,.1,settings.spotTargetZ)}${rowSlider('聚光角度',.1,1.2,.01,settings.spotAngle)}${rowSlider('边缘柔和',0,1,.01,settings.spotPenumbra)}${rowSlider('距离',1,20,.1,settings.spotDistance)}${rowSlider('曝光',.5,1.5,.01,settings.exposure)}</section>`;const keys=['ambient','key','keyX','keyY','keyZ','fill','fillX','fillY','fillZ','rim','rimX','rimY','rimZ','stageLight','spotX','spotY','spotZ','spotTargetX','spotTargetY','spotTargetZ','spotAngle','spotPenumbra','spotDistance','exposure'];const ranges=[...controlPage.querySelectorAll('input[type=range]')];ranges.forEach((el,i)=>el.oninput=()=>{settings[keys[i]]=Number(el.value);el.parentElement.querySelector('output').textContent=el.value;applyLighting();saveSettings();});for(const [id,k] of [['keyColor','keyColor'],['fillColor','fillColor'],['rimColor','rimColor'],['spotColor','stageColor']])$('#'+id).oninput=e=>{settings[k]=e.target.value;applyLighting();saveSettings();};controlPage.querySelectorAll('[data-light]').forEach(b=>b.onclick=()=>applyLightPreset(b.dataset.light));}
+function applyLighting(){ambient.intensity=settings.ambient;key.intensity=settings.key;fill.intensity=settings.fill;rim.intensity=settings.rim;stageSpot.intensity=settings.stageLight;key.color.set(settings.keyColor);fill.color.set(settings.fillColor);rim.color.set(settings.rimColor);stageSpot.color.set(settings.stageColor);key.position.set(settings.keyX,settings.keyY,settings.keyZ);fill.position.set(settings.fillX,settings.fillY,settings.fillZ);rim.position.set(settings.rimX,settings.rimY,settings.rimZ);stageSpot.position.set(settings.spotX,settings.spotY,settings.spotZ);stageSpot.target.position.set(settings.spotTargetX,settings.spotTargetY,settings.spotTargetZ);stageSpot.angle=settings.spotAngle;stageSpot.penumbra=settings.spotPenumbra;stageSpot.distance=settings.spotDistance;renderer.toneMappingExposure=settings.exposure;}
+function applyLightPreset(p){const m={natural:[.32,1.15,.42,.55,0,.9],soft:[.42,.85,.55,.35,0,.9],warm:[.28,1.25,.35,.5,0,.88],cool:[.25,1,.6,.75,0,.88],stage:[.18,.8,.25,.8,2.2,.82]}[p];if(!m)return;[settings.ambient,settings.key,settings.fill,settings.rim,settings.stageLight,settings.exposure]=m;if(p==='warm'){settings.keyColor='#ffddc7';settings.fillColor='#ffd9c8';}else if(p==='cool'){settings.keyColor='#dceaff';settings.fillColor='#a6d9ff';}else{settings.keyColor='#fff4eb';settings.fillColor='#bfdcff';}applyLighting();saveSettings();renderLightControls();}
+function renderCameraControls'''
+          s, n = light_pat.subn(light_new, s, count=1)
+          if n != 1: raise SystemExit('lighting replacement failed')
+
+          # Camera advanced controls.
+          cam_pat = re.compile(r"function renderCameraControls\(\)\{.*?\}\nfunction cameraPreset", re.S)
+          cam_new = r'''function renderCameraControls(){controlPage.innerHTML=`<section class="panel-section"><h3>相机</h3><div class="button-grid"><button data-cam="full">全身</button><button data-cam="upper">半身</button><button data-cam="face">脸部</button><button data-cam="left">左侧</button><button data-cam="right">右侧</button><button data-cam="back">背面</button></div>${rowSlider('FOV',15,70,1,camera.fov)}${rowSlider('旋转速度',.1,2,.05,controls.rotateSpeed)}${rowSlider('缩放速度',.1,2,.05,controls.zoomSpeed)}${rowSlider('平移速度',.1,2,.05,controls.panSpeed)}${rowSlider('阻尼',0,.25,.01,controls.dampingFactor)}${rowSlider('最小距离',.3,5,.1,controls.minDistance)}${rowSlider('最大距离',2,15,.1,controls.maxDistance)}${rowSlider('相机 X',-8,8,.05,camera.position.x)}${rowSlider('相机 Y',-2,8,.05,camera.position.y)}${rowSlider('相机 Z',-8,8,.05,camera.position.z)}${rowSlider('目标 X',-3,3,.05,controls.target.x)}${rowSlider('目标 Y',0,3,.05,controls.target.y)}${rowSlider('目标 Z',-3,3,.05,controls.target.z)}</section>`;controlPage.querySelectorAll('[data-cam]').forEach(b=>b.onclick=()=>{cameraPreset(b.dataset.cam);renderCameraControls();});const q=[...controlPage.querySelectorAll('input[type=range]')];const apply=()=>{camera.fov=+q[0].value;camera.updateProjectionMatrix();controls.rotateSpeed=+q[1].value;controls.zoomSpeed=+q[2].value;controls.panSpeed=+q[3].value;controls.dampingFactor=+q[4].value;controls.minDistance=+q[5].value;controls.maxDistance=+q[6].value;camera.position.set(+q[7].value,+q[8].value,+q[9].value);controls.target.set(+q[10].value,+q[11].value,+q[12].value);controls.update();q.forEach(e=>e.parentElement.querySelector('output').textContent=e.value);};q.forEach(e=>e.oninput=apply);}
+function cameraPreset'''
+          s, n = cam_pat.subn(cam_new, s, count=1)
+          if n != 1: raise SystemExit('camera replacement failed')
+
+          # Ensure persisted renderer/stage state and upgrade version label.
+          s = s.replace("function animate(){", "applyLighting(); floor.visible=ring.visible=innerRing.visible=settings.stageVisible!==false;\nfunction animate(){", 1)
+          s = s.replace("version:'0.90-free-life'", "version:'0.91-free-life'", 1)
+
+          p.write_text(s,encoding='utf-8')
+
+          css = Path('src/style.css')
+          c = css.read_text(encoding='utf-8')
+          c += r'''
+/* NIVA Free Runtime v0.91: two-layer experience + dense advanced controls */
+.experience-bar{flex-direction:column;align-items:center;overflow:visible;gap:5px;bottom:76px;max-width:min(900px,82vw)}
+.experience-row{display:flex;gap:6px;align-items:center;max-width:82vw;overflow-x:auto;scrollbar-width:none;padding:1px 2px}
+.experience-row::-webkit-scrollbar{display:none}.experience-label{font-size:11px;color:#72939d;border:1px solid #1e4655;background:#07141bcc;border-radius:999px;padding:6px 9px;white-space:nowrap}.material-card{border-top:1px solid #153544;padding:9px;display:flex;flex-direction:column;gap:7px}.material-card>b{font-size:12px;color:#83ece9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.panel-section+.panel-section{margin-top:14px;padding-top:12px;border-top:1px solid #173546}@media(max-width:620px){.experience-bar{max-width:96vw}.experience-row{max-width:96vw}.experience-label{display:none}}
+'''
+          css.write_text(c,encoding='utf-8')
+          PY
+      - run: npm install
+      - run: npm test
+      - run: npm run build
+      - name: Commit upgraded runtime
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/main.js src/style.css
+          git commit -m "feat(web): natural pose full controls and layered motion demos"
+          git push origin HEAD:main
