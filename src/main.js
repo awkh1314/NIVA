@@ -28,6 +28,7 @@ let modelHeight = 1.6;
 let mixer = null;
 let currentAction = null;
 let currentActionName = 'idle';
+let persistentPreview = '';
 let speaking = false;
 let mouthLevel = 0;
 let pointerInside = false;
@@ -220,7 +221,7 @@ function playClip(name,{loop=false,duration=null}={}){
   if(!loop){ setTimeout(()=>{ if(currentAction===next){ next.fadeOut(.22); setTimeout(()=>{if(currentAction===next){currentAction=null;currentActionName='idle';}},240); } }, (duration || clip.duration)*1000+80); }
   return true;
 }
-function stopAction(){ if(currentAction){ const old=currentAction; old.fadeOut(.18); setTimeout(()=>{ if(currentAction===old){ currentAction=null; currentActionName='idle'; } },210); } }
+function stopAction(){ persistentPreview=''; if(currentAction){ const old=currentAction; old.fadeOut(.18); setTimeout(()=>{ if(currentAction===old){ currentAction=null; currentActionName='idle'; } },210); } }
 
 function centerModel(){
   if(!vrm) return;
@@ -323,7 +324,7 @@ const experienceBar=$('#experienceBar');
 experienceBar.innerHTML='<div class="experience-row"><span class="experience-label">动作预览</span></div><div class="experience-row"><span class="experience-label">语音演出</span></div>';
 const previewRow=experienceBar.children[0],voiceRow=experienceBar.children[1];
 const previewActions=[['停止','stop'],['思考','thinkLoop'],['走路','walk'],['跑步','run']];
-function startPreviewMotion(name){if(name==='stop'){stopAction();setExpression('neutral',0);return;}stopAction();setTimeout(()=>playClip(name,{loop:true}),190);}
+function startPreviewMotion(name){if(name==='stop'){stopAction();setExpression('neutral',0);return;}stopAction();persistentPreview=name;setTimeout(()=>{if(persistentPreview===name)playClip(name,{loop:true});},190);}
 for(const [label,name] of previewActions){const b=document.createElement('button');b.className='chip';b.textContent=label;b.onclick=()=>startPreviewMotion(name);previewRow.appendChild(b);}
 const voiceScenes=[
   ['打招呼',()=>{stopAction();setExpression('happy',.28);setTimeout(()=>playClip('wave',{duration:2.05}),120);setTimeout(()=>speak('你好，我是 NIVA。很高兴见到你。',true),220);}],
@@ -371,7 +372,7 @@ const director={
   choose(pool){const total=pool.reduce((s,x)=>s+x[1],0);let r=Math.random()*total;for(const x of pool){r-=x[1];if(r<=0)return x[0];}return pool[0][0];},
   fire(name,now){this.last=name;this.cooldown.set(name,now+({think:12000,smile:10000,look:10000,reach:20000,weight:10000,walk:28000,run:40000}[name]||10000)); if(name==='think')playClip('think',{duration:2.5}); if(name==='smile'){setExpression('happy',.20);setTimeout(()=>setExpression('neutral',0),2000);} if(name==='look'){lookOverride={x:(Math.random()-.5)*.55,y:(Math.random()-.5)*.18};lookOverrideUntil=now+2200;} if(name==='reach')playClip('reach',{duration:2}); if(name==='weight')playClip('weight',{duration:2.6}); if(name==='walk'){if(playClip('walk',{loop:true}))setTimeout(stopAction,2900);} if(name==='run'){if(playClip('run',{loop:true}))setTimeout(stopAction,2300);}},
   update(now){
-    if(!settings.lifeEnabled||!modelReady||speaking||now<manualOverrideUntil||now<this.resumeAt)return;
+    if(!settings.lifeEnabled||!modelReady||speaking||currentAction||persistentPreview||now<manualOverrideUntil||now<this.resumeAt)return;
     if(now>=this.nextMicro){ const p=[['think',1],['smile',1.25],['look',.9],['weight',.8]].filter(x=>this.can(x[0],now)); if(p.length)this.fire(this.choose(p),now); this.nextMicro=now+(6000+Math.random()*6000)/(0.5+settings.microFreq); }
     if(now>=this.nextMajor){ const p=[];if(settings.allowReach&&pointerInside&&pointerNdc.x>.12&&pointerNdc.y<.45)p.push(['reach',.55]);if(settings.allowWalk)p.push(['walk',.35]);if(settings.allowRun)p.push(['run',.15]);const ok=p.filter(x=>this.can(x[0],now));if(ok.length)this.fire(this.choose(ok),now);this.nextMajor=now+(18000+Math.random()*17000)/(0.5+settings.majorFreq); }
   }
@@ -448,4 +449,4 @@ function animate(){
 }
 animate();
 
-window.NIVA={version:'0.92-free-life',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state})};
+window.NIVA={version:'0.92-free-life',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,persistentPreview,director:director.state})};
