@@ -79,7 +79,7 @@ const settings = Object.assign({
   footIKEnabled:true,
   physicsGroundContact:true,
   footIKStrength:0.9,
-  crouchDepth:0.19,
+  crouchDepth:0.20,
   walkWorldSpeed:0.55,
   runWorldSpeed:1.25,
   exposure:0.9,
@@ -227,7 +227,7 @@ function buildClips(){
   const rf=(arr)=>rt.map((t,i)=>[t,arr[i],0,0]);
   clips.set('run',makeClip('run',.70,{leftUpperLeg:rf(runL),rightUpperLeg:rf(runR),leftLowerLeg:rf(rkL),rightLowerLeg:rf(rkR),leftFoot:rf(rfL),rightFoot:rf(rfR),spine:rt.map(t=>[t,4.5,0,0]),chest:rt.map((t,i)=>[t,1.2,(i<4?-1.5:1.5),0])}));
   clips.set('thinkLoop',makeClip('thinkLoop',4,{head:[[0,-2,5,-7],[1,-3,6,-8],[2,-2,5,-7],[3,-3,7,-6],[4,-2,5,-7]],rightUpperArm:[[0,8,4,20],[4,8,4,20]],rightLowerArm:[[0,0,48,0],[4,0,48,0]],rightHand:[[0,6,0,-6],[2,8,0,-5],[4,6,0,-6]]}));
-  clips.set('crouch',makeClip('crouch',2,{spine:[[0,6,0,0],[2,6,0,0]],chest:[[0,3,0,0],[2,3,0,0]],leftUpperLeg:[[0,4,0,0],[2,4,0,0]],rightUpperLeg:[[0,4,0,0],[2,4,0,0]],leftLowerLeg:[[0,8,0,0],[2,8,0,0]],rightLowerLeg:[[0,8,0,0],[2,8,0,0]],leftFoot:[[0,-2,0,0],[2,-2,0,0]],rightFoot:[[0,-2,0,0],[2,-2,0,0]],head:[[0,-2,0,0],[2,-2,0,0]]}));
+  clips.set('crouch',makeClip('crouch',2,{leftUpperLeg:[[0,2,0,0],[2,2,0,0]],rightUpperLeg:[[0,2,0,0],[2,2,0,0]],leftLowerLeg:[[0,6,0,0],[2,6,0,0]],rightLowerLeg:[[0,6,0,0],[2,6,0,0]],leftFoot:[[0,0,0,0],[2,0,0,0]],rightFoot:[[0,0,0,0],[2,0,0,0]],spine:[[0,0,0,0],[2,0,0,0]],chest:[[0,0,0,0],[2,0,0,0]],head:[[0,0,0,0],[2,0,0,0]]}));
   clips.set('recovery',makeClip('recovery',3,{spine:[[0,18,0,0],[3,18,0,0]],chest:[[0,7,0,0],[3,7,0,0]],neck:[[0,-5,0,0],[3,-5,0,0]],leftUpperLeg:[[0,8,0,0],[3,8,0,0]],rightUpperLeg:[[0,8,0,0],[3,8,0,0]],leftLowerLeg:[[0,18,0,0],[3,18,0,0]],rightLowerLeg:[[0,18,0,0],[3,18,0,0]],leftFoot:[[0,-5,0,0],[3,-5,0,0]],rightFoot:[[0,-5,0,0],[3,-5,0,0]],leftUpperArm:[[0,10,0,-7],[3,10,0,-7]],rightUpperArm:[[0,10,0,7],[3,10,0,7]],leftLowerArm:[[0,0,-24,0],[3,0,-24,0]],rightLowerArm:[[0,0,24,0],[3,0,24,0]],head:[[0,-6,0,0],[3,-6,0,0]]}));
 }
 function playClip(name,{loop=false,duration=null}={}){
@@ -540,4 +540,4 @@ function animate(){
 }
 animate();
 
-window.NIVA={version:'0.95-biomechanics-v3',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
+window.NIVA={version:'0.96-structured-squat-v4',speak,act:(name)=>performAction(name),play:(name)=>playClip(name,{duration:clips.get(name)?.duration||2}),stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};

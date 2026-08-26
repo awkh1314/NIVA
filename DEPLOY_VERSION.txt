@@ -1,4 +1,2 @@
-NIVA Biomechanics V3.1
-Crouch: feet planted, knees forward, both hands behind/sides of head, elbows out.
-Left/right arm targets are never swapped.
-Deploy: GitHub Pages refresh for hands-on-head crouch.
+NIVA Biomechanics V4
+Structured squat: corrected anatomical front/back; synchronized pelvis drop + forward torso balance + knee bend; feet/toes stay flat; root Y compensates from real foot-anchor error; hands remain on head.
