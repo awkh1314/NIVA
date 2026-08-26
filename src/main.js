@@ -10,6 +10,7 @@ import { FacingController } from './runtime/core/facing-controller.mjs';
 import { NivaIKSystem } from './runtime/ik/niva-ik-system.mjs';
 import { CharacterFrameDebug } from './runtime/debug/character-frame-debug.mjs';
 import { createPublicMotionBridge } from './runtime/motion/public-motion-bridge.mjs';
+import { PhysiologyOscillator } from './runtime/physics/biomechanics-life.mjs';
 
 const MODEL_URL = new URL('../NIVA.vrm', import.meta.url).href;
 const $ = (q) => document.querySelector(q);
@@ -285,7 +286,7 @@ loader.load(MODEL_URL,(gltf)=>{
   mixer=new THREE.AnimationMixer(vrm.humanoid.normalizedHumanBonesRoot || vrm.scene); buildClips();
   modelReady=true; runtimeSummary.textContent='Free Life Runtime · Ready';
   showToast('NIVA 已就绪');
-  NivaPhysicsBodySystem.create({vrm,getFootWorldPosition:(side,out)=>vrmAdapter?.footWorldPosition(side,out),modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physics Ready';showToast('NIVA 物理身体已就绪');}).catch((err)=>{physicsReady=false;physicsError=String(err?.message||err);console.error('NIVA physics init failed',err);runtimeSummary.textContent='Free Life Runtime · Physics fallback';});
+  NivaPhysicsBodySystem.create({vrm,getBone,getFootWorldPosition:(side,out)=>vrmAdapter?.footWorldPosition(side,out),modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physics Ready';showToast('NIVA 物理身体已就绪');}).catch((err)=>{physicsReady=false;physicsError=String(err?.message||err);console.error('NIVA physics init failed',err);runtimeSummary.textContent='Free Life Runtime · Physics fallback';});
 },undefined,(e)=>{ console.error(e); runtimeSummary.textContent='模型加载失败'; showToast('NIVA.vrm 加载失败'); });
 
 function resize(){ const r=stage.getBoundingClientRect(); renderer.setSize(r.width,r.height,false); camera.aspect=r.width/r.height; camera.updateProjectionMatrix(); }
@@ -385,7 +386,7 @@ for(const [label,fn] of voiceScenes){const b=document.createElement('button');b.
 
 const lifeSim={
   fatigue:0,energy:100,heartRate:68,breathRate:12,load:0,recovering:false,recoveryUntil:0,
-  paceNoise:1,nextPaceNoise:0,lastUi:0,lastPreview:'',stageTarget:new THREE.Vector3(),groundMode:'',
+  paceNoise:1,nextPaceNoise:0,lastUi:0,lastPreview:'',stageTarget:new THREE.Vector3(),groundMode:'',balancePlan:null,
   activity(){if(this.recovering)return'recovery';if(persistentPreview)return persistentPreview;if(currentActionName&&currentActionName!=='idle')return currentActionName;return'idle';},
   loadFor(a){return ({run:1,walk:.42,crouch:.24,thinkLoop:.16,think:.16,wave:.2,recovery:.55}[a]||.05);},
   onPreviewChanged(name){this.lastPreview='';if(name==='walk'||name==='run')this.chooseStageTarget();},
@@ -421,6 +422,14 @@ const lifeSim={
     const baseY=modelHome.y+settings.modelY;
     vrm.scene.position.y+=((baseY-vrm.scene.position.y)*(1-Math.exp(-dt*8)));
   },
+  applyBalance(){
+    const b=this.balancePlan;if(!b)return;
+    const pitch=b.torsoPitchDeg||0,roll=b.torsoRollDeg||0;
+    applyAdditive('hips',pitch*.20,0,-roll*.46,'balance');
+    applyAdditive('spine',pitch*.36,0,-roll*.30,'balance');
+    applyAdditive('chest',pitch*.28,0,-roll*.18,'balance');
+    applyAdditive('upperChest',pitch*.16,0,-roll*.08,'balance');
+  },
   applyFatigueFace(){
     if(!vrm?.expressionManager||speaking||activeExpression!=='neutral')return;const tired=clamp((this.fatigue-32)/115,0,.42);
     try{vrm.expressionManager.setValue('relaxed',tired);}catch{}
@@ -429,7 +438,7 @@ const lifeSim={
     if(!settings.lifeEnabled||!settings.lifeSimulation||!modelReady)return;dt*=settings.lifeTimeScale||1;const a=this.activity(),load=this.loadFor(a);this.load+=(load-this.load)*(1-Math.exp(-dt*2.3));
     const gain=({run:1.62,walk:.30,crouch:.08,thinkLoop:.06,think:.06,recovery:-1.35,idle:-.38}[a]??-.16);this.fatigue=clamp(this.fatigue+gain*dt,0,100);this.energy=clamp(100-this.fatigue*.88,0,100);
     const hrTarget=68+this.load*72+this.fatigue*.12,brTarget=12+this.load*23+this.fatigue*.045;this.heartRate+=(hrTarget-this.heartRate)*(1-Math.exp(-dt/5));this.breathRate+=(brTarget-this.breathRate)*(1-Math.exp(-dt/4));
-    if(this.fatigue>55&&now>=this.nextPaceNoise){this.paceNoise=.90+Math.random()*.12;this.nextPaceNoise=now+1500+Math.random()*2400;}else this.paceNoise+=(1-this.paceNoise)*(1-Math.exp(-dt*2));
+    const cadenceTarget=this.fatigue>55?.965+.035*Math.sin(now*.0016):1;this.paceNoise+=(cadenceTarget-this.paceNoise)*(1-Math.exp(-dt*1.8));
     if(currentAction){const fatigueSlow=1-clamp((this.fatigue-28)/150,0,.30);currentAction.setEffectiveTimeScale((settings.motionSpeed||1)*fatigueSlow*this.paceNoise);}
     if(this.fatigue>34&&!['crouch','recovery'].includes(currentActionName)){const f=clamp((this.fatigue-34)/66,0,1);applyAdditive('spine',f*4.2,0,0,'fatigue');applyAdditive('chest',f*2.4,0,0,'fatigue');applyAdditive('neck',-f*1.8,0,0,'fatigue');}
     if(settings.autoFatigueRecovery&&a==='run'&&this.fatigue>=88)this.forceRecovery(now);
@@ -439,20 +448,31 @@ const lifeSim={
   }
 };
 
+const physiology=new PhysiologyOscillator();
 const life={
   nextBlink:performance.now()+2500,
   blinkStart:0,
   blinkDouble:false,
   nextDouble:0,
   deepBreathUntil:0,
-  update(now){
+  update(now,dt=1/60){
     if(!vrm||!settings.lifeEnabled)return;
     if(settings.blinkEnabled&&vrm.expressionManager){
       if(!this.blinkStart&&now>=this.nextBlink){this.blinkStart=now;this.blinkDouble=Math.random()<.12;}
       if(this.blinkStart){const t=now-this.blinkStart;let v=t<90?t/90:t<145?1:(t<275?1-(t-145)/130:0);vrm.expressionManager.setValue('blink',clamp(v,0,1));if(t>300){this.blinkStart=0;const fatigueBlink=settings.lifeSimulation?clamp(3200-lifeSim.fatigue*18,1300,3200):3200;this.nextBlink=now+fatigueBlink+Math.random()*2200;if(this.blinkDouble)this.nextBlink=now+180;}}
     }
-    if(settings.breathingEnabled){ const breathHz=(settings.lifeSimulation?lifeSim.breathRate:settings.breaths)/60; const baseAmp=settings.breathAmp*(settings.lifeSimulation?(1+lifeSim.fatigue/115):1); const amp=(now<this.deepBreathUntil?.valueOf()?baseAmp*1.8:baseAmp); const breath=Math.sin((now/1000)*Math.PI*2*breathHz)*amp; applyAdditive('chest',breath*1.1,0,0); applyAdditive('upperChest',breath*.75,0,0); applyAdditive('spine',breath*.28,0,0); }
-    if(settings.heartbeatEnabled){ const beatPhase=((now/1000)*((settings.lifeSimulation?lifeSim.heartRate:settings.bpm)/60))%1; const pulse=(Math.exp(-Math.pow((beatPhase-.06)/.035,2))*.18+Math.exp(-Math.pow((beatPhase-.22)/.05,2))*.08); applyAdditive('upperChest',pulse,0,0,'heartbeat'); }
+    const vital=physiology.update(dt,{breathsPerMinute:settings.lifeSimulation?lifeSim.breathRate:settings.breaths,heartRate:settings.lifeSimulation?lifeSim.heartRate:settings.bpm,breathAmplitude:settings.breathAmp,deepBreath:now<this.deepBreathUntil,load:settings.lifeSimulation?lifeSim.load:0});
+    if(settings.breathingEnabled){
+      applyAdditive('spine',vital.spinePitchDeg,0,0,'breath');
+      applyAdditive('chest',vital.chestPitchDeg,0,0,'breath');
+      applyAdditive('upperChest',vital.upperChestPitchDeg,0,0,'breath');
+      applyAdditive('leftShoulder',0,0,vital.shoulderLiftDeg,'breath');
+      applyAdditive('rightShoulder',0,0,-vital.shoulderLiftDeg,'breath');
+    }
+    if(settings.heartbeatEnabled){
+      applyAdditive('upperChest',vital.heartbeatDeg,0,0,'heartbeat');
+      applyAdditive('chest',vital.heartbeatDeg*.35,0,0,'heartbeat');
+    }
   }
 };
 const additiveScratch=new Map();
@@ -463,9 +483,11 @@ function applyAdditive(name,x=0,y=0,z=0,key='life'){
 function applyManualAndLife(){
   if(!vrm)return;
   for(const [name,base] of baseQuats.entries()){
-    if(currentAction && ['walk','run','wave','think','thinkLoop','reach','weight','nod','crouch','recovery'].includes(currentActionName) && !manualOffsets.has(name)) continue;
-    const node=getBone(name); if(!node)continue; const m=manualOffsets.get(name)||[0,0,0],layers=additiveScratch.get(name)||{};let lx=0,ly=0,lz=0;for(const v of Object.values(layers)){lx+=v?.[0]||0;ly+=v?.[1]||0;lz+=v?.[2]||0;}
-    node.quaternion.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(m[0]+lx),rad(m[1]+ly),rad(m[2]+lz),'XYZ')));
+    const node=getBone(name);if(!node)continue;const layers=additiveScratch.get(name)||{};let lx=0,ly=0,lz=0;for(const v of Object.values(layers)){lx+=v?.[0]||0;ly+=v?.[1]||0;lz+=v?.[2]||0;}
+    const delta=new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(lx),rad(ly),rad(lz),'XYZ'));
+    const actionOwns=currentAction&&['walk','run','wave','think','thinkLoop','reach','weight','nod','crouch','recovery'].includes(currentActionName)&&!manualOffsets.has(name);
+    if(actionOwns){if(Math.abs(lx)+Math.abs(ly)+Math.abs(lz)>1e-7)node.quaternion.multiply(delta);continue;}
+    const m=manualOffsets.get(name)||[0,0,0];node.quaternion.copy(base).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(m[0]),rad(m[1]),rad(m[2]),'XYZ'))).multiply(delta));
   }
   additiveScratch.clear();
 }
@@ -552,9 +574,9 @@ document.addEventListener('keydown',e=>{if(e.key.toLowerCase()==='c'&&document.a
 
 applyLighting();floor.visible=ring.visible=innerRing.visible=settings.stageVisible!==false;
 function animate(){
-  requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(); controls.update(); if(mixer)mixer.update(dt); lifeSim.update(dt,now); life.update(now); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
+  requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(); controls.update(); if(mixer)mixer.update(dt); lifeSim.update(dt,now); life.update(now,dt); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
   if(speaking&&vrm?.expressionManager){ mouthLevel=.12+Math.abs(Math.sin(now*.012))*0.32+Math.abs(Math.sin(now*.027))*0.14;vrm.expressionManager.setValue('aa',mouthLevel); } else if(vrm?.expressionManager){mouthLevel*=.78;vrm.expressionManager.setValue('aa',mouthLevel);}
-  applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});contactPlan=bodyPhysics.solvePostAnimation(dt,{action:currentActionName,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth});}if(ikSystem&&contactPlan){ikSystem.configure({enabled:true,footEnabled:settings.footIKEnabled,actionEnabled:true,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}facingController?.tick();coordinateDebug?.update();vrm.update(dt);} renderer.render(scene,camera);
+  lifeSim.applyBalance(); applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});contactPlan=bodyPhysics.solvePostAnimation(dt,{action:currentActionName,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth});lifeSim.balancePlan=contactPlan?.balance||null;}if(ikSystem&&contactPlan){ikSystem.configure({enabled:true,footEnabled:settings.footIKEnabled,actionEnabled:true,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}facingController?.tick();coordinateDebug?.update();vrm.update(dt);} renderer.render(scene,camera);
 }
 animate();
 
@@ -564,4 +586,4 @@ const publicPlay=createPublicMotionBridge({
   setEmotion:(name)=>{const intensity=name==='happy'?.28:name==='excited'?.30:.18;setExpression(name,intensity);setTimeout(()=>setExpression('neutral',0),2600);},
   speakText:speak,
 });
-window.NIVA={version:'0.99.0',speak,act:(name)=>performAction(name),play:publicPlay,stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,frame:characterFrame?.describe?.(),facing:facingController?.state?.(),ik:ikSystem?.state?.(),physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
+window.NIVA={version:'0.99.1',speak,act:(name)=>performAction(name),play:publicPlay,stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,frame:characterFrame?.describe?.(),facing:facingController?.state?.(),ik:ikSystem?.state?.(),physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};

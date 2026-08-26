@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import RAPIER from '@dimforge/rapier3d-compat';
+import { GaitBalanceController, HUMANOID_MASS_WEIGHTS, weightedCenterOfMass } from './biomechanics-life.mjs';
 
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const damp = (current, target, lambda, dt) => current + (target - current) * (1 - Math.exp(-lambda * dt));
@@ -50,6 +51,8 @@ export class NivaPhysicsBodySystem {
     this.lastStance = { left: false, right: false };
     this.lastAction = 'idle';
     this.lastGroundNormal = new THREE.Vector3(0, 1, 0);
+    this.balanceController = new GaitBalanceController({ modelHeight });
+    this.balancePlan = null;
   }
 
   init() {
@@ -89,6 +92,22 @@ export class NivaPhysicsBodySystem {
     if (!foot) return null;
     this.vrm.scene.updateMatrixWorld(true);
     return foot.getWorldPosition(new THREE.Vector3());
+  }
+
+  readBoneWorld(name) {
+    const bone = this.getBone?.(name);
+    if (!bone) return null;
+    this.vrm.scene.updateMatrixWorld(true);
+    return bone.getWorldPosition(new THREE.Vector3());
+  }
+
+  estimateCenterOfMass() {
+    const samples = [];
+    for (const [name, mass] of Object.entries(HUMANOID_MASS_WEIGHTS)) {
+      const position = this.readBoneWorld(name);
+      if (position) samples.push({ mass, position });
+    }
+    return weightedCenterOfMass(samples);
   }
 
   rebuildGround(radius) {
@@ -155,6 +174,8 @@ export class NivaPhysicsBodySystem {
     this.world.timestep = clamp(dt, 1 / 120, 1 / 30);
     this.world.step();
     const next = this.characterBody.translation();
+    this.vrm.scene.position.x = next.x;
+    this.vrm.scene.position.z = next.z;
     this.groundY = next.y - this.characterCenterOffset;
   }
 
@@ -219,7 +240,7 @@ export class NivaPhysicsBodySystem {
       this.targetPostureOffset = action === 'recovery' ? -this.modelHeight * 0.10 : 0;
       this.postureOffset = damp(this.postureOffset, this.targetPostureOffset, 5.5, dt);
     }
-    this.vrm.scene.position.y = this.groundY + this.postureOffset;
+    this.vrm.scene.position.y = this.groundY + this.postureOffset + (this.balancePlan?.verticalOffset || 0);
     return eased;
   }
 
@@ -244,6 +265,33 @@ export class NivaPhysicsBodySystem {
       if (!isStance && this.lastStance[side] && !['crouch', 'recovery'].includes(action)) this.footAnchor[side] = null;
       this.lastStance[side] = isStance;
     }
+    const centerOfMass = this.estimateCenterOfMass();
+    const leftFoot = this.readFoot('left');
+    const rightFoot = this.readFoot('right');
+    const forward = new THREE.Vector3(0, 0, 1).applyQuaternion(this.vrm.scene.quaternion).setY(0);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.vrm.scene.quaternion).setY(0);
+    if (forward.lengthSq() > 1e-8) forward.normalize();
+    if (right.lengthSq() > 1e-8) right.normalize();
+    this.balancePlan = this.balanceController.update(dt, {
+      action,
+      phase,
+      stance,
+      centerOfMass,
+      leftFoot,
+      rightFoot,
+      forward,
+      right,
+      grounded: this.grounded,
+    });
+
+    // Physics owns root translation. A small visual pelvis shift places the
+    // projected COM over the support foot; move()/holdPosition() reset this
+    // from the Rapier body on the next frame, so the correction never drifts.
+    if (this.balancePlan && this.grounded) {
+      this.vrm.scene.position.addScaledVector(right, this.balancePlan.rootShiftRight || 0);
+      this.vrm.scene.position.addScaledVector(forward, this.balancePlan.rootShiftForward || 0);
+    }
+
     return {
       owner: 'physics-contact-plan',
       action,
@@ -257,6 +305,7 @@ export class NivaPhysicsBodySystem {
       groundNormal: this.lastGroundNormal.clone(),
       grounded: this.grounded,
       postureOffset: this.postureOffset,
+      balance: this.balancePlan ? { ...this.balancePlan } : null,
     };
   }
 
@@ -269,8 +318,10 @@ export class NivaPhysicsBodySystem {
       postureOffset: this.postureOffset,
       leftFootPlanted: Boolean(this.footAnchor.left),
       rightFootPlanted: Boolean(this.footAnchor.right),
-      owner: 'Rapier + root position + ground contacts only',
-      solver: 'physics-boundary-v1',
+      owner: 'Rapier + root position + ground contacts + COM balance plan',
+      centerOfMass: this.balancePlan?.com || null,
+      balance: this.balancePlan ? { ...this.balancePlan } : null,
+      solver: 'physics-balance-v2',
     };
   }
 }
