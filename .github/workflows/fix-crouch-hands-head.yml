@@ -110,3 +110,4 @@ jobs:
           git add src/runtime/physics/niva-body-physics.mjs DEPLOY_VERSION.txt .github/workflows/fix-crouch-hands-head.yml
           git commit -m "fix(motion): crouch with both hands on head"
           git push origin HEAD:main
+# trigger-v2
