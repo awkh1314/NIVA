@@ -235,3 +235,4 @@ jobs:
           git add src/runtime/physics/niva-body-physics.mjs src/main.js DEPLOY_VERSION.txt .github/workflows/fix-crouch-structured-v4.yml
           git commit -m "fix(biomechanics): structured balanced flat-foot squat"
           git push origin HEAD:main
+# trigger v4
