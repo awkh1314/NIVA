@@ -1,37 +1,37 @@
 # NIVA Roadmap
 唯一技术路线：3D Desktop Digital Life。
 
-## V0.83 — 当前
+## V0.99.0 — 当前稳定基线
 - [x] 唯一 `NIVA.vrm`
 - [x] 54 骨骼 ROM / 速度 / 加速度限制
-- [x] Coupled Joint Constraints
-- [x] Safe Pose Bank 预计算
-- [x] 终点碰撞预检
-- [x] 整条运动路径预检
-- [x] quintic 平滑过渡
-- [x] 动作队列，不允许新输入瞬移打断
-- [x] DeepSeek 稀疏 JSON 编排协议
-- [x] 体验预设
-- [x] Kokoro v1.1-zh INT8 / zf_001 默认轻量语音
-- [x] NIVA Emotion Prosody：style/intensity → speed/gain
-- [x] Vosk 中文离线 ASR + 系统识别回退
-- [x] 系统 TTS 回退
+- [x] Coupled Joint Constraints / Safe Pose / 路径碰撞预检
+- [x] Runtime Boundaries V1：Frame / Facing / Physics / IK 职责隔离
+- [x] Biomechanics V2：解析式 Two-Bone IK、足底接触、自碰撞代理
+- [x] DeepSeek 稀疏 JSON Brain Protocol + Performance Director
+- [x] `NIVA.play({ text, emotion, motion })` 公开 Motion Bridge
+- [x] `idle` / `wave` / `nod` 基础动作与平滑过渡
+- [x] `wave` 驱动肩、上臂、前臂、手、胸与头，不再只有手腕动作
+- [x] walk / run / think / reach 等本地动作
+- [x] 表情、生命感、注视、眨眼、呼吸与心跳
+- [x] Kokoro v1.1-zh INT8 / `zf_001` 桌面离线资源固定 revision + SHA256
 - [x] Tauri Windows 桌面壳
-- [x] 默认模型窗口 / 双击展开界面 / 屏幕边界自适应
-- [x] NIVA 内部仅模型绘制像素响应点击/拖拽/双击
-- [x] GitHub Actions Windows EXE 构建定义
-- [x] Tauri Windows icon 资源
+- [x] GitHub Pages 自动部署
+- [x] Windows EXE 自动构建、Artifact 与 rolling Release
+- [x] 自动化回归测试：Runtime / IK / Collision / Planner / Brain / Performance / Voice / Motion Bridge
 
-## V0.84
-- [ ] 使用真实音频能量做口型
-- [ ] 对唯一 NIVA 模型做 mesh-aware 碰撞体离线标定
-- [ ] gesture bank 扩展到坐、蹲、转身、递物、拥抱等复杂行为
-- [ ] Windows HWND 级透明像素点击穿透，让透明区域直接点到底层应用
-- [ ] 将 Vosk ASR 也改为无需 Python 的原生/ONNX 内置方案
-- [ ] Kokoro 模型首次下载进度、缓存管理和离线完整包
-
-## V0.9+
+## 下一阶段 — V1.0
+- [ ] 将当前 Web/Free Life 主入口完全切换为统一 Brain → Performance → Voice → Motion runtime，清理旧兼容路径
 - [ ] 长期记忆
 - [ ] 本地/云端大模型可切换
 - [ ] 工具调用与桌面自动化
+- [ ] 更复杂的坐、蹲、转身、递物、拥抱与地面姿态
+- [ ] Windows HWND 级透明像素点击穿透
 - [ ] 多屏、多角色、多设备同步
+
+## 发布门槛
+每次发布必须同时满足：
+1. `npm test` 全绿；
+2. `npm run build` 成功；
+3. GitHub Pages deploy 成功；
+4. Windows EXE build 成功；
+5. Release 中存在 `NIVA-Windows-x64.zip`。
