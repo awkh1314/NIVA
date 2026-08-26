@@ -26,13 +26,16 @@ jobs:
           $Onnx = "$Model\onnx"
           $Voices = "public\kokoro\voices"
           New-Item -ItemType Directory -Force -Path $Onnx,$Voices | Out-Null
-          $Revision = "8b6f9672edefb3e00d1a946d79bb702c02519389"
-          $Base = "https://huggingface.co/onnx-community/Kokoro-82M-v1.1-zh-ONNX/resolve/$Revision"
-          Invoke-WebRequest "$Base/config.json?download=true" -OutFile "$Model\config.json"
-          Invoke-WebRequest "$Base/tokenizer.json?download=true" -OutFile "$Model\tokenizer.json"
-          Invoke-WebRequest "$Base/tokenizer_config.json?download=true" -OutFile "$Model\tokenizer_config.json"
-          Invoke-WebRequest "$Base/onnx/model_quantized.onnx?download=true" -OutFile "$Onnx\model_quantized.onnx"
-          Invoke-WebRequest "$Base/voices/zf_001.bin?download=true" -OutFile "$Voices\zf_001.bin"
+          $ModelRevision = "8b6f9672edefb3e00d1a946d79bb702c02519389"
+          $VoiceRevision = "52a9e4810fdb21f40c14c3ca21d19069beca31c3"
+          $Repo = "https://huggingface.co/onnx-community/Kokoro-82M-v1.1-zh-ONNX/resolve"
+          $ModelBase = "$Repo/$ModelRevision"
+          $VoiceBase = "$Repo/$VoiceRevision"
+          Invoke-WebRequest "$ModelBase/config.json?download=true" -OutFile "$Model\config.json"
+          Invoke-WebRequest "$ModelBase/tokenizer.json?download=true" -OutFile "$Model\tokenizer.json"
+          Invoke-WebRequest "$ModelBase/tokenizer_config.json?download=true" -OutFile "$Model\tokenizer_config.json"
+          Invoke-WebRequest "$ModelBase/onnx/model_quantized.onnx?download=true" -OutFile "$Onnx\model_quantized.onnx"
+          Invoke-WebRequest "$VoiceBase/voices/zf_001.bin?download=true" -OutFile "$Voices\zf_001.bin"
           $hash=(Get-FileHash "$Onnx\model_quantized.onnx" -Algorithm SHA256).Hash.ToLower()
           if ($hash -ne "a39469be791eeaa3089c1ed5e58b8731d1f2462ea0e7dae2bc44388e58f973d8") { throw "Kokoro model SHA256 mismatch: $hash" }
           $voiceHash=(Get-FileHash "$Voices\zf_001.bin" -Algorithm SHA256).Hash.ToLower()
@@ -49,7 +52,7 @@ jobs:
           NIVA V0.99.0 Portable
           1. 直接运行 NIVA.exe；不配置 API 时可使用内置 Free Life Runtime。
           2. Brain / Voice / Motion 保持隔离边界，公开接口支持 NIVA.play({ text, emotion, motion })。
-          3. Kokoro INT8 / zf_001 固定上游 revision 并校验 SHA256，桌面包离线携带模型资源。
+          3. Kokoro INT8 / zf_001 分别固定已验证上游 revision 与 SHA256，桌面包离线携带模型资源。
           4. Runtime Boundaries / Biomechanics V2 / Safe Pose / IK 测试必须全部通过后才产出包。
           "@ | Set-Content -Encoding UTF8 release\README.txt
           Compress-Archive -Path release\* -DestinationPath NIVA-Windows-x64.zip -Force
