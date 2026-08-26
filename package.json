@@ -1,13 +1,13 @@
 {
   "name": "niva",
-  "version": "0.95.0",
+  "version": "0.97.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test runtime/niva-vrm-limits.test.mjs runtime/niva-vrm-collision-guard.test.mjs src/safe-pose-planner.test.mjs src/orchestrator.test.mjs src/voice-prosody.test.mjs runtime/brain/protocol.test.mjs runtime/performance/director.test.mjs",
+    "test": "node --test runtime/niva-vrm-limits.test.mjs runtime/niva-vrm-collision-guard.test.mjs runtime/architecture/runtime-boundaries.test.mjs src/safe-pose-planner.test.mjs src/orchestrator.test.mjs src/voice-prosody.test.mjs runtime/brain/protocol.test.mjs runtime/performance/director.test.mjs",
     "tauri": "tauri",
     "desktop": "tauri build --no-bundle"
   },
