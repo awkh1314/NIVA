@@ -15,15 +15,15 @@ jobs:
       - uses: actions/setup-node@v5
         with:
           node-version: 22
-      - name: Lock continuous motion previews
-        run: python .github/scripts/fix_preview_lock.py
+      - name: Add advanced VRM controls
+        run: python .github/scripts/add_vrm_advanced_controls.py
       - run: npm install
       - run: npm test
       - run: npm run build
-      - name: Commit preview lock
+      - name: Commit advanced controls
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/main.js
-          git commit -m "fix(web): keep motion preview active until switch or stop"
+          git commit -m "feat(web): expose mesh and spring bone controls"
           git push origin HEAD:main
