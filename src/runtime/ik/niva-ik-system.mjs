@@ -59,9 +59,9 @@ export class NivaIKSystem {
       for(const side of ['left','right']){
         const chain=this.armChain(side);if(!chain)continue;
         const sign=side==='left'?-1:1;const gait=sign*wave;const len=this.armLength(side);const root=chain.root.getWorldPosition(new THREE.Vector3());
-        const target=root.clone().addScaledVector(down,len*(run?.55:.78)).addScaledVector(forward,gait*len*(run?.36:.20)).addScaledVector(right,sign*len*.08);
-        const pole=root.clone().addScaledVector(right,sign*len*.72).addScaledVector(forward,gait*len*.10).addScaledVector(down,len*(run?.08:.18));
-        this.solveArm(side,target,(run?.92:.72)*scale,pole);
+        const target=root.clone().addScaledVector(down,len*(run ? .55 : .78)).addScaledVector(forward,gait*len*(run ? .36 : .20)).addScaledVector(right,sign*len*.08);
+        const pole=root.clone().addScaledVector(right,sign*len*.72).addScaledVector(forward,gait*len*.10).addScaledVector(down,len*(run ? .08 : .18));
+        this.solveArm(side,target,(run ? .92 : .72)*scale,pole);
       }
     }});
     if(!result.ok)this.lastRejectedAction=action;
