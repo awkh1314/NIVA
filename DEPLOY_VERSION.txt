@@ -1,3 +1,4 @@
 NIVA Biomechanics V3.1
 Crouch: feet planted, knees forward, both hands behind/sides of head, elbows out.
 Left/right arm targets are never swapped.
+Deploy: GitHub Pages refresh for hands-on-head crouch.
