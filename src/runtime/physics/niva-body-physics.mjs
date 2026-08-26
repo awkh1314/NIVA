@@ -57,6 +57,8 @@ export class NivaPhysicsBodySystem {
     this.motionEstimator = new RootMotionEstimator();
     this.recoveryPlanner = new RecoveryStepPlanner({ modelHeight });
     this.predictivePlan = null;
+    this.roomColliders = [];
+    this.gaitPlan = null;
   }
 
   init() {
@@ -127,6 +129,18 @@ export class NivaPhysicsBodySystem {
       RAPIER.ColliderDesc.cylinder(0.045, this.stageRadius).setFriction(1).setRestitution(0),
       this.groundBody,
     );
+  }
+
+  addFixedBoxCollider({ name = 'room-box', size, position } = {}) {
+    if (!this.world || !size || !position) return null;
+    const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z));
+    const collider = this.world.createCollider(
+      RAPIER.ColliderDesc.cuboid(Math.max(.01,size.x/2),Math.max(.01,size.y/2),Math.max(.01,size.z/2)).setFriction(.95).setRestitution(0),
+      body,
+    );
+    const entry = { name, body, collider };
+    this.roomColliders.push(entry);
+    return entry;
   }
 
   configure({ enabled = true, ikEnabled = true, ikStrength = 0.9 } = {}) {
@@ -251,7 +265,7 @@ export class NivaPhysicsBodySystem {
   /**
    * Builds contact/posture data only. NivaIKSystem consumes this plan afterwards.
    */
-  solvePostAnimation(dt, { action = 'idle', actionTime = 0, duration = 1, crouchDepth = 0.14 } = {}) {
+  solvePostAnimation(dt, { action = 'idle', actionTime = 0, duration = 1, crouchDepth = 0.14, gaitPlan = null } = {}) {
     if (!this.enabled || !this.vrm) return null;
     const changed = action !== this.lastAction;
     if (changed) {
@@ -261,9 +275,10 @@ export class NivaPhysicsBodySystem {
     }
     const crouchAmount = this.setPosture(action, dt, crouchDepth);
     const phase = duration > 0 ? ((actionTime % duration) / duration + 1) % 1 : 0;
-    const stance = { left: false, right: false };
+    this.gaitPlan = gaitPlan ? { ...gaitPlan, supportLoad: gaitPlan.supportLoad ? { ...gaitPlan.supportLoad } : null } : null;
+    const stance = gaitPlan?.stance ? { left: Boolean(gaitPlan.stance.left), right: Boolean(gaitPlan.stance.right) } : { left: false, right: false };
     for (const side of ['left', 'right']) {
-      const isStance = this.stanceFor(action, phase, side);
+      const isStance = gaitPlan?.stance ? Boolean(gaitPlan.stance[side]) : this.stanceFor(action, phase, side);
       stance[side] = isStance;
       if (isStance && !this.lastStance[side]) this.captureFoot(side);
       if (!isStance && this.lastStance[side] && !['crouch', 'recovery'].includes(action)) this.footAnchor[side] = null;
@@ -288,6 +303,16 @@ export class NivaPhysicsBodySystem {
       right,
       grounded: this.grounded,
     });
+    if (this.balancePlan && gaitPlan?.supportLoad) {
+      const leftLoad = clamp(gaitPlan.supportLoad.left ?? .5, 0, 1);
+      const rightLoad = clamp(gaitPlan.supportLoad.right ?? .5, 0, 1);
+      this.balancePlan.gait = this.gaitPlan;
+      this.balancePlan.leftLoad = leftLoad;
+      this.balancePlan.rightLoad = rightLoad;
+      // Pressure transfer is converted into a small pelvis/COM migration toward
+      // the planted foot. Foot IK keeps that foot fixed while the body passes over it.
+      this.balancePlan.rootShiftRight = (this.balancePlan.rootShiftRight || 0) + (rightLoad-leftLoad)*this.modelHeight*.010;
+    }
 
     const rootPosition = this.characterBody?.translation?.() || this.vrm.scene.position;
     const motion = this.motionEstimator.update(dt, rootPosition);
@@ -368,6 +393,7 @@ export class NivaPhysicsBodySystem {
       grounded: this.grounded,
       postureOffset: this.postureOffset,
       balance: this.balancePlan ? { ...this.balancePlan } : null,
+      gait: this.gaitPlan ? { ...this.gaitPlan } : null,
     };
   }
 
@@ -383,7 +409,9 @@ export class NivaPhysicsBodySystem {
       owner: 'Rapier + root position + contacts + COM/capture-point recovery planning',
       centerOfMass: this.balancePlan?.com || null,
       balance: this.balancePlan ? { ...this.balancePlan } : null,
-      solver: 'physics-predictive-balance-v3',
+      gait: this.gaitPlan ? { ...this.gaitPlan } : null,
+      roomColliders: this.roomColliders.length,
+      solver: 'physics-contact-gait-room-v4',
     };
   }
 }

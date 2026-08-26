@@ -13,6 +13,8 @@ import { createPublicMotionBridge } from './runtime/motion/public-motion-bridge.
 import { PhysiologyOscillator } from './runtime/physics/biomechanics-life.mjs';
 import { JointRotationGuard } from './runtime/safety/joint-rotation-guard.mjs';
 import { SelfCollisionProjector } from './runtime/safety/self-collision-projector.mjs';
+import { BedroomWorld } from './runtime/world/bedroom-world.mjs';
+import { PhysicalEmbodimentController } from './runtime/embodiment/physical-embodiment-v1.mjs';
 
 const MODEL_URL = new URL('../NIVA.vrm', import.meta.url).href;
 const $ = (q) => document.querySelector(q);
@@ -49,6 +51,8 @@ let facingController = null;
 let ikSystem = null;
 let jointGuard = null;
 let selfCollisionProjector = null;
+let bedroomWorld = null;
+let physicalEmbodiment = null;
 let coordinateDebug = null;
 let physicsReady = false;
 let physicsError = '';
@@ -151,6 +155,10 @@ const ringMat = new THREE.MeshBasicMaterial({ color:0x59dce0, transparent:true, 
 const ring = new THREE.Mesh(new THREE.RingGeometry(1.54,1.59,96), ringMat); ring.rotation.x=-Math.PI/2; ring.position.y=0.006; scene.add(ring);
 const innerRing = new THREE.Mesh(new THREE.RingGeometry(0.83,0.85,96), new THREE.MeshBasicMaterial({color:0x5665a7,transparent:true,opacity:0.32,side:THREE.DoubleSide})); innerRing.rotation.x=-Math.PI/2; innerRing.position.y=0.008; scene.add(innerRing);
 
+// A semantic bedroom replaces the empty stage as NIVA's first persistent world.
+bedroomWorld = new BedroomWorld({scene});
+camera.position.set(0,1.55,5.2); controls.target.set(.35,.85,-.25); controls.maxDistance=10;
+
 const gazeTarget = new THREE.Object3D(); scene.add(gazeTarget);
 const clock = new THREE.Clock();
 const baseQuats = new Map();
@@ -224,6 +232,18 @@ const clips = new Map();
 function buildClips(){
   const n=(d)=>[[0,0,0,0],[d,0,0,0]];
   clips.set('idle', makeClip('idle',2,{head:n(2)}));
+  // Crossed arms is a held pose. AnimationMixer fade-in supplies the natural entry;
+  // Anatomical ROM V2 and the continuous collision projector remain the final authority.
+  clips.set('crossArms',makeClip('crossArms',2.4,{
+    leftShoulder:[[0,0,4,-5],[2.4,0,4,-5]],rightShoulder:[[0,0,-4,5],[2.4,0,-4,5]],
+    leftUpperArm:[[0,20,-18,-28],[2.4,20,-18,-28]],rightUpperArm:[[0,20,18,28],[2.4,20,18,28]],
+    leftLowerArm:[[0,0,-72,0],[2.4,0,-72,0]],rightLowerArm:[[0,0,72,0],[2.4,0,72,0]],
+    leftHand:[[0,4,-8,10],[2.4,4,-8,10]],rightHand:[[0,4,8,-10],[2.4,4,8,-10]],
+    chest:[[0,-2,0,0],[2.4,-2,0,0]]
+  }));
+  clips.set('sitBed',makeClip('sitBed',1.25,{hips:[[0,0,0,0],[.55,-8,0,0],[1.25,-10,0,0]],spine:[[0,0,0,0],[.55,8,0,0],[1.25,10,0,0]],leftUpperLeg:[[0,0,0,0],[.7,72,0,0],[1.25,78,0,0]],rightUpperLeg:[[0,0,0,0],[.7,72,0,0],[1.25,78,0,0]],leftLowerLeg:[[0,0,0,0],[.7,82,0,0],[1.25,88,0,0]],rightLowerLeg:[[0,0,0,0],[.7,82,0,0],[1.25,88,0,0]]}));
+  clips.set('lieBed',makeClip('lieBed',1.5,{hips:[[0,0,0,0],[1.5,4,0,0]],spine:[[0,0,0,0],[1.5,-5,0,0]],leftUpperLeg:[[0,0,0,0],[1.5,12,0,-5]],rightUpperLeg:[[0,0,0,0],[1.5,18,0,7]],leftLowerLeg:[[0,0,0,0],[1.5,18,0,0]],rightLowerLeg:[[0,0,0,0],[1.5,24,0,0]],leftUpperArm:[[0,0,0,0],[1.5,8,0,22]],rightUpperArm:[[0,0,0,0],[1.5,12,0,-18]]}));
+  clips.set('sleepBed',makeClip('sleepBed',4,{chest:[[0,0,0,0],[1,2,0,0],[2,0,0,0],[3,1.5,0,0],[4,0,0,0]],head:[[0,0,0,0],[2,0,4,0],[4,0,0,0]]}));
   clips.set('nod', makeClip('nod',1,{head:[[0,0,0,0],[.2,10,0,0],[.4,0,0,0],[.6,8,0,0],[.82,0,0,0],[1,0,0,0]],neck:[[0,0,0,0],[.2,3,0,0],[.4,0,0,0],[.6,2,0,0],[1,0,0,0]]}));
   clips.set('think', makeClip('think',2.5,{head:[[0,0,0,0],[.45,-3,6,-7],[1.8,-3,6,-7],[2.5,0,0,0]],rightUpperArm:[[0,0,0,0],[.5,10,4,22],[1.9,10,4,22],[2.5,0,0,0]],rightLowerArm:[[0,0,0,0],[.6,0,52,0],[1.9,0,52,0],[2.5,0,0,0]],rightHand:[[0,0,0,0],[.7,8,0,-8],[1.9,8,0,-8],[2.5,0,0,0]]}));
   clips.set('reach', makeClip('reach',2.0,{spine:[[0,0,0,0],[.65,3,0,0],[1.35,3,0,0],[2,0,0,0]],head:[[0,0,0,0],[.65,5,-5,0],[1.35,5,-5,0],[2,0,0,0]],rightUpperArm:[[0,0,0,0],[.65,18,10,18],[1.35,18,10,18],[2,0,0,0]],rightLowerArm:[[0,0,0,0],[.7,0,34,0],[1.35,0,34,0],[2,0,0,0]],rightHand:[[0,0,0,0],[.75,-7,0,-8],[1.35,-7,0,-8],[2,0,0,0]]}));
@@ -290,7 +310,7 @@ loader.load(MODEL_URL,(gltf)=>{
   mixer=new THREE.AnimationMixer(vrm.humanoid.normalizedHumanBonesRoot || vrm.scene); buildClips();
   modelReady=true; runtimeSummary.textContent='Free Life Runtime · Ready';
   showToast('NIVA 已就绪');
-  NivaPhysicsBodySystem.create({vrm,getBone,getFootWorldPosition:(side,out)=>vrmAdapter?.footWorldPosition(side,out),modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physics Ready';showToast('NIVA 物理身体已就绪');}).catch((err)=>{physicsReady=false;physicsError=String(err?.message||err);console.error('NIVA physics init failed',err);runtimeSummary.textContent='Free Life Runtime · Physics fallback';});
+  NivaPhysicsBodySystem.create({vrm,getBone,getFootWorldPosition:(side,out)=>vrmAdapter?.footWorldPosition(side,out),modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;bedroomWorld?.registerPhysics(bodyPhysics);physicalEmbodiment=new PhysicalEmbodimentController({world:bedroomWorld,getVrm:()=>vrm,getBodyPhysics:()=>bodyPhysics,getActionState:()=>({time:currentAction?.time||0,duration:currentAction?.getClip?.()?.duration||1}),playClip:(name,opts)=>playClip(name,opts),stopAction:()=>stopAction(),faceDirection:(dir,dt,lambda)=>facingController?.faceDirection(dir,dt,lambda),walkSpeed:settings.walkWorldSpeed});physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physical Room Ready';showToast('NIVA 房间物理身体已就绪');}).catch((err)=>{physicsReady=false;physicsError=String(err?.message||err);console.error('NIVA physics init failed',err);runtimeSummary.textContent='Free Life Runtime · Physics fallback';});
 },undefined,(e)=>{ console.error(e); runtimeSummary.textContent='模型加载失败'; showToast('NIVA.vrm 加载失败'); });
 
 function resize(){ const r=stage.getBoundingClientRect(); renderer.setSize(r.width,r.height,false); camera.aspect=r.width/r.height; camera.updateProjectionMatrix(); }
@@ -318,6 +338,10 @@ const DEMO={
   '思考一下':{reply:'嗯……让我想一下。',emotion:'thinking',action:'think'},
   '走一下':{reply:'好，我走给你看看。',emotion:'happy',action:'walk'},
   '走路':{reply:'好，我走给你看看。',emotion:'happy',action:'walk'},
+  '双手抱胸':{reply:'好。',emotion:'neutral',action:'crossArms'},
+  '抱胸':{reply:'好。',emotion:'neutral',action:'crossArms'},
+  '去床上睡觉':{reply:'好，我走到床边，掀开被子再躺下。',emotion:'gentle',action:'sleepTask'},
+  '回房睡觉':{reply:'好，我回床上睡觉。',emotion:'gentle',action:'sleepTask'},
   '跑一下':{reply:'好，我跑一下。',emotion:'excited',action:'run'},
   '跑步':{reply:'好，我跑一下。',emotion:'excited',action:'run'},
   '再见':{reply:'好，下次见。',emotion:'gentle',action:'wave'},
@@ -348,6 +372,8 @@ function performAction(action,allowWhileSpeaking=false){
   if(action==='run'){ if(playClip('run',{loop:true,allowWhileSpeaking})){setTimeout(stopAction,2500);} return; }
   if(action==='smile'){ setExpression('happy',.3); setTimeout(()=>setExpression('neutral',0),2200); return; }
   if(action==='breath'){ life.deepBreathUntil=performance.now()+5000; return; }
+  if(action==='crossArms'){ return playClip('crossArms',{loop:true,allowWhileSpeaking}); }
+  if(action==='sleepTask'){ physicalEmbodiment?.startSleep?.(); return true; }
 }
 
 const TABS=['基础','人物','表情','生命','动作','舞台','灯光','相机','声音']; let activeTab='基础';
@@ -372,7 +398,7 @@ document.querySelectorAll('.mode-btn').forEach(b=>b.addEventListener('click',()=
 const experienceBar=$('#experienceBar');
 experienceBar.innerHTML='<div class="experience-row"><span class="experience-label">动作预览</span></div><div class="experience-row"><span class="experience-label">语音演出</span></div>';
 const previewRow=experienceBar.children[0],voiceRow=experienceBar.children[1];
-const previewActions=[['停止','stop'],['思考','thinkLoop'],['走路','walk'],['跑步','run'],['蹲下','crouch']];
+const previewActions=[['停止','stop'],['思考','thinkLoop'],['抱胸','crossArms'],['走路','walk'],['跑步','run'],['蹲下','crouch']];
 function startPreviewMotion(name){
   if(name==='stop'){stopAction();lifeSim.recovering=false;setExpression('neutral',0);return;}
   stopAction();persistentPreview=name;lifeSim.onPreviewChanged(name);
@@ -405,7 +431,7 @@ const lifeSim={
     if(settings.physicsEnabled){
       if(!physicsReady||!bodyPhysics)return;
       bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});
-      bodyPhysics.move(dt,dir,speed);
+      if(physicalEmbodiment)physicalEmbodiment.drive(dt,dir,speed,a);else bodyPhysics.move(dt,dir,speed);
     }else{
       pos.addScaledVector(dir,speed*dt);const maxR=1.18*Math.max(.4,floor.scale.x||1);if(pos.length()>maxR)pos.setLength(maxR);
       vrm.scene.position.x=baseX+pos.x;vrm.scene.position.z=baseZ+pos.z;
@@ -418,7 +444,7 @@ const lifeSim={
   },
   applyGroundContact(dt){
     if(!vrm)return;
-    if(settings.physicsEnabled&&settings.physicsGroundContact&&bodyPhysics&&physicsReady){
+    if(settings.physicsEnabled&&settings.physicsGroundContact&&bodyPhysics&&physicsReady&&!physicalEmbodiment?.ownsRootPose?.()){
       bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});
       if(!['walk','run'].includes(this.activity()))bodyPhysics.holdPosition(dt);
       return;
@@ -579,14 +605,14 @@ document.addEventListener('keydown',e=>{if(e.key.toLowerCase()==='c'&&document.a
 
 applyLighting();floor.visible=ring.visible=innerRing.visible=settings.stageVisible!==false;
 function animate(){
-  requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(); controls.update(); if(mixer)mixer.update(dt); lifeSim.update(dt,now); life.update(now,dt); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
+  requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(); controls.update(); if(mixer)mixer.update(dt); physicalEmbodiment?.update(dt,now); lifeSim.update(dt,now); life.update(now,dt); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
   if(speaking&&vrm?.expressionManager){ mouthLevel=.12+Math.abs(Math.sin(now*.012))*0.32+Math.abs(Math.sin(now*.027))*0.14;vrm.expressionManager.setValue('aa',mouthLevel); } else if(vrm?.expressionManager){mouthLevel*=.78;vrm.expressionManager.setValue('aa',mouthLevel);}
-  lifeSim.applyBalance(); applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});contactPlan=bodyPhysics.solvePostAnimation(dt,{action:currentActionName,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth});lifeSim.balancePlan=contactPlan?.balance||null;}if(ikSystem&&contactPlan){ikSystem.configure({enabled:true,footEnabled:settings.footIKEnabled,actionEnabled:true,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}jointGuard?.apply(dt);selfCollisionProjector?.project();facingController?.tick();coordinateDebug?.update();vrm.update(dt);} renderer.render(scene,camera);
+  lifeSim.applyBalance(); applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady&&!physicalEmbodiment?.ownsRootPose?.()){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});contactPlan=bodyPhysics.solvePostAnimation(dt,{action:currentActionName,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth,gaitPlan:physicalEmbodiment?.contactGait?.()||null});lifeSim.balancePlan=contactPlan?.balance||null;}if(ikSystem&&contactPlan){ikSystem.configure({enabled:true,footEnabled:settings.footIKEnabled,actionEnabled:true,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}jointGuard?.apply(dt);selfCollisionProjector?.project();if(!physicalEmbodiment?.ownsRootPose?.())facingController?.tick();coordinateDebug?.update();vrm.update(dt);} renderer.render(scene,camera);
 }
 animate();
 
 const publicPlay=createPublicMotionBridge({
-  runMotion:(name,allowWhileSpeaking=false)=>['idle','wave','nod','think','walk','run','smile'].includes(name)?performAction(name,allowWhileSpeaking):playClip(name,{duration:clips.get(name)?.duration||2,allowWhileSpeaking}),
+  runMotion:(name,allowWhileSpeaking=false)=>['idle','wave','nod','think','walk','run','smile','crossArms','sleepTask'].includes(name)?performAction(name,allowWhileSpeaking):playClip(name,{duration:clips.get(name)?.duration||2,allowWhileSpeaking}),
   stopMotion:stopAction,
   setEmotion:(name)=>{const intensity=name==='happy'?.28:name==='excited'?.30:.18;setExpression(name,intensity);setTimeout(()=>setExpression('neutral',0),2600);},
   speakText:speak,
