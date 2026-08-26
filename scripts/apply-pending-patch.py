@@ -46,7 +46,7 @@ new=old+"\n\n// A semantic bedroom replaces the empty stage as NIVA's first pers
 assert old in s
 s=s.replace(old,new,1)
 old="""  clips.set('idle', makeClip('idle',2,{head:n(2)}));"""
-new="""  clips.set('idle', makeClip('idle',2,{head:n(2)}));\n  clips.set('sitBed',makeClip('sitBed',1.25,{hips:[[0,0,0,0],[.55,-8,0,0],[1.25,-10,0,0]],spine:[[0,0,0,0],[.55,8,0,0],[1.25,10,0,0]],leftUpperLeg:[[0,0,0,0],[.7,72,0,0],[1.25,78,0,0]],rightUpperLeg:[[0,0,0,0],[.7,72,0,0],[1.25,78,0,0]],leftLowerLeg:[[0,0,0,0],[.7,82,0,0],[1.25,88,0,0]],rightLowerLeg:[[0,0,0,0],[.7,82,0,0],[1.25,88,0,0]]}));\n  clips.set('lieBed',makeClip('lieBed',1.5,{hips:[[0,0,0,0],[1.5,4,0,0]],spine:[[0,0,0,0],[1.5,-5,0,0]],leftUpperLeg:[[0,0,0,0],[1.5,12,0,-5]],rightUpperLeg:[[0,0,0,0],[1.5,18,0,7]],leftLowerLeg:[[0,0,0,0],[1.5,18,0,0]],rightLowerLeg:[[0,0,0,0],[1.5,24,0,0]],leftUpperArm:[[0,0,0,0],[1.5,8,0,22]],rightUpperArm:[[0,0,0,0],[1.5,12,0,-18]]}));\n  clips.set('sleepBed',makeClip('sleepBed',4,{chest:[[0,0,0,0],[1,2,0,0],[2,0,0,0],[3,1.5,0,0],[4,0,0,0]],head:[[0,0,0,0],[2,0,4,0],[4,0,0,0]]}));"""
+new="""  clips.set('idle', makeClip('idle',2,{head:n(2)}));\n  // Crossed arms is a held pose. AnimationMixer fade-in supplies the natural entry;\n  // Anatomical ROM V2 and the continuous collision projector remain the final authority.\n  clips.set('crossArms',makeClip('crossArms',2.4,{\n    leftShoulder:[[0,0,4,-5],[2.4,0,4,-5]],rightShoulder:[[0,0,-4,5],[2.4,0,-4,5]],\n    leftUpperArm:[[0,20,-18,-28],[2.4,20,-18,-28]],rightUpperArm:[[0,20,18,28],[2.4,20,18,28]],\n    leftLowerArm:[[0,0,-72,0],[2.4,0,-72,0]],rightLowerArm:[[0,0,72,0],[2.4,0,72,0]],\n    leftHand:[[0,4,-8,10],[2.4,4,-8,10]],rightHand:[[0,4,8,-10],[2.4,4,8,-10]],\n    chest:[[0,-2,0,0],[2.4,-2,0,0]]\n  }));\n  clips.set('sitBed',makeClip('sitBed',1.25,{hips:[[0,0,0,0],[.55,-8,0,0],[1.25,-10,0,0]],spine:[[0,0,0,0],[.55,8,0,0],[1.25,10,0,0]],leftUpperLeg:[[0,0,0,0],[.7,72,0,0],[1.25,78,0,0]],rightUpperLeg:[[0,0,0,0],[.7,72,0,0],[1.25,78,0,0]],leftLowerLeg:[[0,0,0,0],[.7,82,0,0],[1.25,88,0,0]],rightLowerLeg:[[0,0,0,0],[.7,82,0,0],[1.25,88,0,0]]}));\n  clips.set('lieBed',makeClip('lieBed',1.5,{hips:[[0,0,0,0],[1.5,4,0,0]],spine:[[0,0,0,0],[1.5,-5,0,0]],leftUpperLeg:[[0,0,0,0],[1.5,12,0,-5]],rightUpperLeg:[[0,0,0,0],[1.5,18,0,7]],leftLowerLeg:[[0,0,0,0],[1.5,18,0,0]],rightLowerLeg:[[0,0,0,0],[1.5,24,0,0]],leftUpperArm:[[0,0,0,0],[1.5,8,0,22]],rightUpperArm:[[0,0,0,0],[1.5,12,0,-18]]}));\n  clips.set('sleepBed',makeClip('sleepBed',4,{chest:[[0,0,0,0],[1,2,0,0],[2,0,0,0],[3,1.5,0,0],[4,0,0,0]],head:[[0,0,0,0],[2,0,4,0],[4,0,0,0]]}));"""
 assert old in s
 s=s.replace(old,new,1)
 old="""  NivaPhysicsBodySystem.create({vrm,getBone,getFootWorldPosition:(side,out)=>vrmAdapter?.footWorldPosition(side,out),modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physics Ready';showToast('NIVA 物理身体已就绪');}).catch"""
@@ -54,11 +54,15 @@ new="""  NivaPhysicsBodySystem.create({vrm,getBone,getFootWorldPosition:(side,ou
 assert old in s
 s=s.replace(old,new,1)
 old="""  '走路':{reply:'好，我走给你看看。',emotion:'happy',action:'walk'},"""
-new=old+"\n  '去床上睡觉':{reply:'好，我走到床边，掀开被子再躺下。',emotion:'gentle',action:'sleepTask'},\n  '回房睡觉':{reply:'好，我回床上睡觉。',emotion:'gentle',action:'sleepTask'},"
+new=old+"\n  '双手抱胸':{reply:'好。',emotion:'neutral',action:'crossArms'},\n  '抱胸':{reply:'好。',emotion:'neutral',action:'crossArms'},\n  '去床上睡觉':{reply:'好，我走到床边，掀开被子再躺下。',emotion:'gentle',action:'sleepTask'},\n  '回房睡觉':{reply:'好，我回床上睡觉。',emotion:'gentle',action:'sleepTask'},"
 assert old in s
 s=s.replace(old,new,1)
 old="""  if(action==='breath'){ life.deepBreathUntil=performance.now()+5000; return; }"""
-new="""  if(action==='breath'){ life.deepBreathUntil=performance.now()+5000; return; }\n  if(action==='sleepTask'){ physicalEmbodiment?.startSleep?.(); return true; }"""
+new="""  if(action==='breath'){ life.deepBreathUntil=performance.now()+5000; return; }\n  if(action==='crossArms'){ return playClip('crossArms',{loop:true,allowWhileSpeaking}); }\n  if(action==='sleepTask'){ physicalEmbodiment?.startSleep?.(); return true; }"""
+assert old in s
+s=s.replace(old,new,1)
+old="""const previewActions=[['停止','stop'],['思考','thinkLoop'],['走路','walk'],['跑步','run'],['蹲下','crouch']];"""
+new="""const previewActions=[['停止','stop'],['思考','thinkLoop'],['抱胸','crossArms'],['走路','walk'],['跑步','run'],['蹲下','crouch']];"""
 assert old in s
 s=s.replace(old,new,1)
 old="""      bodyPhysics.move(dt,dir,speed);"""
@@ -82,7 +86,7 @@ new="""jointGuard?.apply(dt);selfCollisionProjector?.project();if(!physicalEmbod
 assert old in s
 s=s.replace(old,new,1)
 old="""['idle','wave','nod','think','walk','run','smile'].includes(name)?performAction(name,allowWhileSpeaking)"""
-new="""['idle','wave','nod','think','walk','run','smile','sleepTask'].includes(name)?performAction(name,allowWhileSpeaking)"""
+new="""['idle','wave','nod','think','walk','run','smile','crossArms','sleepTask'].includes(name)?performAction(name,allowWhileSpeaking)"""
 assert old in s
 s=s.replace(old,new,1)
 p.write_text(s,encoding='utf-8')
@@ -98,4 +102,4 @@ p.write_text(s,encoding='utf-8')
 
 # Self-delete after the workflow has applied the one-time repository patch.
 Path(__file__).unlink()
-print('NIVA Physical Embodiment V1 wired: planted gait + bedroom + bed/blanket sleep task')
+print('NIVA Physical Embodiment V1 + safe crossed-arms motion wired')
