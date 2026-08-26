@@ -44,7 +44,8 @@ export class RecoveryStepPlanner{
     const delta={x:cp.x-supportCenter.x,z:cp.z-supportCenter.z};
     const localRight=dotXZ(delta,right),localForward=dotXZ(delta,forward);
     const single=Boolean(stance.left)!==Boolean(stance.right);
-    const sideRadius=this.h*(single?.040:.068);const forwardRadius=this.h*(single?.060:.095);
+    const sideRadius=this.h*(single?(running?.085:locomotion?.060:.040):(running?.11:locomotion?.085:.068));
+    const forwardRadius=this.h*(single?(running?.26:locomotion?.14:.060):(running?.30:locomotion?.18:.095));
     const accelLeadRight=dotXZ(acceleration,right)*.018,accelLeadForward=dotXZ(acceleration,forward)*.018;
     const normalized=Math.hypot((localRight+accelLeadRight)/sideRadius,(localForward+accelLeadForward)/forwardRadius);
     const rawRisk=clamp((normalized-.62)/.78+(running?.10:locomotion?.04:0),0,1);
@@ -52,7 +53,7 @@ export class RecoveryStepPlanner{
     const preLeanRollDeg=clamp(-(localRight/sideRadius)*1.35*this.risk,-3.2,3.2);
     const preLeanPitchDeg=clamp(-(localForward/forwardRadius)*1.15*this.risk,-3.4,3.4);
 
-    if(!this.active&&this.cooldown<=0&&this.risk>.46){
+    if(!this.active&&this.cooldown<=0&&this.risk>.62){
       const side=chooseStepSide({stance,localRight});const foot=side==='left'?leftFoot:rightFoot;
       if(foot){
         const maxForward=this.h*(running?.30:locomotion?.24:.20),maxSide=this.h*(running?.18:.15);
