@@ -2,3 +2,5 @@
 /* NIVA Free Runtime v0.91 */
 .experience-bar{flex-direction:column;align-items:center;overflow:visible;gap:5px;bottom:76px;max-width:min(900px,82vw)}
 .experience-row{display:flex;gap:6px;align-items:center;max-width:82vw;overflow-x:auto;scrollbar-width:none;padding:1px 2px}.experience-row::-webkit-scrollbar{display:none}.experience-label{font-size:11px;color:#72939d;border:1px solid #1e4655;background:#07141bcc;border-radius:999px;padding:6px 9px;white-space:nowrap}.panel-section+.panel-section{margin-top:14px;padding-top:12px;border-top:1px solid #173546}@media(max-width:620px){.experience-bar{max-width:96vw}.experience-row{max-width:96vw}.experience-label{display:none}}
+
+.material-card{border-top:1px solid #153544;padding:9px;display:flex;flex-direction:column;gap:7px}.material-card>b{font-size:12px;color:#83ece9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.panel-section select{border:1px solid #2b5264;background:#0a1620;border-radius:9px;padding:9px}
