@@ -1,6 +1,6 @@
 {
   "name": "niva",
-  "version": "0.90.0",
+  "version": "0.94.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,6 +12,7 @@
     "desktop": "tauri build --no-bundle"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "0.20.0",
     "@pixiv/three-vrm": "3.5.5",
     "@tauri-apps/api": "^2.0.0",
     "@uzen/kokoro-js": "^1.2.4",
