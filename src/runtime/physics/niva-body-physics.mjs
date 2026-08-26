@@ -43,6 +43,7 @@ export class NivaPhysicsBodySystem {
     this.lastAction = 'idle';
     this.lastGroundNormal = new THREE.Vector3(0, 1, 0);
     this.crouchReference = null;
+    this.crouchRootYaw = null;
     this.tmp = {
       p0: new THREE.Vector3(), p1: new THREE.Vector3(), p2: new THREE.Vector3(), p3: new THREE.Vector3(),
       q0: new THREE.Quaternion(), q1: new THREE.Quaternion(), q2: new THREE.Quaternion(),
@@ -113,18 +114,14 @@ export class NivaPhysicsBodySystem {
   }
 
   bodyBasis() {
+    // Stable character frame: never derive right/forward from animated limbs.
+    // Hands-on-head IK moves the upper arms every frame; using them as the frame
+    // creates a positive feedback loop that makes the whole crouch rotate.
     this.vrm.scene.updateMatrixWorld(true);
-    const l = this.getBone('leftUpperArm');
-    const r = this.getBone('rightUpperArm');
-    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(this.vrm.scene.getWorldQuaternion(new THREE.Quaternion())).normalize();
-    let right;
-    if (l && r) {
-      right = r.getWorldPosition(new THREE.Vector3()).sub(l.getWorldPosition(new THREE.Vector3())).normalize();
-    } else {
-      right = new THREE.Vector3(1, 0, 0).applyQuaternion(this.vrm.scene.getWorldQuaternion(new THREE.Quaternion())).normalize();
-    }
-    let forward = up.clone().cross(right).normalize();
-    if (forward.lengthSq() < 1e-6) forward.set(0, 0, 1).applyQuaternion(this.vrm.scene.quaternion).normalize();
+    const q = this.vrm.scene.getWorldQuaternion(new THREE.Quaternion());
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q).normalize();
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(q).normalize();
+    const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(q).normalize();
     return { right, up, forward };
   }
 
@@ -251,8 +248,16 @@ export class NivaPhysicsBodySystem {
     const changed = action !== this.lastAction;
     if (changed) {
       // Critical: planted actions capture the standing feet BEFORE the root/pelvis is lowered.
-      if (action === 'crouch' || action === 'recovery') { this.captureBothFeet(); if (action === 'crouch') this.captureCrouchReference(); }
-      else this.clearFeet();
+      if (action === 'crouch' || action === 'recovery') {
+        this.captureBothFeet();
+        if (action === 'crouch') {
+          this.crouchRootYaw = this.vrm.scene.rotation.y;
+          this.captureCrouchReference();
+        }
+      } else {
+        this.clearFeet();
+        this.crouchRootYaw = null;
+      }
       this.lastAction = action;
     }
 
@@ -278,7 +283,11 @@ export class NivaPhysicsBodySystem {
     // Upper-body action IK is independent from the foot-IK toggle.
     if (action === 'walk' || action === 'run') this.solveLocomotionArms(action, phase);
     if (action === 'wave') this.solveWavePose(phase);
-    if (action === 'crouch') this.solveCrouchHandsToHead(0.96 * crouchAmount);
+    if (action === 'crouch') {
+      this.solveCrouchHandsToHead(0.96 * crouchAmount);
+      // Crouch is stationary: hand/leg IK must never feed back into root yaw.
+      if (Number.isFinite(this.crouchRootYaw)) this.vrm.scene.rotation.y = this.crouchRootYaw;
+    }
     if (action === 'recovery') this.solveHandsToKnees(0.86);
   }
 

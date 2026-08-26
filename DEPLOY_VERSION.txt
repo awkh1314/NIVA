@@ -1,2 +1,2 @@
-NIVA Biomechanics V4.1
-Stable squat hotfix: removed recursive crouch CCD, reduced squat depth, derives knee direction from the standing skeleton, uses one bounded leg solve per frame, keeps torso hinge small, flattens feet, and tightly limits root-Y correction. Hands remain on head.
+NIVA Biomechanics V4.2
+Crouch rotation hotfix: body basis is derived only from the VRM root transform; animated arms no longer define character right/forward; crouch captures and holds its entry yaw so hands-on-head IK cannot create a self-rotating feedback loop.
