@@ -15,6 +15,7 @@ import { JointRotationGuard } from './runtime/safety/joint-rotation-guard.mjs';
 import { SelfCollisionProjector } from './runtime/safety/self-collision-projector.mjs';
 import { BedroomWorld } from './runtime/world/bedroom-world.mjs';
 import { PhysicalEmbodimentController } from './runtime/embodiment/physical-embodiment-v1.mjs';
+import { KeyboardLocomotionController, isMovementCode } from './runtime/input/keyboard-locomotion.mjs';
 
 const MODEL_URL = new URL('../NIVA.vrm', import.meta.url).href;
 const $ = (q) => document.querySelector(q);
@@ -161,6 +162,12 @@ camera.position.set(0,1.55,5.2); controls.target.set(.35,.85,-.25); controls.max
 
 const gazeTarget = new THREE.Object3D(); scene.add(gazeTarget);
 const clock = new THREE.Clock();
+const keyboardLocomotion = new KeyboardLocomotionController({acceleration:10,deceleration:13});
+const keyboardForward = new THREE.Vector3();
+const keyboardRight = new THREE.Vector3();
+const keyboardDirection = new THREE.Vector3();
+const worldUp = new THREE.Vector3(0,1,0);
+let keyboardOwnsWalk = false;
 const baseQuats = new Map();
 const manualOffsets = new Map();
 const boneCache = new Map();
@@ -263,7 +270,16 @@ function buildClips(){
   const footL=[-4,-1,7,3,-3,-2,4,1,-4],footR=[-3,-2,4,1,-4,-1,7,3,-3];
   const armL=[-14,-8,0,8,14,8,0,-8,-14],armR=[14,8,0,-8,-14,-8,0,8,14];
   const f=(arr)=>walkTimes.map((t,i)=>[t,arr[i],0,0]);
-  clips.set('walk',makeClip('walk',1,{leftUpperLeg:f(legL),rightUpperLeg:f(legR),leftLowerLeg:f(kneeL),rightLowerLeg:f(kneeR),leftFoot:f(footL),rightFoot:f(footR),hips:walkTimes.map((t,i)=>[t,0,(i<4?1.4:-1.4),0]),chest:walkTimes.map((t,i)=>[t,0,(i<4?-1:1),0])}));
+  const elbowL=armL.map(v=>-(7+Math.abs(v)*.16)),elbowR=armR.map(v=>7+Math.abs(v)*.16);
+  const pelvisRoll=[.5,.9,.5,0,-.5,-.9,-.5,0,.5];
+  clips.set('walk',makeClip('walk',1,{
+    leftUpperLeg:f(legL),rightUpperLeg:f(legR),leftLowerLeg:f(kneeL),rightLowerLeg:f(kneeR),leftFoot:f(footL),rightFoot:f(footR),
+    leftUpperArm:f(armL),rightUpperArm:f(armR),
+    leftLowerArm:walkTimes.map((t,i)=>[t,0,elbowL[i],0]),rightLowerArm:walkTimes.map((t,i)=>[t,0,elbowR[i],0]),
+    hips:walkTimes.map((t,i)=>[t,0,(i<4?1.8:-1.8),pelvisRoll[i]]),
+    chest:walkTimes.map((t,i)=>[t,0,(i<4?-1.35:1.35),-pelvisRoll[i]*.38]),
+    head:walkTimes.map((t,i)=>[t,0,(i<4?.35:-.35),0])
+  }));
   const rt=[0,.09,.18,.26,.35,.44,.53,.61,.70];
   const runL=[38,22,2,-22,-36,-20,2,22,38],runR=[-36,-20,2,22,38,22,2,-22,-36];
   const rkL=[16,42,76,56,18,28,62,42,16],rkR=[18,28,62,42,16,42,76,56,18];
@@ -417,7 +433,7 @@ for(const [label,fn] of voiceScenes){const b=document.createElement('button');b.
 const lifeSim={
   fatigue:0,energy:100,heartRate:68,breathRate:12,load:0,recovering:false,recoveryUntil:0,
   paceNoise:1,nextPaceNoise:0,lastUi:0,lastPreview:'',stageTarget:new THREE.Vector3(),groundMode:'',balancePlan:null,
-  activity(){if(this.recovering)return'recovery';if(persistentPreview)return persistentPreview;if(currentActionName&&currentActionName!=='idle')return currentActionName;return'idle';},
+  activity(){if(this.recovering)return'recovery';if(keyboardLocomotion.state().moving)return'walk';if(persistentPreview)return persistentPreview;if(currentActionName&&currentActionName!=='idle')return currentActionName;return'idle';},
   loadFor(a){return ({run:1,walk:.42,crouch:.24,thinkLoop:.16,think:.16,wave:.2,recovery:.55}[a]||.05);},
   onPreviewChanged(name){this.lastPreview='';if(name==='walk'||name==='run')this.chooseStageTarget();},
   chooseStageTarget(){const a=Math.random()*Math.PI*2,scale=Math.max(.4,floor.scale.x||1),r=(.32+Math.random()*.82)*scale;this.stageTarget.set(Math.cos(a)*r,0,Math.sin(a)*r);},
@@ -514,7 +530,7 @@ function applyManualAndLife(){
   for(const [name,base] of baseQuats.entries()){
     const node=getBone(name);if(!node)continue;const layers=additiveScratch.get(name)||{};let lx=0,ly=0,lz=0;for(const v of Object.values(layers)){lx+=v?.[0]||0;ly+=v?.[1]||0;lz+=v?.[2]||0;}
     const delta=new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(lx),rad(ly),rad(lz),'XYZ'));
-    const actionOwns=currentAction&&['walk','run','wave','think','thinkLoop','reach','weight','nod','crouch','recovery'].includes(currentActionName)&&!manualOffsets.has(name);
+    const actionOwns=currentAction&&['walk','run','wave','think','thinkLoop','reach','weight','nod','crouch','recovery','crossArms','sitBed','lieBed','sleepBed'].includes(currentActionName)&&!manualOffsets.has(name);
     if(actionOwns){if(Math.abs(lx)+Math.abs(ly)+Math.abs(lz)>1e-7)node.quaternion.multiply(delta);continue;}
     const m=manualOffsets.get(name)||[0,0,0];
     const manualQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(m[0]),rad(m[1]),rad(m[2]),'XYZ'));
@@ -601,11 +617,53 @@ function renderVoiceControls(){const opts=voices.map(v=>`<option ${settings.syst
 lifeGuideToggle.onclick=()=>{lifeGuide.classList.toggle('hidden');panel.classList.add('hidden');upgradePanel.classList.add('hidden');};closeLifeGuide.onclick=()=>lifeGuide.classList.add('hidden');
 $('#panelToggle').onclick=()=>{panel.classList.toggle('hidden');lifeGuide.classList.add('hidden');upgradePanel.classList.add('hidden');settings.panelVisible=!panel.classList.contains('hidden');saveSettings();renderControl();};$('#closePanel').onclick=()=>{panel.classList.add('hidden');settings.panelVisible=false;saveSettings();};$('#upgradeToggle').onclick=()=>{upgradePanel.classList.toggle('hidden');panel.classList.add('hidden');};$('#closeUpgrade').onclick=()=>upgradePanel.classList.add('hidden');
 if(settings.panelVisible){panel.classList.remove('hidden');renderControl();}
-document.addEventListener('keydown',e=>{if(e.key.toLowerCase()==='c'&&document.activeElement!==composerInput)$('#panelToggle').click();});
+function isTypingTarget(target){
+  const tag=target?.tagName?.toLowerCase?.()||'';
+  return target?.isContentEditable||tag==='input'||tag==='textarea'||tag==='select';
+}
+function beginKeyboardWalk(){
+  if(!modelReady||physicalEmbodiment?.ownsRootPose?.())return false;
+  physicalEmbodiment?.cancelTask?.();
+  persistentPreview='';lifeSim.recovering=false;manualOverrideUntil=performance.now()+1200;director.resumeAt=performance.now()+1800;
+  if(currentActionName!=='walk')playClip('walk',{loop:true});
+  keyboardOwnsWalk=true;return true;
+}
+function updateKeyboardWalk(dt,now,state){
+  if(!state?.moving||!vrm||physicalEmbodiment?.ownsRootPose?.()){
+    if(state?.stopped&&keyboardOwnsWalk){keyboardOwnsWalk=false;if(currentActionName==='walk'&&!persistentPreview)stopAction();}
+    return;
+  }
+  if(!keyboardOwnsWalk)beginKeyboardWalk();
+  if(!keyboardOwnsWalk)return;
+  manualOverrideUntil=now+700;director.resumeAt=now+1200;
+  camera.getWorldDirection(keyboardForward);keyboardForward.y=0;if(keyboardForward.lengthSq()<1e-8)keyboardForward.set(0,0,-1);else keyboardForward.normalize();
+  keyboardRight.crossVectors(keyboardForward,worldUp).normalize();
+  keyboardDirection.copy(keyboardForward).multiplyScalar(state.axisZ).addScaledVector(keyboardRight,state.axisX);
+  if(keyboardDirection.lengthSq()<1e-8)return;keyboardDirection.normalize();
+  const speed=settings.walkWorldSpeed*state.speed01;
+  if(settings.physicsEnabled&&physicsReady&&bodyPhysics){
+    bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});
+    if(physicalEmbodiment)physicalEmbodiment.drive(dt,keyboardDirection,speed,'walk');else bodyPhysics.move(dt,keyboardDirection,speed);
+  }else{
+    vrm.scene.position.addScaledVector(keyboardDirection,speed*dt);
+    vrm.scene.position.x=clamp(vrm.scene.position.x,-2.75,2.75);vrm.scene.position.z=clamp(vrm.scene.position.z,-2.25,2.25);
+  }
+  facingController?.faceDirection(keyboardDirection,dt,state.inputActive?9:6);
+  if(currentActionName==='walk'&&currentAction){
+    const fatigueSlow=1-clamp((lifeSim.fatigue-28)/150,0,.30);
+    currentAction.setEffectiveTimeScale((settings.motionSpeed||1)*fatigueSlow*lifeSim.paceNoise*(.70+.34*state.speed01));
+  }
+}
+document.addEventListener('keydown',e=>{
+  if(isMovementCode(e.code)&&!isTypingTarget(e.target)){e.preventDefault();if(keyboardLocomotion.keyDown(e.code))beginKeyboardWalk();return;}
+  if(e.key.toLowerCase()==='c'&&!isTypingTarget(e.target))$('#panelToggle').click();
+});
+document.addEventListener('keyup',e=>{if(isMovementCode(e.code)){e.preventDefault();keyboardLocomotion.keyUp(e.code);}});
+window.addEventListener('blur',()=>keyboardLocomotion.clear());
 
 applyLighting();floor.visible=ring.visible=innerRing.visible=settings.stageVisible!==false;
 function animate(){
-  requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(); controls.update(); if(mixer)mixer.update(dt); physicalEmbodiment?.update(dt,now); lifeSim.update(dt,now); life.update(now,dt); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
+  requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(),keyboardState=keyboardLocomotion.update(dt); controls.update(); if(mixer)mixer.update(dt); physicalEmbodiment?.update(dt,now); lifeSim.update(dt,now); updateKeyboardWalk(dt,now,keyboardState); life.update(now,dt); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
   if(speaking&&vrm?.expressionManager){ mouthLevel=.12+Math.abs(Math.sin(now*.012))*0.32+Math.abs(Math.sin(now*.027))*0.14;vrm.expressionManager.setValue('aa',mouthLevel); } else if(vrm?.expressionManager){mouthLevel*=.78;vrm.expressionManager.setValue('aa',mouthLevel);}
   lifeSim.applyBalance(); applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady&&!physicalEmbodiment?.ownsRootPose?.()){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});contactPlan=bodyPhysics.solvePostAnimation(dt,{action:currentActionName,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth,gaitPlan:physicalEmbodiment?.contactGait?.()||null});lifeSim.balancePlan=contactPlan?.balance||null;}if(ikSystem&&contactPlan){ikSystem.configure({enabled:true,footEnabled:settings.footIKEnabled,actionEnabled:true,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}jointGuard?.apply(dt);selfCollisionProjector?.project();if(!physicalEmbodiment?.ownsRootPose?.())facingController?.tick();coordinateDebug?.update();vrm.update(dt);} renderer.render(scene,camera);
 }
@@ -617,4 +675,4 @@ const publicPlay=createPublicMotionBridge({
   setEmotion:(name)=>{const intensity=name==='happy'?.28:name==='excited'?.30:.18;setExpression(name,intensity);setTimeout(()=>setExpression('neutral',0),2600);},
   speakText:speak,
 });
-window.NIVA={version:'0.99.1',speak,act:(name)=>performAction(name),play:publicPlay,stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,frame:characterFrame?.describe?.(),facing:facingController?.state?.(),ik:ikSystem?.state?.(),physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
+window.NIVA={version:'0.99.1',speak,act:(name)=>performAction(name),play:publicPlay,stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,input:{keyboard:keyboardLocomotion.state()},frame:characterFrame?.describe?.(),facing:facingController?.state?.(),ik:ikSystem?.state?.(),physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
