@@ -131,6 +131,21 @@ export class NivaPhysicsBodySystem {
     );
   }
 
+  rebuildGroundBox(width = 44, depth = 44) {
+    if (this.groundCollider) {
+      try { this.world.removeCollider(this.groundCollider, true); } catch {}
+      this.groundCollider = null;
+    }
+    if (!this.groundBody) {
+      this.groundBody = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.045, 0));
+    }
+    this.stageRadius = Math.max(width, depth) * 0.5;
+    this.groundCollider = this.world.createCollider(
+      RAPIER.ColliderDesc.cuboid(Math.max(.5,width/2), 0.045, Math.max(.5,depth/2)).setFriction(1).setRestitution(0),
+      this.groundBody,
+    );
+  }
+
   addFixedBoxCollider({ name = 'room-box', size, position } = {}) {
     if (!this.world || !size || !position) return null;
     const body = this.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(position.x, position.y, position.z));
@@ -138,7 +153,7 @@ export class NivaPhysicsBodySystem {
       RAPIER.ColliderDesc.cuboid(Math.max(.01,size.x/2),Math.max(.01,size.y/2),Math.max(.01,size.z/2)).setFriction(.95).setRestitution(0),
       body,
     );
-    const entry = { name, body, collider };
+    const entry = { name, body, collider, size: size.clone?.() || v3(size), position: position.clone?.() || v3(position) };
     this.roomColliders.push(entry);
     return entry;
   }
@@ -155,28 +170,33 @@ export class NivaPhysicsBodySystem {
     this.characterBody.setNextKinematicTranslation({ x, y: t.y, z });
   }
 
-  move(dt, direction, speed) {
+  moveByDelta(dt, delta, { maxDelta = null } = {}) {
     if (!this.enabled || !this.characterBody || !this.characterCollider) return new THREE.Vector3();
-    const dir = direction?.clone?.() || new THREE.Vector3();
-    dir.y = 0;
-    if (dir.lengthSq() > 1e-7) dir.normalize();
-    const desired = {
-      x: dir.x * speed * dt,
-      y: -Math.min(0.06, 9.81 * dt * dt * 1.5),
-      z: dir.z * speed * dt,
-    };
+    const h = clamp(Number(dt) || 0, 1 / 120, 0.05);
+    const d = delta?.clone?.() || v3(delta || { x: 0, y: 0, z: 0 });
+    d.y = 0;
+    const hardMax = Math.max(this.modelHeight * .02, Number(maxDelta) || this.modelHeight * .06);
+    if (d.length() > hardMax) d.setLength(hardMax);
+    const desired = { x: d.x, y: -Math.min(0.06, 9.81 * h * h * 1.5), z: d.z };
     this.characterController.computeColliderMovement(this.characterCollider, desired);
     const mv = this.characterController.computedMovement();
     this.grounded = Boolean(this.characterController.computedGrounded?.());
-    const p = this.characterBody.translation();
-    this.characterBody.setNextKinematicTranslation({ x: p.x + mv.x, y: p.y + mv.y, z: p.z + mv.z });
-    this.world.timestep = clamp(dt, 1 / 120, 1 / 30);
+    const pos = this.characterBody.translation();
+    this.characterBody.setNextKinematicTranslation({ x: pos.x + mv.x, y: pos.y + mv.y, z: pos.z + mv.z });
+    this.world.timestep = clamp(h, 1 / 120, 1 / 30);
     this.world.step();
     const next = this.characterBody.translation();
     this.vrm.scene.position.x = next.x;
     this.vrm.scene.position.z = next.z;
     this.groundY = next.y - this.characterCenterOffset;
     return new THREE.Vector3(mv.x, mv.y, mv.z);
+  }
+
+  // Legacy API remains for non-locomotion callers, but walking no longer uses it.
+  move(dt, direction, speed) {
+    const h = clamp(Number(dt) || 0, 0, .05);
+    const dir = direction?.clone?.() || new THREE.Vector3();dir.y=0;if(dir.lengthSq()>1e-7)dir.normalize();
+    return this.moveByDelta(h, dir.multiplyScalar(Math.max(0,Number(speed)||0)*h));
   }
 
   holdPosition(dt) {
@@ -210,6 +230,26 @@ export class NivaPhysicsBodySystem {
       point: new THREE.Vector3(origin.x, origin.y - toi, origin.z),
       normal: v3(hit.normal || { x: 0, y: 1, z: 0 }).normalize(),
     };
+  }
+
+  resolveFootLanding(start, desired, { margin = this.modelHeight * .055 } = {}) {
+    const a = start?.clone?.() || v3(start || {x:0,y:this.groundY,z:0});
+    const b = desired?.clone?.() || v3(desired || a);
+    const delta = b.clone().sub(a);let lastSafe = a.clone();
+    const samples = Math.max(8, Math.min(36, Math.ceil(delta.length() / Math.max(.035, this.modelHeight * .035))));
+    for (let i = 1; i <= samples; i++) {
+      const p = a.clone().lerp(b, i / samples);let blocked = false;
+      for (const c of this.roomColliders) {
+        if (!c?.size || !c?.position) continue;
+        const bottom = c.position.y - c.size.y / 2;
+        if (bottom > this.groundY + this.modelHeight * .20) continue;
+        const hx = c.size.x / 2 + margin, hz = c.size.z / 2 + margin;
+        if (Math.abs(p.x - c.position.x) <= hx && Math.abs(p.z - c.position.z) <= hz) { blocked = true; break; }
+      }
+      if (blocked) break;lastSafe.copy(p);
+    }
+    const hit = this.groundHitAt(lastSafe);if (hit) lastSafe.y = hit.point.y + Math.min(this.footOffset.left, this.footOffset.right);
+    return lastSafe;
   }
 
   captureFoot(side) {
@@ -283,6 +323,12 @@ export class NivaPhysicsBodySystem {
       if (isStance && !this.lastStance[side]) this.captureFoot(side);
       if (!isStance && this.lastStance[side] && !['crouch', 'recovery'].includes(action)) this.footAnchor[side] = null;
       this.lastStance[side] = isStance;
+    }
+    if (gaitPlan?.footTargets) {
+      for (const side of ['left','right']) {
+        const target = gaitPlan.footTargets[side];
+        if (target) this.footAnchor[side] = target.clone?.() || v3(target);
+      }
     }
     const centerOfMass = this.estimateCenterOfMass();
     const leftFoot = this.readFoot('left');

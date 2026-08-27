@@ -104,6 +104,9 @@ const settings = Object.assign({
   crouchDepth:0.14,
   walkWorldSpeed:0.55,
   runWorldSpeed:1.25,
+  timeOfDay:.30,
+  dayNightAuto:true,
+  dayNightSpeed:1,
   exposure:0.9,
   ambient:0.32,
   key:1.15,
@@ -131,10 +134,10 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = settings.exposure;
 renderer.shadowMap.enabled = true;
-renderer.setClearColor(0x0b0d0e, 1);
+renderer.setClearColor(0xa9c6d2, 1);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0b0d0e);
+scene.background = new THREE.Color(0xa9c6d2);
 const camera = new THREE.PerspectiveCamera(27, 1, 0.01, 100);
 camera.position.set(0, 1.25, 4.4);
 const controls = new OrbitControls(camera, canvas);
@@ -157,8 +160,9 @@ const ring = new THREE.Mesh(new THREE.RingGeometry(1.54,1.59,96), ringMat); ring
 const innerRing = new THREE.Mesh(new THREE.RingGeometry(0.83,0.85,96), new THREE.MeshBasicMaterial({color:0x5665a7,transparent:true,opacity:0.32,side:THREE.DoubleSide})); innerRing.rotation.x=-Math.PI/2; innerRing.position.y=0.008; scene.add(innerRing);
 
 // A semantic bedroom replaces the empty stage as NIVA's first persistent world.
-bedroomWorld = new BedroomWorld({scene});
-camera.position.set(0,1.55,5.2); controls.target.set(.35,.85,-.25); controls.maxDistance=10;
+bedroomWorld = new BedroomWorld({scene,timeOfDay:settings.timeOfDay,autoDayNight:settings.dayNightAuto});
+bedroomWorld.setDayNightSpeed(settings.dayNightSpeed);
+camera.position.set(-3.8,1.72,5.7); controls.target.set(.35,.86,-.28); controls.maxDistance=18; camera.fov=31; camera.updateProjectionMatrix();
 
 const gazeTarget = new THREE.Object3D(); scene.add(gazeTarget);
 const clock = new THREE.Clock();
@@ -340,7 +344,7 @@ function centerModel(){
   vrm.scene.position.x-=c.x; vrm.scene.position.z-=c.z; vrm.scene.position.y-=box.min.y;
   vrm.scene.updateMatrixWorld(true);
   const b=new THREE.Box3().setFromObject(vrm.scene); modelHeight=b.getSize(new THREE.Vector3()).y;
-  controls.target.set(0,modelHeight*.52,0); camera.position.set(0,modelHeight*.55,modelHeight*2.35); controls.update();
+  controls.target.set(.35,modelHeight*.56,-.30); camera.position.set(-modelHeight*2.25,modelHeight*1.05,modelHeight*3.35); camera.fov=31; camera.updateProjectionMatrix(); controls.update();
   floor.position.y=0; ring.position.y=.006; innerRing.position.y=.008;
 }
 
@@ -355,7 +359,7 @@ loader.load(MODEL_URL,(gltf)=>{
   mixer=new THREE.AnimationMixer(vrm.humanoid.normalizedHumanBonesRoot || vrm.scene); buildClips();
   modelReady=true; runtimeSummary.textContent='Free Life Runtime · Ready';
   showToast('NIVA 已就绪');
-  NivaPhysicsBodySystem.create({vrm,getBone,getFootWorldPosition:(side,out)=>vrmAdapter?.footWorldPosition(side,out),modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;bedroomWorld?.registerPhysics(bodyPhysics);physicalEmbodiment=new PhysicalEmbodimentController({world:bedroomWorld,getVrm:()=>vrm,getBodyPhysics:()=>bodyPhysics,getActionState:()=>({time:currentAction?.time||0,duration:currentAction?.getClip?.()?.duration||1}),playClip:(name,opts)=>playClip(name,opts),stopAction:()=>stopAction(),faceDirection:(dir,dt,lambda)=>facingController?.faceDirection(dir,dt,lambda),walkSpeed:settings.walkWorldSpeed,stepLength:modelHeight*.42});physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physical Room Ready';showToast('NIVA 房间物理身体已就绪');}).catch((err)=>{physicsReady=false;physicsError=String(err?.message||err);console.error('NIVA physics init failed',err);runtimeSummary.textContent='Free Life Runtime · Physics fallback';});
+  NivaPhysicsBodySystem.create({vrm,getBone,getFootWorldPosition:(side,out)=>vrmAdapter?.footWorldPosition(side,out),modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;bedroomWorld?.registerPhysics(bodyPhysics);physicalEmbodiment=new PhysicalEmbodimentController({world:bedroomWorld,getVrm:()=>vrm,getBodyPhysics:()=>bodyPhysics,getActionState:()=>({time:currentAction?.time||0,duration:currentAction?.getClip?.()?.duration||1}),playClip:(name,opts)=>playClip(name,opts),stopAction:()=>stopAction(),faceDirection:(dir,dt,lambda)=>facingController?.faceDirection(dir,dt,lambda),setActionPhase:(phase)=>{const clip=currentAction?.getClip?.();if(clip&&['walk','run','marchStepLeft','marchStepRight'].includes(currentActionName))currentAction.time=clamp(phase,0,1)*(clip.duration||1);},walkSpeed:settings.walkWorldSpeed,stepLength:modelHeight*.42,modelHeight});physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physical Room Ready';showToast('NIVA 房间物理身体已就绪');}).catch((err)=>{physicsReady=false;physicsError=String(err?.message||err);console.error('NIVA physics init failed',err);runtimeSummary.textContent='Free Life Runtime · Physics fallback';});
 },undefined,(e)=>{ console.error(e); runtimeSummary.textContent='模型加载失败'; showToast('NIVA.vrm 加载失败'); });
 
 function resize(){ const r=stage.getBoundingClientRect(); renderer.setSize(r.width,r.height,false); camera.aspect=r.width/r.height; camera.updateProjectionMatrix(); }
@@ -478,20 +482,9 @@ const lifeSim={
   chooseStageTarget(){const a=Math.random()*Math.PI*2,scale=Math.max(.4,floor.scale.x||1),r=(.32+Math.random()*.82)*scale;this.stageTarget.set(Math.cos(a)*r,0,Math.sin(a)*r);},
   updateLocomotion(dt,a){
     if(!vrm||this.recovering||!['walk','run'].includes(a)||persistentPreview!==a)return;
-    const baseX=modelHome.x+settings.modelX,baseZ=modelHome.z+settings.modelZ;
-    const pos=new THREE.Vector3(vrm.scene.position.x-baseX,0,vrm.scene.position.z-baseZ),to=this.stageTarget.clone().sub(pos);to.y=0;
-    if(to.length()<.14){this.chooseStageTarget();return;}
-    const dir=to.normalize(),fatigueSlow=1-clamp((this.fatigue-35)/170,0,.28);
-    const speed=(a==='run'?settings.runWorldSpeed:settings.walkWorldSpeed)*fatigueSlow;
-    if(settings.physicsEnabled){
-      if(!physicsReady||!bodyPhysics)return;
-      bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});
-      if(physicalEmbodiment)physicalEmbodiment.drive(dt,dir,speed,a);else bodyPhysics.move(dt,dir,speed);
-    }else{
-      pos.addScaledVector(dir,speed*dt);const maxR=1.18*Math.max(.4,floor.scale.x||1);if(pos.length()>maxR)pos.setLength(maxR);
-      vrm.scene.position.x=baseX+pos.x;vrm.scene.position.z=baseZ+pos.z;
-    }
-    facingController?.faceDirection(dir,dt,7);
+    const baseX=modelHome.x+settings.modelX,baseZ=modelHome.z+settings.modelZ;const pos=new THREE.Vector3(vrm.scene.position.x-baseX,0,vrm.scene.position.z-baseZ),to=this.stageTarget.clone().sub(pos);to.y=0;
+    if(to.length()<.14){this.chooseStageTarget();return;}const dir=to.normalize(),fatigueSlow=1-clamp((this.fatigue-35)/170,0,.28),speed=(a==='run'?settings.runWorldSpeed:settings.walkWorldSpeed)*fatigueSlow;
+    if(!settings.physicsEnabled||!physicsReady||!bodyPhysics||!physicalEmbodiment)return;bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});physicalEmbodiment.drive(dt,dir,speed,a,{continueSteps:true});
   },
   forceRecovery(now){
     if(this.recovering||persistentPreview!=='run')return;this.recovering=true;this.recoveryUntil=now+14000;life.deepBreathUntil=now+15000;
@@ -644,9 +637,12 @@ function renderLifeControls(){
   controlPage.innerHTML=`<section class="panel-section"><h3>真实生命系统</h3>${toggleHtml('生命模拟','lifeSimulation')}${toggleHtml('极限疲劳自动恢复','autoFatigueRecovery')}${rowSlider('生命时间倍率',.25,3,.05,settings.lifeTimeScale)}<div class="life-readout">实时：心率 <b>${Math.round(lifeSim.heartRate)}</b> · 呼吸 <b>${Math.round(lifeSim.breathRate)}</b> · 疲劳 <b>${Math.round(lifeSim.fatigue)}%</b> · 能量 <b>${Math.round(lifeSim.energy)}%</b></div></section><section class="panel-section"><h3>基础生命参数</h3>${toggleHtml('自然行为系统','lifeEnabled')}${toggleHtml('跟随鼠标','mouseGaze')}${toggleHtml('允许摸鼠标','allowReach')}${toggleHtml('允许走路','allowWalk')}${toggleHtml('允许跑步','allowRun')}${rowSlider('基础心率 BPM',45,120,1,settings.bpm)}${rowSlider('基础呼吸 / min',6,24,1,settings.breaths)}${rowSlider('呼吸幅度',0,.8,.05,settings.breathAmp)}${rowSlider('微动作频率',0,1,.05,settings.microFreq)}${rowSlider('大动作频率',0,1,.05,settings.majorFreq)}</section>`;bindToggles();const ins=controlPage.querySelectorAll('input[type=range]');const keys=['lifeTimeScale','bpm','breaths','breathAmp','microFreq','majorFreq'];ins.forEach((el,i)=>{el.oninput=()=>{settings[keys[i]]=Number(el.value);el.parentElement.querySelector('output').textContent=el.value;saveSettings();};});
 }
 function renderMotionControls(){controlPage.innerHTML=`<section class="panel-section"><h3>持续动作预览</h3><div class="button-grid"><button data-preview="stop">停止</button><button data-preview="thinkLoop">思考</button><button data-preview="walk">走路</button><button data-preview="run">跑步</button><button data-preview="crouch">蹲下</button></div>${rowSlider('动作速度',.6,1.5,.05,settings.motionSpeed)}<small>选择后持续播放，直到切换或停止。</small></section><section class="panel-section"><h3>单次动作</h3><div class="button-grid"><button data-once="nod">点头</button><button data-once="wave">挥手</button><button data-once="reach">摸鼠标</button><button data-once="weight">重心切换</button></div></section>`;controlPage.querySelectorAll('[data-preview]').forEach(b=>b.onclick=()=>startPreviewMotion(b.dataset.preview));controlPage.querySelectorAll('[data-once]').forEach(b=>b.onclick=()=>playClip(b.dataset.once,{duration:clips.get(b.dataset.once)?.duration||2}));const speed=controlPage.querySelector('input[type=range]');speed.oninput=()=>{settings.motionSpeed=Number(speed.value);speed.parentElement.querySelector('output').textContent=speed.value;if(currentAction)currentAction.setEffectiveTimeScale(settings.motionSpeed);saveSettings();};}
-function renderStageControls(){controlPage.innerHTML=`<section class="panel-section"><h3>舞台总控</h3>${toggleHtml('显示舞台','stageVisible')}${rowSlider('舞台半径',.6,3,.05,1.55)}${rowSlider('地板透明度',0,1,.01,floorMat.opacity)}${rowSlider('地板粗糙度',0,1,.01,floorMat.roughness)}${rowSlider('地板金属度',0,1,.01,floorMat.metalness)}${rowSlider('主圆环亮度',0,1,.01,ringMat.opacity)}${rowSlider('内圆环亮度',0,1,.01,innerRing.material.opacity)}<label class="color-row"><span>背景颜色</span><input id="bgColor" type="color" value="#${scene.background.getHexString()}"></label><label class="color-row"><span>地板颜色</span><input id="floorColor" type="color" value="#${floorMat.color.getHexString()}"></label><label class="color-row"><span>主圆环颜色</span><input id="ringColor" type="color" value="#${ringMat.color.getHexString()}"></label><label class="color-row"><span>内圆环颜色</span><input id="innerColor" type="color" value="#${innerRing.material.color.getHexString()}"></label><button id="stageReset" class="secondary-btn wide">舞台复位</button></section>`;bindToggles();const vis=controlPage.querySelector('[data-setting="stageVisible"]');vis.onchange=e=>{settings.stageVisible=e.target.checked;floor.visible=ring.visible=innerRing.visible=settings.stageVisible;saveSettings();};const a=[...controlPage.querySelectorAll('input[type=range]')];a[0].oninput=()=>{const z=+a[0].value/1.55;floor.scale.setScalar(z);ring.scale.setScalar(z);innerRing.scale.setScalar(z);bodyPhysics?.rebuildGround?.(+a[0].value);a[0].parentElement.querySelector('output').textContent=a[0].value;};a[1].oninput=()=>{floorMat.opacity=+a[1].value;a[1].parentElement.querySelector('output').textContent=a[1].value;};a[2].oninput=()=>{floorMat.roughness=+a[2].value;a[2].parentElement.querySelector('output').textContent=a[2].value;};a[3].oninput=()=>{floorMat.metalness=+a[3].value;a[3].parentElement.querySelector('output').textContent=a[3].value;};a[4].oninput=()=>{ringMat.opacity=+a[4].value;a[4].parentElement.querySelector('output').textContent=a[4].value;};a[5].oninput=()=>{innerRing.material.opacity=+a[5].value;a[5].parentElement.querySelector('output').textContent=a[5].value;};$('#bgColor').oninput=e=>{scene.background.set(e.target.value);renderer.setClearColor(e.target.value);};$('#floorColor').oninput=e=>floorMat.color.set(e.target.value);$('#ringColor').oninput=e=>ringMat.color.set(e.target.value);$('#innerColor').oninput=e=>innerRing.material.color.set(e.target.value);$('#stageReset').onclick=()=>{floor.scale.setScalar(1);ring.scale.setScalar(1);innerRing.scale.setScalar(1);floorMat.opacity=.94;floorMat.roughness=.78;floorMat.metalness=.08;ringMat.opacity=.75;innerRing.material.opacity=.32;scene.background.set(0x0b0d0e);renderer.setClearColor(0x0b0d0e);floorMat.color.set(0x10161d);ringMat.color.set(0x59dce0);innerRing.material.color.set(0x5665a7);renderStageControls();};}
+function renderStageControls(){
+  const ws=bedroomWorld?.state?.()?.outdoor||{};const hour=Number.isFinite(ws.hour)?ws.hour:(((settings.timeOfDay||0)*24+6)%24);controlPage.innerHTML=`<section class="panel-section"><h3>世界 · 卧室与草地</h3><div class="life-readout">当前 ${hour.toFixed(1)} 时 · ${ws.dayFactor>.55?'白天':ws.nightFactor>.7?'夜晚':'晨昏'}</div>${rowSlider('时间 0-24h',0,24,.1,hour)}${rowSlider('昼夜倍率',.1,8,.1,settings.dayNightSpeed)}<label class="switch-row"><span>自动昼夜</span><input id="dayAuto" type="checkbox" ${settings.dayNightAuto?'checked':''}></label><div class="button-grid"><button data-hour="6">06:00 清晨</button><button data-hour="12">12:00 白天</button><button data-hour="18">18:00 黄昏</button><button data-hour="0">00:00 夜晚</button></div><small>旧圆形舞台已禁用。世界地面覆盖卧室与室外草地，门口可连续步行通过。</small></section>`;
+  const ranges=[...controlPage.querySelectorAll('input[type=range]')],setHour=(h)=>{const hour=((Number(h)||0)%24+24)%24;settings.timeOfDay=(((hour-6)/24)%1+1)%1;bedroomWorld?.setTimeOfDay?.(settings.timeOfDay);ranges[0].parentElement.querySelector('output').textContent=hour.toFixed(1);saveSettings();};ranges[0].oninput=()=>setHour(ranges[0].value);ranges[1].oninput=()=>{settings.dayNightSpeed=+ranges[1].value;bedroomWorld?.setDayNightSpeed?.(settings.dayNightSpeed);ranges[1].parentElement.querySelector('output').textContent=ranges[1].value;saveSettings();};$('#dayAuto').onchange=e=>{settings.dayNightAuto=e.target.checked;if(settings.dayNightAuto)bedroomWorld?.resumeDayNight?.();else bedroomWorld?.pauseDayNight?.();saveSettings();};controlPage.querySelectorAll('[data-hour]').forEach(b=>b.onclick=()=>setHour(+b.dataset.hour));
+}
 function renderLightControls(){controlPage.innerHTML=`<section class="panel-section"><h3>灯光总控</h3><div class="preset-row"><button data-light="natural">自然</button><button data-light="soft">柔和</button><button data-light="warm">暖色</button><button data-light="cool">冷色</button><button data-light="stage">舞台</button></div>${rowSlider('环境光',0,2,.01,settings.ambient)}${rowSlider('主光',0,4,.01,settings.key)}<label class="color-row"><span>主光颜色</span><input id="keyColor" type="color" value="${settings.keyColor}"></label>${rowSlider('主光 X',-6,6,.1,settings.keyX)}${rowSlider('主光 Y',-2,8,.1,settings.keyY)}${rowSlider('主光 Z',-6,6,.1,settings.keyZ)}${rowSlider('补光',0,3,.01,settings.fill)}<label class="color-row"><span>补光颜色</span><input id="fillColor" type="color" value="${settings.fillColor}"></label>${rowSlider('补光 X',-6,6,.1,settings.fillX)}${rowSlider('补光 Y',-2,8,.1,settings.fillY)}${rowSlider('补光 Z',-6,6,.1,settings.fillZ)}${rowSlider('轮廓光',0,3,.01,settings.rim)}<label class="color-row"><span>轮廓颜色</span><input id="rimColor" type="color" value="${settings.rimColor}"></label>${rowSlider('轮廓 X',-6,6,.1,settings.rimX)}${rowSlider('轮廓 Y',-2,8,.1,settings.rimY)}${rowSlider('轮廓 Z',-6,6,.1,settings.rimZ)}${rowSlider('舞台聚光',0,8,.01,settings.stageLight)}<label class="color-row"><span>舞台灯颜色</span><input id="spotColor" type="color" value="${settings.stageColor}"></label>${rowSlider('聚光 X',-6,6,.1,settings.spotX)}${rowSlider('聚光 Y',0,10,.1,settings.spotY)}${rowSlider('聚光 Z',-6,6,.1,settings.spotZ)}${rowSlider('目标 X',-3,3,.1,settings.spotTargetX)}${rowSlider('目标 Y',0,3,.1,settings.spotTargetY)}${rowSlider('目标 Z',-3,3,.1,settings.spotTargetZ)}${rowSlider('聚光角度',.1,1.2,.01,settings.spotAngle)}${rowSlider('边缘柔和',0,1,.01,settings.spotPenumbra)}${rowSlider('距离',1,20,.1,settings.spotDistance)}${rowSlider('曝光',.5,1.5,.01,settings.exposure)}<label class="switch-row"><span>阴影</span><input id="shadowToggle" type="checkbox" ${renderer.shadowMap.enabled?'checked':''}></label><label>像素倍率<select id="pixelRatio"><option value="auto">Auto</option><option value="1">1x</option><option value="1.5">1.5x</option><option value="2">2x</option></select></label></section>`;const keys=['ambient','key','keyX','keyY','keyZ','fill','fillX','fillY','fillZ','rim','rimX','rimY','rimZ','stageLight','spotX','spotY','spotZ','spotTargetX','spotTargetY','spotTargetZ','spotAngle','spotPenumbra','spotDistance','exposure'];const ranges=[...controlPage.querySelectorAll('input[type=range]')];ranges.forEach((el,i)=>el.oninput=()=>{settings[keys[i]]=+el.value;el.parentElement.querySelector('output').textContent=el.value;applyLighting();saveSettings();});for(const [id,k] of [['keyColor','keyColor'],['fillColor','fillColor'],['rimColor','rimColor'],['spotColor','stageColor']])$('#'+id).oninput=e=>{settings[k]=e.target.value;applyLighting();saveSettings();};$('#shadowToggle').onchange=e=>renderer.shadowMap.enabled=e.target.checked;$('#pixelRatio').onchange=e=>{renderer.setPixelRatio(e.target.value==='auto'?Math.min(devicePixelRatio||1,2):+e.target.value);resize();};controlPage.querySelectorAll('[data-light]').forEach(b=>b.onclick=()=>applyLightPreset(b.dataset.light));}
-function applyLighting(){ambient.intensity=settings.ambient;key.intensity=settings.key;fill.intensity=settings.fill;rim.intensity=settings.rim;stageSpot.intensity=settings.stageLight;key.color.set(settings.keyColor);fill.color.set(settings.fillColor);rim.color.set(settings.rimColor);stageSpot.color.set(settings.stageColor);key.position.set(settings.keyX,settings.keyY,settings.keyZ);fill.position.set(settings.fillX,settings.fillY,settings.fillZ);rim.position.set(settings.rimX,settings.rimY,settings.rimZ);stageSpot.position.set(settings.spotX,settings.spotY,settings.spotZ);stageSpot.target.position.set(settings.spotTargetX,settings.spotTargetY,settings.spotTargetZ);stageSpot.angle=settings.spotAngle;stageSpot.penumbra=settings.spotPenumbra;stageSpot.distance=settings.spotDistance;renderer.toneMappingExposure=settings.exposure;}
+function applyLighting(){ambient.intensity=settings.ambient*.32;key.intensity=settings.key*.38;fill.intensity=settings.fill*.28;rim.intensity=settings.rim*.30;stageSpot.intensity=settings.stageLight;key.color.set(settings.keyColor);fill.color.set(settings.fillColor);rim.color.set(settings.rimColor);stageSpot.color.set(settings.stageColor);key.position.set(settings.keyX,settings.keyY,settings.keyZ);fill.position.set(settings.fillX,settings.fillY,settings.fillZ);rim.position.set(settings.rimX,settings.rimY,settings.rimZ);stageSpot.position.set(settings.spotX,settings.spotY,settings.spotZ);stageSpot.target.position.set(settings.spotTargetX,settings.spotTargetY,settings.spotTargetZ);stageSpot.angle=settings.spotAngle;stageSpot.penumbra=settings.spotPenumbra;stageSpot.distance=settings.spotDistance;renderer.toneMappingExposure=settings.exposure;}
 function applyLightPreset(p){const m={natural:[.32,1.15,.42,.55,0,.9],soft:[.42,.85,.55,.35,0,.9],warm:[.28,1.25,.35,.5,0,.88],cool:[.25,1,.6,.75,0,.88],stage:[.18,.8,.25,.8,2.2,.82]}[p];if(!m)return;[settings.ambient,settings.key,settings.fill,settings.rim,settings.stageLight,settings.exposure]=m;if(p==='warm'){settings.keyColor='#ffddc7';settings.fillColor='#ffd9c8';}else if(p==='cool'){settings.keyColor='#dceaff';settings.fillColor='#a6d9ff';}else{settings.keyColor='#fff4eb';settings.fillColor='#bfdcff';}applyLighting();saveSettings();renderLightControls();}
 function renderCameraControls(){controlPage.innerHTML=`<section class="panel-section"><h3>相机总控</h3><div class="button-grid"><button data-cam="full">全身</button><button data-cam="upper">半身</button><button data-cam="face">脸部</button><button data-cam="left">左侧</button><button data-cam="right">右侧</button><button data-cam="back">背面</button></div>${rowSlider('FOV',15,70,1,camera.fov)}${rowSlider('旋转速度',.1,2,.05,controls.rotateSpeed)}${rowSlider('缩放速度',.1,2,.05,controls.zoomSpeed)}${rowSlider('平移速度',.1,2,.05,controls.panSpeed)}${rowSlider('阻尼',0,.25,.01,controls.dampingFactor)}${rowSlider('最小距离',.3,5,.1,controls.minDistance)}${rowSlider('最大距离',2,15,.1,controls.maxDistance)}${rowSlider('相机 X',-8,8,.05,camera.position.x)}${rowSlider('相机 Y',-2,8,.05,camera.position.y)}${rowSlider('相机 Z',-8,8,.05,camera.position.z)}${rowSlider('目标 X',-3,3,.05,controls.target.x)}${rowSlider('目标 Y',0,3,.05,controls.target.y)}${rowSlider('目标 Z',-3,3,.05,controls.target.z)}</section>`;controlPage.querySelectorAll('[data-cam]').forEach(b=>b.onclick=()=>{cameraPreset(b.dataset.cam);renderCameraControls();});const q=[...controlPage.querySelectorAll('input[type=range]')];const apply=()=>{camera.fov=+q[0].value;camera.updateProjectionMatrix();controls.rotateSpeed=+q[1].value;controls.zoomSpeed=+q[2].value;controls.panSpeed=+q[3].value;controls.dampingFactor=+q[4].value;controls.minDistance=+q[5].value;controls.maxDistance=+q[6].value;camera.position.set(+q[7].value,+q[8].value,+q[9].value);controls.target.set(+q[10].value,+q[11].value,+q[12].value);controls.update();q.forEach(e=>e.parentElement.querySelector('output').textContent=e.value);};q.forEach(e=>e.oninput=apply);}
 function cameraPreset(p){const y=modelHeight*.52,d=modelHeight*2.35;const map={full:[0,y,d],upper:[0,modelHeight*.72,modelHeight*1.65],face:[0,modelHeight*.86,modelHeight*.72],left:[-d*.75,y,0],right:[d*.75,y,0],back:[0,y,-d]};const v=map[p]||map.full;camera.position.set(...v);controls.target.set(0,p==='face'?modelHeight*.86:y,0);controls.update();}
@@ -668,30 +664,17 @@ function beginKeyboardWalk(){
   keyboardOwnsWalk=true;return true;
 }
 function updateKeyboardWalk(dt,now,state){
-  if(!state?.moving||!vrm||physicalEmbodiment?.ownsRootPose?.()){
-    if(state?.stopped&&keyboardOwnsWalk){keyboardOwnsWalk=false;if(currentActionName==='walk'&&!persistentPreview)stopAction();}
-    return;
-  }
-  if(!keyboardOwnsWalk)beginKeyboardWalk();
-  if(!keyboardOwnsWalk)return;
+  if(!vrm||physicalEmbodiment?.ownsRootPose?.())return;
+  const settling=keyboardOwnsWalk&&!physicalEmbodiment?.walkSettled?.();
+  if(!state?.moving&&!settling){if(keyboardOwnsWalk){keyboardOwnsWalk=false;if(currentActionName==='walk'&&!persistentPreview)stopAction();}return;}
+  if(state?.moving&&!keyboardOwnsWalk)beginKeyboardWalk();if(!keyboardOwnsWalk)return;
   manualOverrideUntil=now+700;director.resumeAt=now+1200;
-  camera.getWorldDirection(keyboardForward);keyboardForward.y=0;if(keyboardForward.lengthSq()<1e-8)keyboardForward.set(0,0,-1);else keyboardForward.normalize();
-  keyboardRight.crossVectors(keyboardForward,worldUp).normalize();
-  keyboardDirection.copy(keyboardForward).multiplyScalar(state.axisZ).addScaledVector(keyboardRight,state.axisX);
-  if(keyboardDirection.lengthSq()<1e-8)return;keyboardDirection.normalize();
-  const speed=settings.walkWorldSpeed*state.speed01;
-  if(settings.physicsEnabled&&physicsReady&&bodyPhysics){
-    bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});
-    if(physicalEmbodiment)physicalEmbodiment.drive(dt,keyboardDirection,speed,'walk');else bodyPhysics.move(dt,keyboardDirection,speed);
-  }else{
-    vrm.scene.position.addScaledVector(keyboardDirection,speed*dt);
-    vrm.scene.position.x=clamp(vrm.scene.position.x,-2.75,2.75);vrm.scene.position.z=clamp(vrm.scene.position.z,-2.25,2.25);
-  }
-  facingController?.faceDirection(keyboardDirection,dt,state.inputActive?9:6);
-  if(currentActionName==='walk'&&currentAction){
-    const fatigueSlow=1-clamp((lifeSim.fatigue-28)/150,0,.30);
-    currentAction.setEffectiveTimeScale((settings.motionSpeed||1)*fatigueSlow*lifeSim.paceNoise*(.70+.34*state.speed01));
-  }
+  camera.getWorldDirection(keyboardForward);keyboardForward.y=0;if(keyboardForward.lengthSq()<1e-8)keyboardForward.set(0,0,-1);else keyboardForward.normalize();keyboardRight.crossVectors(keyboardForward,worldUp).normalize();
+  keyboardDirection.copy(keyboardForward).multiplyScalar(state?.axisZ??1).addScaledVector(keyboardRight,state?.axisX??0);if(keyboardDirection.lengthSq()<1e-8)keyboardDirection.copy(keyboardForward);else keyboardDirection.normalize();
+  if(!settings.physicsEnabled||!physicsReady||!bodyPhysics||!physicalEmbodiment)return;
+  bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});
+  const continueSteps=Boolean(state?.inputActive),speed=continueSteps?settings.walkWorldSpeed*state.speed01:0;const plan=physicalEmbodiment.drive(dt,keyboardDirection,speed,'walk',{continueSteps});
+  if(!continueSteps&&plan?.settled){keyboardOwnsWalk=false;if(currentActionName==='walk'&&!persistentPreview)stopAction();}
 }
 document.addEventListener('keydown',e=>{
   if(isMovementCode(e.code)&&!isTypingTarget(e.target)){e.preventDefault();if(keyboardLocomotion.keyDown(e.code))beginKeyboardWalk();return;}
@@ -700,7 +683,7 @@ document.addEventListener('keydown',e=>{
 document.addEventListener('keyup',e=>{if(isMovementCode(e.code)){e.preventDefault();keyboardLocomotion.keyUp(e.code);}});
 window.addEventListener('blur',()=>keyboardLocomotion.clear());
 
-applyLighting();floor.visible=ring.visible=innerRing.visible=settings.stageVisible!==false;
+applyLighting();floor.visible=false;ring.visible=false;innerRing.visible=false;
 function animate(){
   requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(),keyboardState=keyboardLocomotion.update(dt); controls.update(); if(mixer)mixer.update(dt); physicalEmbodiment?.update(dt,now); lifeSim.update(dt,now); updateKeyboardWalk(dt,now,keyboardState); life.update(now,dt); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
   if(speaking&&vrm?.expressionManager){ mouthLevel=.12+Math.abs(Math.sin(now*.012))*0.32+Math.abs(Math.sin(now*.027))*0.14;vrm.expressionManager.setValue('aa',mouthLevel); } else if(vrm?.expressionManager){mouthLevel*=.78;vrm.expressionManager.setValue('aa',mouthLevel);}

@@ -115,8 +115,11 @@ export class NivaIKSystem {
     const bones=['leftUpperLeg','leftLowerLeg','leftFoot','leftToes','rightUpperLeg','rightLowerLeg','rightFoot','rightToes'];
     const result=this.collision.attempt({action,bones,apply:(scale)=>{
       for(const side of ['left','right']){
-        const anchor=plan.footAnchors[side];if(!anchor||!plan.stance?.[side])continue;
-        this.footIK.solve(side,anchor,plan.groundNormal,this.strength*scale,action);
+        const anchor=plan.footAnchors?.[side]||plan.footTargets?.[side];
+        const stance=Boolean(plan.stance?.[side]),targetWeight=plan.footTargetWeights?.[side];
+        const weight=clamp(targetWeight ?? (stance?1:0),0,1);if(!anchor||weight<=0)continue;
+        const normal=stance?plan.groundNormal:new THREE.Vector3(0,1,0);
+        this.footIK.solve(side,anchor,normal,this.strength*scale*weight,action);
       }
     }});
     if(!result.ok)this.lastRejectedAction=`${action}-feet`;
