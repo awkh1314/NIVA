@@ -280,6 +280,35 @@ function buildClips(){
     chest:walkTimes.map((t,i)=>[t,0,(i<4?-1.35:1.35),-pelvisRoll[i]*.38]),
     head:walkTimes.map((t,i)=>[t,0,(i<4?.35:-.35),0])
   }));
+  // One complete military-style step: attention -> lead swing -> heel strike ->
+  // rear toe-off -> rear-leg recovery -> feet together -> arms back at thighs.
+  const marchTimes=[0,.16,.48,.68,.98,1.24,1.48,1.65];
+  const marchX=(values)=>marchTimes.map((t,i)=>[t,values[i],0,0]);
+  const makeMarchStep=(side)=>{
+    const lead=side==='left'?'left':'right',trail=lead==='left'?'right':'left',sgn=lead==='left'?1:-1;
+    const tracks={
+      hips:marchTimes.map((t,i)=>[t,0,[0,0,sgn*2.2,sgn*1.8,sgn*.7,0,0,0][i],[0,-sgn*1.5,-sgn*.8,sgn*.6,sgn*.8,sgn*.2,0,0][i]]),
+      spine:marchTimes.map((t,i)=>[t,[0,1.0,1.8,1.4,1.0,.5,0,0][i],0,[0,sgn*.45,sgn*.35,-sgn*.25,-sgn*.35,-sgn*.1,0,0][i]]),
+      chest:marchTimes.map((t,i)=>[t,[0,.4,.8,.7,.4,.2,0,0][i],[0,0,-sgn*1.4,-sgn*1.1,-sgn*.4,0,0,0][i],0]),
+      head:marchTimes.map((t,i)=>[t,[0,-.2,-.5,-.4,-.2,0,0,0][i],[0,0,sgn*.45,sgn*.35,0,0,0,0][i],0]),
+    };
+    tracks[`${lead}UpperLeg`]=marchX([0,6,30,20,5,0,0,0]);
+    tracks[`${lead}LowerLeg`]=marchX([0,12,34,8,7,4,0,0]);
+    tracks[`${lead}Foot`]=marchX([0,-2,-5,-4,0,1,0,0]);
+    tracks[`${trail}UpperLeg`]=marchX([0,-4,-10,-14,-10,22,8,0]);
+    tracks[`${trail}LowerLeg`]=marchX([0,3,5,9,14,34,14,0]);
+    tracks[`${trail}Foot`]=marchX([0,0,2,7,13,-5,-2,0]);
+    // Contralateral arm swings forward; the lead-side arm swings back once.
+    tracks[`${lead}UpperArm`]=marchX([0,-5,-18,-14,-7,-2,0,0]);
+    tracks[`${trail}UpperArm`]=marchX([0,6,24,18,8,2,0,0]);
+    tracks[`${lead}LowerArm`]=marchTimes.map((t)=>[t,0,0,0]);
+    tracks[`${trail}LowerArm`]=marchTimes.map((t)=>[t,0,0,0]);
+    tracks[`${lead}Hand`]=marchTimes.map((t)=>[t,0,0,0]);
+    tracks[`${trail}Hand`]=marchTimes.map((t)=>[t,0,0,0]);
+    return makeClip(`marchStep${lead==='left'?'Left':'Right'}`,1.65,tracks);
+  };
+  clips.set('marchStepLeft',makeMarchStep('left'));
+  clips.set('marchStepRight',makeMarchStep('right'));
   const rt=[0,.09,.18,.26,.35,.44,.53,.61,.70];
   const runL=[38,22,2,-22,-36,-20,2,22,38],runR=[-36,-20,2,22,38,22,2,-22,-36];
   const rkL=[16,42,76,56,18,28,62,42,16],rkR=[18,28,62,42,16,42,76,56,18];
@@ -326,7 +355,7 @@ loader.load(MODEL_URL,(gltf)=>{
   mixer=new THREE.AnimationMixer(vrm.humanoid.normalizedHumanBonesRoot || vrm.scene); buildClips();
   modelReady=true; runtimeSummary.textContent='Free Life Runtime · Ready';
   showToast('NIVA 已就绪');
-  NivaPhysicsBodySystem.create({vrm,getBone,getFootWorldPosition:(side,out)=>vrmAdapter?.footWorldPosition(side,out),modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;bedroomWorld?.registerPhysics(bodyPhysics);physicalEmbodiment=new PhysicalEmbodimentController({world:bedroomWorld,getVrm:()=>vrm,getBodyPhysics:()=>bodyPhysics,getActionState:()=>({time:currentAction?.time||0,duration:currentAction?.getClip?.()?.duration||1}),playClip:(name,opts)=>playClip(name,opts),stopAction:()=>stopAction(),faceDirection:(dir,dt,lambda)=>facingController?.faceDirection(dir,dt,lambda),walkSpeed:settings.walkWorldSpeed});physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physical Room Ready';showToast('NIVA 房间物理身体已就绪');}).catch((err)=>{physicsReady=false;physicsError=String(err?.message||err);console.error('NIVA physics init failed',err);runtimeSummary.textContent='Free Life Runtime · Physics fallback';});
+  NivaPhysicsBodySystem.create({vrm,getBone,getFootWorldPosition:(side,out)=>vrmAdapter?.footWorldPosition(side,out),modelHeight,rootHome:modelHome,stageRadius:1.55*Math.max(.4,floor.scale.x||1)}).then((system)=>{bodyPhysics=system;bedroomWorld?.registerPhysics(bodyPhysics);physicalEmbodiment=new PhysicalEmbodimentController({world:bedroomWorld,getVrm:()=>vrm,getBodyPhysics:()=>bodyPhysics,getActionState:()=>({time:currentAction?.time||0,duration:currentAction?.getClip?.()?.duration||1}),playClip:(name,opts)=>playClip(name,opts),stopAction:()=>stopAction(),faceDirection:(dir,dt,lambda)=>facingController?.faceDirection(dir,dt,lambda),walkSpeed:settings.walkWorldSpeed,stepLength:modelHeight*.42});physicsReady=true;physicsError='';runtimeSummary.textContent='Free Life Runtime · Physical Room Ready';showToast('NIVA 房间物理身体已就绪');}).catch((err)=>{physicsReady=false;physicsError=String(err?.message||err);console.error('NIVA physics init failed',err);runtimeSummary.textContent='Free Life Runtime · Physics fallback';});
 },undefined,(e)=>{ console.error(e); runtimeSummary.textContent='模型加载失败'; showToast('NIVA.vrm 加载失败'); });
 
 function resize(){ const r=stage.getBoundingClientRect(); renderer.setSize(r.width,r.height,false); camera.aspect=r.width/r.height; camera.updateProjectionMatrix(); }
@@ -352,6 +381,7 @@ const DEMO={
   '挥手':{reply:'你好。',emotion:'happy',action:'wave'},
   '深呼吸':{reply:'好，我们一起慢慢呼吸。',emotion:'gentle',action:'breath'},
   '思考一下':{reply:'嗯……让我想一下。',emotion:'thinking',action:'think'},
+  '走一步':{reply:'好，我完整迈一步，然后收腿立正。',emotion:'neutral',action:'marchStep'},
   '走一下':{reply:'好，我走给你看看。',emotion:'happy',action:'walk'},
   '走路':{reply:'好，我走给你看看。',emotion:'happy',action:'walk'},
   '双手抱胸':{reply:'好。',emotion:'neutral',action:'crossArms'},
@@ -379,12 +409,20 @@ function expressionTick(now){
   if(expressionNameFrom && expressionNameFrom!==activeExpression) vrm.expressionManager.setValue(expressionNameFrom, expressionBlendFrom*(1-e));
   const v=expressionBlendFrom+(expressionTarget-expressionBlendFrom)*e; expressionValue=v; vrm.expressionManager.setValue(activeExpression,v);
 }
+let nextMarchSide='left';
 function performAction(action,allowWhileSpeaking=false){
-  if(action==='idle'){stopAction();return true;}
+  if(action==='idle'){physicalEmbodiment?.cancelTask?.();stopAction();return true;}
   if(action==='nod')return playClip('nod',{duration:1,allowWhileSpeaking});
   if(action==='wave') return playClip('wave',{duration:2.05,allowWhileSpeaking});
   if(action==='think') return playClip('think',{duration:2.5,allowWhileSpeaking});
   if(action==='walk'){ if(playClip('walk',{loop:true,allowWhileSpeaking})){setTimeout(stopAction,3100);} return; }
+  if(action==='marchStep'||action==='marchStepLeft'||action==='marchStepRight'){
+    const side=action==='marchStepLeft'?'left':action==='marchStepRight'?'right':nextMarchSide;
+    const started=physicalEmbodiment?.startMarchStep?.(side);
+    if(action==='marchStep'&&started)nextMarchSide=side==='left'?'right':'left';
+    if(started)return true;
+    return playClip(side==='left'?'marchStepLeft':'marchStepRight',{duration:1.65,allowWhileSpeaking});
+  }
   if(action==='run'){ if(playClip('run',{loop:true,allowWhileSpeaking})){setTimeout(stopAction,2500);} return; }
   if(action==='smile'){ setExpression('happy',.3); setTimeout(()=>setExpression('neutral',0),2200); return; }
   if(action==='breath'){ life.deepBreathUntil=performance.now()+5000; return; }
@@ -414,9 +452,10 @@ document.querySelectorAll('.mode-btn').forEach(b=>b.addEventListener('click',()=
 const experienceBar=$('#experienceBar');
 experienceBar.innerHTML='<div class="experience-row"><span class="experience-label">动作预览</span></div><div class="experience-row"><span class="experience-label">语音演出</span></div>';
 const previewRow=experienceBar.children[0],voiceRow=experienceBar.children[1];
-const previewActions=[['停止','stop'],['思考','thinkLoop'],['抱胸','crossArms'],['走路','walk'],['跑步','run'],['蹲下','crouch']];
+const previewActions=[['停止','stop'],['思考','thinkLoop'],['抱胸','crossArms'],['走一步','marchStep'],['走路','walk'],['跑步','run'],['蹲下','crouch']];
 function startPreviewMotion(name){
-  if(name==='stop'){stopAction();lifeSim.recovering=false;setExpression('neutral',0);return;}
+  if(name==='stop'){physicalEmbodiment?.cancelTask?.();stopAction();lifeSim.recovering=false;setExpression('neutral',0);return;}
+  if(name==='marchStep'){physicalEmbodiment?.cancelTask?.();stopAction();persistentPreview='';setTimeout(()=>performAction('marchStep'),190);return;}
   stopAction();persistentPreview=name;lifeSim.onPreviewChanged(name);
   setTimeout(()=>{if(persistentPreview===name)playClip(name,{loop:true});},190);
 }
@@ -433,7 +472,7 @@ for(const [label,fn] of voiceScenes){const b=document.createElement('button');b.
 const lifeSim={
   fatigue:0,energy:100,heartRate:68,breathRate:12,load:0,recovering:false,recoveryUntil:0,
   paceNoise:1,nextPaceNoise:0,lastUi:0,lastPreview:'',stageTarget:new THREE.Vector3(),groundMode:'',balancePlan:null,
-  activity(){if(this.recovering)return'recovery';if(keyboardLocomotion.state().moving)return'walk';if(persistentPreview)return persistentPreview;if(currentActionName&&currentActionName!=='idle')return currentActionName;return'idle';},
+  activity(){if(this.recovering)return'recovery';if(keyboardLocomotion.state().moving)return'walk';if(physicalEmbodiment?.state?.().task==='march-step')return'walk';if(persistentPreview)return persistentPreview;if(currentActionName&&currentActionName!=='idle')return currentActionName;return'idle';},
   loadFor(a){return ({run:1,walk:.42,crouch:.24,thinkLoop:.16,think:.16,wave:.2,recovery:.55}[a]||.05);},
   onPreviewChanged(name){this.lastPreview='';if(name==='walk'||name==='run')this.chooseStageTarget();},
   chooseStageTarget(){const a=Math.random()*Math.PI*2,scale=Math.max(.4,floor.scale.x||1),r=(.32+Math.random()*.82)*scale;this.stageTarget.set(Math.cos(a)*r,0,Math.sin(a)*r);},
@@ -530,7 +569,7 @@ function applyManualAndLife(){
   for(const [name,base] of baseQuats.entries()){
     const node=getBone(name);if(!node)continue;const layers=additiveScratch.get(name)||{};let lx=0,ly=0,lz=0;for(const v of Object.values(layers)){lx+=v?.[0]||0;ly+=v?.[1]||0;lz+=v?.[2]||0;}
     const delta=new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(lx),rad(ly),rad(lz),'XYZ'));
-    const actionOwns=currentAction&&['walk','run','wave','think','thinkLoop','reach','weight','nod','crouch','recovery','crossArms','sitBed','lieBed','sleepBed'].includes(currentActionName)&&!manualOffsets.has(name);
+    const actionOwns=currentAction&&['walk','run','wave','think','thinkLoop','reach','weight','nod','crouch','recovery','crossArms','sitBed','lieBed','sleepBed','marchStepLeft','marchStepRight'].includes(currentActionName)&&!manualOffsets.has(name);
     if(actionOwns){if(Math.abs(lx)+Math.abs(ly)+Math.abs(lz)>1e-7)node.quaternion.multiply(delta);continue;}
     const m=manualOffsets.get(name)||[0,0,0];
     const manualQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(m[0]),rad(m[1]),rad(m[2]),'XYZ'));
@@ -665,14 +704,14 @@ applyLighting();floor.visible=ring.visible=innerRing.visible=settings.stageVisib
 function animate(){
   requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(),keyboardState=keyboardLocomotion.update(dt); controls.update(); if(mixer)mixer.update(dt); physicalEmbodiment?.update(dt,now); lifeSim.update(dt,now); updateKeyboardWalk(dt,now,keyboardState); life.update(now,dt); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
   if(speaking&&vrm?.expressionManager){ mouthLevel=.12+Math.abs(Math.sin(now*.012))*0.32+Math.abs(Math.sin(now*.027))*0.14;vrm.expressionManager.setValue('aa',mouthLevel); } else if(vrm?.expressionManager){mouthLevel*=.78;vrm.expressionManager.setValue('aa',mouthLevel);}
-  lifeSim.applyBalance(); applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady&&!physicalEmbodiment?.ownsRootPose?.()){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});contactPlan=bodyPhysics.solvePostAnimation(dt,{action:currentActionName,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth,gaitPlan:physicalEmbodiment?.contactGait?.()||null});lifeSim.balancePlan=contactPlan?.balance||null;}if(ikSystem&&contactPlan){ikSystem.configure({enabled:true,footEnabled:settings.footIKEnabled,actionEnabled:true,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}jointGuard?.apply(dt);selfCollisionProjector?.project();if(!physicalEmbodiment?.ownsRootPose?.())facingController?.tick();coordinateDebug?.update();vrm.update(dt);} renderer.render(scene,camera);
+  lifeSim.applyBalance(); applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady&&!physicalEmbodiment?.ownsRootPose?.()){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});const physicsAction=['marchStepLeft','marchStepRight'].includes(currentActionName)?'walk':currentActionName;contactPlan=bodyPhysics.solvePostAnimation(dt,{action:physicsAction,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth,gaitPlan:physicalEmbodiment?.contactGait?.()||null});lifeSim.balancePlan=contactPlan?.balance||null;}if(ikSystem&&contactPlan){ikSystem.configure({enabled:true,footEnabled:settings.footIKEnabled,actionEnabled:true,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}jointGuard?.apply(dt);selfCollisionProjector?.project();if(!physicalEmbodiment?.ownsRootPose?.())facingController?.tick();coordinateDebug?.update();vrm.update(dt);} renderer.render(scene,camera);
 }
 animate();
 
 const publicPlay=createPublicMotionBridge({
-  runMotion:(name,allowWhileSpeaking=false)=>['idle','wave','nod','think','walk','run','smile','crossArms','sleepTask'].includes(name)?performAction(name,allowWhileSpeaking):playClip(name,{duration:clips.get(name)?.duration||2,allowWhileSpeaking}),
+  runMotion:(name,allowWhileSpeaking=false)=>['idle','wave','nod','think','walk','run','smile','crossArms','marchStep','marchStepLeft','marchStepRight','sleepTask'].includes(name)?performAction(name,allowWhileSpeaking):playClip(name,{duration:clips.get(name)?.duration||2,allowWhileSpeaking}),
   stopMotion:stopAction,
   setEmotion:(name)=>{const intensity=name==='happy'?.28:name==='excited'?.30:.18;setExpression(name,intensity);setTimeout(()=>setExpression('neutral',0),2600);},
   speakText:speak,
 });
-window.NIVA={version:'0.99.1',speak,act:(name)=>performAction(name),play:publicPlay,stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,input:{keyboard:keyboardLocomotion.state()},frame:characterFrame?.describe?.(),facing:facingController?.state?.(),ik:ikSystem?.state?.(),physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
+window.NIVA={version:'0.99.1',speak,act:(name)=>performAction(name),play:publicPlay,stop:stopAction,state:()=>({modelReady,speaking,currentAction:currentActionName,director:director.state,input:{keyboard:keyboardLocomotion.state()},embodiment:physicalEmbodiment?.state?.()||null,frame:characterFrame?.describe?.(),facing:facingController?.state?.(),ik:ikSystem?.state?.(),physics:{ready:physicsReady,error:physicsError,...(bodyPhysics?.state?.()||{})},life:{fatigue:lifeSim.fatigue,energy:lifeSim.energy,heartRate:lifeSim.heartRate,breathRate:lifeSim.breathRate,recovering:lifeSim.recovering}})};
