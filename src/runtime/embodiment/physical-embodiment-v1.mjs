@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { ContactGaitController } from '../physics/contact-gait-v3.mjs';
+import { SINGLE_STEP_DURATION, sampleSingleStepMarch } from '../physics/single-step-march.mjs';
 
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,Number.isFinite(v)?v:0));
 const smooth=(t)=>{const x=clamp(t,0,1);return x*x*(3-2*x);};
 
 export class PhysicalEmbodimentController{
-  constructor({world,getVrm,getBodyPhysics,getActionState,playClip,stopAction,faceDirection,walkSpeed=.48}={}){
-    this.world=world;this.getVrm=getVrm;this.getBodyPhysics=getBodyPhysics;this.getActionState=getActionState;this.playClip=playClip;this.stopAction=stopAction;this.faceDirection=faceDirection;this.walkSpeed=walkSpeed;
-    this.gait=new ContactGaitController();this.gaitPlan=null;this.task='idle';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;this._startPos=new THREE.Vector3();this._startQuat=new THREE.Quaternion();this._startYaw=0;this._driveDir=new THREE.Vector3(0,0,1);
+  constructor({world,getVrm,getBodyPhysics,getActionState,playClip,stopAction,faceDirection,walkSpeed=.48,stepLength=.68}={}){
+    this.world=world;this.getVrm=getVrm;this.getBodyPhysics=getBodyPhysics;this.getActionState=getActionState;this.playClip=playClip;this.stopAction=stopAction;this.faceDirection=faceDirection;this.walkSpeed=walkSpeed;this.stepLength=Math.max(.18,Number(stepLength)||.68);
+    this.gait=new ContactGaitController();this.gaitPlan=null;this.task='idle';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;this._startPos=new THREE.Vector3();this._startQuat=new THREE.Quaternion();this._startYaw=0;this._driveDir=new THREE.Vector3(0,0,1);this._marchDir=new THREE.Vector3(0,0,1);this._marchSide='left';this._marchPrevProgress=0;
   }
   currentPhase(){const s=this.getActionState?.()||{};const d=Math.max(.01,s.duration||1);return (((s.time||0)%d)/d+1)%1;}
   drive(dt,direction,speed=this.walkSpeed,action='walk'){
@@ -25,14 +26,22 @@ export class PhysicalEmbodimentController{
   idleGait(dt){this.gaitPlan=this.gait.update(dt,{action:'idle',moving:false,speedRatio:0});return this.gaitPlan;}
   startSleep(){if(this.task!=='idle'&&this.task!=='sleep')return false;this.task='walk-to-bed';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;this.world?.setBlanket('rest',0);return true;}
   startWalkTo(anchorName='roomCenter'){this.targetAnchor=anchorName;this.task='walk-to-anchor';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;return true;}
+  startMarchStep(side='left'){
+    if(this.rootOverride)return false;
+    if(this.task!=='idle')this.cancelTask();
+    this._marchSide=side==='right'?'right':'left';this._marchPrevProgress=0;this.task='march-step';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;
+    const vrm=this.getVrm?.();if(vrm){this._marchDir.set(0,0,1).applyQuaternion(vrm.scene.quaternion).setY(0);if(this._marchDir.lengthSq()<1e-8)this._marchDir.set(0,0,1);else this._marchDir.normalize();}
+    return true;
+  }
   cancelTask(){
     if(this.rootOverride)return false;
     if(this.task!=='idle')this.stopAction?.();
-    this.task='idle';this.taskTime=0;this.taskStarted=false;this.targetAnchor=null;this.idleGait(1/60);return true;
+    this.task='idle';this.taskTime=0;this.taskStarted=false;this.targetAnchor=null;this._marchPrevProgress=0;this.idleGait(1/60);return true;
   }
   transition(next){this.task=next;this.taskTime=0;this.taskStarted=false;}
   beginTask(){if(this.taskStarted)return;this.taskStarted=true;
     if(this.task==='walk-to-bed'||this.task==='walk-to-anchor')this.playClip?.('walk',{loop:true});
+    if(this.task==='march-step')this.playClip?.(this._marchSide==='right'?'marchStepRight':'marchStepLeft',{duration:SINGLE_STEP_DURATION});
     if(this.task==='open-blanket')this.playClip?.('reach',{duration:2});
     if(this.task==='sit-bed')this.playClip?.('sitBed',{duration:1.25});
     if(this.task==='lie-bed')this.playClip?.('lieBed',{duration:1.5});
@@ -45,6 +54,14 @@ export class PhysicalEmbodimentController{
     if(dist<.16){this.stopAction?.();this.idleGait(dt);this.transition(next);return;}
     const dir=to.normalize();this.drive(dt,dir,this.walkSpeed,'walk');this.faceDirection?.(dir,dt,6.5);
   }
+  executeMarchStep(dt){
+    const plan=sampleSingleStepMarch(this.taskTime,{side:this._marchSide});this.gaitPlan=plan;
+    const vrm=this.getVrm?.(),physics=this.getBodyPhysics?.(),dp=Math.max(0,plan.rootProgress-this._marchPrevProgress);this._marchPrevProgress=plan.rootProgress;
+    if(vrm&&dp>1e-7){const distance=this.stepLength*dp;if(physics)physics.move(dt,this._marchDir,distance/Math.max(dt,1e-4));else vrm.scene.position.addScaledVector(this._marchDir,distance);}
+    this.faceDirection?.(this._marchDir,dt,8);
+    if(plan.complete){this.stopAction?.();this.task='idle';this.taskTime=0;this.taskStarted=false;this._marchPrevProgress=0;}
+    return plan;
+  }
   captureRoot(){const vrm=this.getVrm?.();if(!vrm)return;this._startPos.copy(vrm.scene.position);this._startQuat.copy(vrm.scene.quaternion);this._startYaw=vrm.scene.rotation.y||0;}
   setBedRoot(t,lying=false){
     const vrm=this.getVrm?.();if(!vrm)return;const k=smooth(t);const anchor=this.world?.anchor(lying?'bedLie':'bedSit');if(!anchor)return;
@@ -55,6 +72,7 @@ export class PhysicalEmbodimentController{
   update(dt){
     this.world?.update(dt);this.taskTime+=dt;this.beginTask();
     if(this.task==='idle'){this.idleGait(dt);return;}
+    if(this.task==='march-step'){this.executeMarchStep(dt);return;}
     if(this.task==='walk-to-bed'){this.walkToward(dt,this.world?.anchor('bedApproach'),'open-blanket');return;}
     if(this.task==='walk-to-anchor'){this.walkToward(dt,this.world?.anchor(this.targetAnchor||'roomCenter'),'idle');return;}
     if(this.task==='open-blanket'){
@@ -73,5 +91,5 @@ export class PhysicalEmbodimentController{
   }
   ownsRootPose(){return this.rootOverride;}
   contactGait(){return this.gaitPlan;}
-  state(){return {solver:'physical-embodiment-v1',task:this.task,rootOverride:this.rootOverride,gait:this.gaitPlan,world:this.world?.state?.()||null};}
+  state(){return {solver:'physical-embodiment-v1',task:this.task,rootOverride:this.rootOverride,gait:this.gaitPlan,march:{side:this._marchSide,stepLength:this.stepLength},world:this.world?.state?.()||null};}
 }
