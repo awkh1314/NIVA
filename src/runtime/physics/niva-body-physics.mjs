@@ -170,6 +170,16 @@ export class NivaPhysicsBodySystem {
     this.characterBody.setNextKinematicTranslation({ x, y: t.y, z });
   }
 
+  syncRootNow(x, z) {
+    if (!this.characterBody) return;
+    const t = this.characterBody.translation();
+    const next = { x: Number(x) || 0, y: t.y, z: Number(z) || 0 };
+    this.characterBody.setTranslation(next, true);
+    this.characterBody.setNextKinematicTranslation(next);
+    this.vrm.scene.position.x = next.x;
+    this.vrm.scene.position.z = next.z;
+  }
+
   moveByDelta(dt, delta, { maxDelta = null } = {}) {
     if (!this.enabled || !this.characterBody || !this.characterCollider) return new THREE.Vector3();
     const h = clamp(Number(dt) || 0, 1 / 120, 0.05);
