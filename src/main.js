@@ -14,6 +14,8 @@ import { PhysiologyOscillator } from './runtime/physics/biomechanics-life.mjs';
 import { JointRotationGuard } from './runtime/safety/joint-rotation-guard.mjs';
 import { SelfCollisionProjector } from './runtime/safety/self-collision-projector.mjs';
 import { RootContinuityGuard } from './runtime/safety/root-continuity-guard.mjs';
+import { PoseContinuityGuard } from './runtime/safety/pose-continuity.mjs';
+import { lifePresetAllowsBone } from './runtime/safety/life-preset-policy.mjs';
 import { BedroomWorld } from './runtime/world/bedroom-world.mjs';
 import { PhysicalEmbodimentController } from './runtime/embodiment/physical-embodiment-v1.mjs';
 import { KeyboardLocomotionController, isMovementCode } from './runtime/input/keyboard-locomotion.mjs';
@@ -54,6 +56,7 @@ let ikSystem = null;
 let jointGuard = null;
 let selfCollisionProjector = null;
 let rootContinuityGuard = null;
+let poseContinuityGuard = null;
 let bedroomWorld = null;
 let physicalEmbodiment = null;
 let coordinateDebug = null;
@@ -356,7 +359,7 @@ loader.load(MODEL_URL,(gltf)=>{
   VRMUtils.removeUnnecessaryVertices(gltf.scene); VRMUtils.removeUnnecessaryJoints(gltf.scene);
   vrm.scene.traverse(o=>{ if(o.isMesh){o.castShadow=true;o.receiveShadow=true;} });
   scene.add(vrm.scene); rememberBones(); applyRelaxedStandingPose(); rememberBones(); centerModel(); modelHome.copy(vrm.scene.position); captureMaterials(); applyModelSettings({reposition:true});
-  vrmAdapter=new NivaVrmAdapter(vrm); characterFrame=new CharacterFrame(vrm.scene); rootContinuityGuard=new RootContinuityGuard({modelHeight});rootContinuityGuard.reset(vrm.scene.position); facingController=new FacingController(vrm.scene); facingController.setManualYawDegrees(settings.modelRotY); ikSystem=new NivaIKSystem({vrm,getBone,frame:characterFrame,modelHeight}); jointGuard=new JointRotationGuard({getBone,baseQuats});jointGuard.reset(); selfCollisionProjector=new SelfCollisionProjector({vrm,getBone,baseQuats,getHeight:()=>modelHeight});selfCollisionProjector.calibrate(); coordinateDebug=new CharacterFrameDebug({scene,frame:characterFrame,root:vrm.scene,camera,stage}); coordinateDebug.setVisible(settings.coordinateDebug);
+  vrmAdapter=new NivaVrmAdapter(vrm); characterFrame=new CharacterFrame(vrm.scene); rootContinuityGuard=new RootContinuityGuard({modelHeight});rootContinuityGuard.reset(vrm.scene.position); poseContinuityGuard=new PoseContinuityGuard({lambda:14,maxDegreesPerSecond:220}); facingController=new FacingController(vrm.scene); facingController.setManualYawDegrees(settings.modelRotY); ikSystem=new NivaIKSystem({vrm,getBone,frame:characterFrame,modelHeight}); jointGuard=new JointRotationGuard({getBone,baseQuats});jointGuard.reset(); selfCollisionProjector=new SelfCollisionProjector({vrm,getBone,baseQuats,getHeight:()=>modelHeight});selfCollisionProjector.calibrate(); coordinateDebug=new CharacterFrameDebug({scene,frame:characterFrame,root:vrm.scene,camera,stage}); coordinateDebug.setVisible(settings.coordinateDebug);
   gazeTarget.position.copy(camera.position); if(vrm.lookAt) vrm.lookAt.target=gazeTarget;
   mixer=new THREE.AnimationMixer(vrm.humanoid.normalizedHumanBonesRoot || vrm.scene); buildClips();
   modelReady=true; runtimeSummary.textContent='Free Life Runtime · Ready';
@@ -556,19 +559,19 @@ const life={
 };
 const additiveScratch=new Map();
 function applyAdditive(name,x=0,y=0,z=0,key='life'){
-  if(!vrm)return; const node=getBone(name); if(!node)return; const base=baseQuats.get(name); if(!base)return;
+  if(!vrm||!lifePresetAllowsBone(key,name))return; const node=getBone(name); if(!node)return; const base=baseQuats.get(name); if(!base)return;
   if(!additiveScratch.has(name)) additiveScratch.set(name,{}); const s=additiveScratch.get(name); s[key]=[x,y,z];
 }
-function applyManualAndLife(){
+function applyManualAndLife(dt=1/60){
   if(!vrm)return;
+  const clip=currentAction?.getClip?.();
   for(const [name,base] of baseQuats.entries()){
     const node=getBone(name);if(!node)continue;const layers=additiveScratch.get(name)||{};let lx=0,ly=0,lz=0;for(const v of Object.values(layers)){lx+=v?.[0]||0;ly+=v?.[1]||0;lz+=v?.[2]||0;}
     const delta=new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(lx),rad(ly),rad(lz),'XYZ'));
-    const actionOwns=currentAction&&['walk','run','wave','think','thinkLoop','reach','weight','nod','crouch','recovery','crossArms','sitBed','lieBed','sleepBed','marchStepLeft','marchStepRight'].includes(currentActionName)&&!manualOffsets.has(name);
+    const actionOwns=Boolean(currentAction&&clip?.tracks?.some?.(track=>track.name?.startsWith?.(`${node.uuid}.`))&&!manualOffsets.has(name));
     if(actionOwns){if(Math.abs(lx)+Math.abs(ly)+Math.abs(lz)>1e-7)node.quaternion.multiply(delta);continue;}
-    const m=manualOffsets.get(name)||[0,0,0];
-    const manualQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(m[0]),rad(m[1]),rad(m[2]),'XYZ'));
-    node.quaternion.copy(base).multiply(manualQ).multiply(delta);
+    const m=manualOffsets.get(name)||[0,0,0],manualQ=new THREE.Quaternion().setFromEuler(new THREE.Euler(rad(m[0]),rad(m[1]),rad(m[2]),'XYZ')),target=base.clone().multiply(manualQ).multiply(delta);
+    if(manualOffsets.has(name)||!poseContinuityGuard)node.quaternion.copy(target);else poseContinuityGuard.apply(node,target,dt);
   }
   additiveScratch.clear();
 }
@@ -699,7 +702,7 @@ function enforceRootContinuity(dt){
 function animate(){
   requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05),now=performance.now(),keyboardState=keyboardLocomotion.update(dt); controls.update(); if(mixer)mixer.update(dt); physicalEmbodiment?.update(dt,now); lifeSim.update(dt,now); updateKeyboardWalk(dt,now,keyboardState); life.update(now,dt); director.update(now); updateGaze(now); expressionTick(now); lifeSim.applyFatigueFace();
   if(speaking&&vrm?.expressionManager){ mouthLevel=.12+Math.abs(Math.sin(now*.012))*0.32+Math.abs(Math.sin(now*.027))*0.14;vrm.expressionManager.setValue('aa',mouthLevel); } else if(vrm?.expressionManager){mouthLevel*=.78;vrm.expressionManager.setValue('aa',mouthLevel);}
-  lifeSim.applyBalance(); applyManualAndLife(); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady&&!physicalEmbodiment?.ownsRootPose?.()){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});const physicsAction=['marchStepLeft','marchStepRight'].includes(currentActionName)?'walk':currentActionName;contactPlan=bodyPhysics.solvePostAnimation(dt,{action:physicsAction,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth,gaitPlan:physicalEmbodiment?.contactGait?.()||null});lifeSim.balancePlan=contactPlan?.balance||null;}if(ikSystem&&contactPlan){ikSystem.configure({enabled:true,footEnabled:settings.footIKEnabled,actionEnabled:true,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}jointGuard?.apply(dt);selfCollisionProjector?.project();if(!physicalEmbodiment?.ownsRootPose?.())facingController?.tick();coordinateDebug?.update();vrm.update(dt);enforceRootContinuity(dt);} renderer.render(scene,camera);
+  lifeSim.applyBalance(); applyManualAndLife(dt); if(vrm){lifeSim.applyGroundContact(dt);let contactPlan=null;if(settings.physicsEnabled&&bodyPhysics&&physicsReady&&!physicalEmbodiment?.ownsRootPose?.()){const clip=currentAction?.getClip?.();bodyPhysics.configure({enabled:true,ikEnabled:settings.footIKEnabled,ikStrength:settings.footIKStrength});const physicsAction=['marchStepLeft','marchStepRight'].includes(currentActionName)?'walk':currentActionName;contactPlan=bodyPhysics.solvePostAnimation(dt,{action:physicsAction,actionTime:currentAction?.time||0,duration:clip?.duration||1,crouchDepth:settings.crouchDepth,gaitPlan:physicalEmbodiment?.contactGait?.()||null});lifeSim.balancePlan=contactPlan?.balance||null;}if(ikSystem&&contactPlan){ikSystem.configure({enabled:true,footEnabled:settings.footIKEnabled,actionEnabled:true,strength:settings.footIKStrength});ikSystem.solve(contactPlan);}jointGuard?.apply(dt);selfCollisionProjector?.project();if(!physicalEmbodiment?.ownsRootPose?.())facingController?.tick();coordinateDebug?.update();vrm.update(dt);enforceRootContinuity(dt);} renderer.render(scene,camera);
 }
 animate();
 

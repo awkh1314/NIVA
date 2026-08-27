@@ -220,12 +220,14 @@ export class PhysiologyOscillator {
     this.breathPhase = 0;
     this.heartPhase = 0;
     this.breathEnvelope = 0;
+    this.deepBreathEnvelope = 0;
   }
 
   reset() {
     this.breathPhase = 0;
     this.heartPhase = 0;
     this.breathEnvelope = 0;
+    this.deepBreathEnvelope = 0;
   }
 
   update(dt, {
@@ -242,12 +244,16 @@ export class PhysiologyOscillator {
     this.heartPhase = (this.heartPhase + h * hr / 60) % 1;
     this.breathEnvelope += (1 - this.breathEnvelope) * (1 - Math.exp(-h * 3.2));
 
-    const inhaleFraction = deepBreath ? 0.46 : 0.40;
+    const deepTarget = deepBreath ? 1 : 0;
+    const deepRate = deepTarget > this.deepBreathEnvelope ? 2.8 : 1.65;
+    this.deepBreathEnvelope += (deepTarget - this.deepBreathEnvelope) * (1 - Math.exp(-h * deepRate));
+    const deepMix = clamp(this.deepBreathEnvelope, 0, 1);
+    const inhaleFraction = 0.40 + 0.06 * deepMix;
     const p = this.breathPhase;
     const lungVolume = p < inhaleFraction
       ? smoothstep(p / inhaleFraction)
       : 1 - smoothstep((p - inhaleFraction) / (1 - inhaleFraction));
-    const centeredBreath = (lungVolume - 0.45) * (deepBreath ? 1.65 : 1) * this.breathEnvelope;
+    const centeredBreath = (lungVolume - 0.45) * (1 + 0.65 * deepMix) * this.breathEnvelope;
     const amp = clamp(Number(breathAmplitude) || 0, 0, 1.2) * (1 + clamp(load, 0, 1) * 0.25);
 
     const hp = this.heartPhase;
@@ -263,7 +269,8 @@ export class PhysiologyOscillator {
       chestPitchDeg: centeredBreath * amp * 1.05,
       upperChestPitchDeg: centeredBreath * amp * 0.72,
       spinePitchDeg: centeredBreath * amp * 0.22,
-      shoulderLiftDeg: Math.max(0, centeredBreath) * amp * (deepBreath ? 0.16 : 0.07),
+      shoulderLiftDeg: Math.max(0, centeredBreath) * amp * (0.07 + 0.09 * deepMix),
+      deepBreathEnvelope: deepMix,
       heartbeatDeg: heartDeg,
     };
   }
