@@ -5,15 +5,23 @@ import { PhysicalEmbodimentController } from './physical-embodiment-v1.mjs';
 
 function harness(){
   const scene={position:new THREE.Vector3(),quaternion:new THREE.Quaternion(),rotation:{y:0},updateMatrixWorld(){}};const vrm={scene};
-  let phase=0,moves=0;const physics={move(){moves++;}};
+  let phase=0,moves=0,distance=0;const physics={move(dt,dir,speed){moves++;distance+=Math.max(0,speed||0)*Math.max(0,dt||0);}};
   const world={anchor:n=>({bedApproach:new THREE.Vector3(.05,0,0),bedSit:new THREE.Vector3(.2,.5,0),bedLie:new THREE.Vector3(.2,.7,.2),roomCenter:new THREE.Vector3(.4,0,0)})[n]?.clone()||null,setBlanket(){},update(){},state(){return{}}};
-  const ctl=new PhysicalEmbodimentController({world,getVrm:()=>vrm,getBodyPhysics:()=>physics,getActionState:()=>({time:phase,duration:1}),playClip(){},stopAction(){},faceDirection(){}});
-  return {ctl,vrm,setPhase:v=>phase=v,moves:()=>moves};
+  const ctl=new PhysicalEmbodimentController({world,getVrm:()=>vrm,getBodyPhysics:()=>physics,getActionState:()=>({time:phase,duration:1}),playClip(){},stopAction(){},faceDirection(){},stepLength:.68});
+  return {ctl,vrm,setPhase:v=>phase=v,moves:()=>moves,distance:()=>distance};
 }
 
 test('drive uses planted contact gait before moving root',()=>{
   const h=harness();h.setPhase(.2);const g=h.ctl.drive(1/60,new THREE.Vector3(1,0,0),.5,'walk');
   assert.ok(g.supportLoad.left+g.supportLoad.right>.99);assert.equal(h.moves(),1);
+});
+
+test('single march step advances exactly one configured stride then returns idle',()=>{
+  const h=harness();assert.equal(h.ctl.startMarchStep('left'),true);
+  for(let i=0;i<120;i++)h.ctl.update(1/60);
+  assert.equal(h.ctl.state().task,'idle');
+  assert.ok(Math.abs(h.distance()-.68)<.015,`distance=${h.distance()}`);
+  const gait=h.ctl.contactGait();assert.ok(gait.supportLoad.left>.45&&gait.supportLoad.left<.55);assert.equal(gait.stance.left,true);assert.equal(gait.stance.right,true);
 });
 
 test('sleep task advances from walking into blanket interaction near bed',()=>{
