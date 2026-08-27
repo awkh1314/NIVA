@@ -25,6 +25,11 @@ export class PhysicalEmbodimentController{
   idleGait(dt){this.gaitPlan=this.gait.update(dt,{action:'idle',moving:false,speedRatio:0});return this.gaitPlan;}
   startSleep(){if(this.task!=='idle'&&this.task!=='sleep')return false;this.task='walk-to-bed';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;this.world?.setBlanket('rest',0);return true;}
   startWalkTo(anchorName='roomCenter'){this.targetAnchor=anchorName;this.task='walk-to-anchor';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;return true;}
+  cancelTask(){
+    if(this.rootOverride)return false;
+    if(this.task!=='idle')this.stopAction?.();
+    this.task='idle';this.taskTime=0;this.taskStarted=false;this.targetAnchor=null;this.idleGait(1/60);return true;
+  }
   transition(next){this.task=next;this.taskTime=0;this.taskStarted=false;}
   beginTask(){if(this.taskStarted)return;this.taskStarted=true;
     if(this.task==='walk-to-bed'||this.task==='walk-to-anchor')this.playClip?.('walk',{loop:true});
