@@ -7,17 +7,29 @@ const smooth=(t)=>{const x=clamp(t,0,1);return x*x*(3-2*x);};
 export class PhysicalEmbodimentController{
   constructor({world,getVrm,getBodyPhysics,getActionState,playClip,stopAction,faceDirection,walkSpeed=.48}={}){
     this.world=world;this.getVrm=getVrm;this.getBodyPhysics=getBodyPhysics;this.getActionState=getActionState;this.playClip=playClip;this.stopAction=stopAction;this.faceDirection=faceDirection;this.walkSpeed=walkSpeed;
-    this.gait=new ContactGaitController();this.gaitPlan=null;this.task='idle';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;this._startPos=new THREE.Vector3();this._startQuat=new THREE.Quaternion();this._startYaw=0;
+    this.gait=new ContactGaitController();this.gaitPlan=null;this.task='idle';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;this._startPos=new THREE.Vector3();this._startQuat=new THREE.Quaternion();this._startYaw=0;this._driveDir=new THREE.Vector3(0,0,1);
   }
   currentPhase(){const s=this.getActionState?.()||{};const d=Math.max(.01,s.duration||1);return (((s.time||0)%d)/d+1)%1;}
   drive(dt,direction,speed=this.walkSpeed,action='walk'){
-    const physics=this.getBodyPhysics?.();if(!physics)return null;
-    const phase=this.currentPhase();this.gaitPlan=this.gait.update(dt,{phase,action,moving:true});
-    physics.move(dt,direction,speed*(this.gaitPlan.rootDrive||1));return this.gaitPlan;
+    const physics=this.getBodyPhysics?.();if(!physics||!direction)return null;
+    const h=clamp(Number(dt)||0,0,.05),target=direction.clone?.()||new THREE.Vector3(direction.x||0,0,direction.z||0);target.y=0;
+    if(target.lengthSq()<1e-8)return this.idleGait(dt);
+    target.normalize();
+    const turnAlpha=1-Math.exp(-(action==='run'?13:10)*h);
+    this._driveDir.lerp(target,turnAlpha);if(this._driveDir.lengthSq()<1e-8)this._driveDir.copy(target);else this._driveDir.normalize();
+    const phase=this.currentPhase(),speedRatio=clamp(speed/Math.max(.05,this.walkSpeed),0,1.5);
+    this.gaitPlan=this.gait.update(dt,{phase,action,moving:true,speedRatio});
+    this.gaitPlan.speedRatio=speedRatio;this.gaitPlan.direction={x:this._driveDir.x,z:this._driveDir.z};
+    physics.move(dt,this._driveDir,speed*(this.gaitPlan.rootDrive||1));return this.gaitPlan;
   }
-  idleGait(dt){this.gaitPlan=this.gait.update(dt,{action:'idle',moving:false});return this.gaitPlan;}
+  idleGait(dt){this.gaitPlan=this.gait.update(dt,{action:'idle',moving:false,speedRatio:0});return this.gaitPlan;}
   startSleep(){if(this.task!=='idle'&&this.task!=='sleep')return false;this.task='walk-to-bed';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;this.world?.setBlanket('rest',0);return true;}
   startWalkTo(anchorName='roomCenter'){this.targetAnchor=anchorName;this.task='walk-to-anchor';this.taskTime=0;this.taskStarted=false;this.rootOverride=false;return true;}
+  cancelTask(){
+    if(this.rootOverride)return false;
+    if(this.task!=='idle')this.stopAction?.();
+    this.task='idle';this.taskTime=0;this.taskStarted=false;this.targetAnchor=null;this.idleGait(1/60);return true;
+  }
   transition(next){this.task=next;this.taskTime=0;this.taskStarted=false;}
   beginTask(){if(this.taskStarted)return;this.taskStarted=true;
     if(this.task==='walk-to-bed'||this.task==='walk-to-anchor')this.playClip?.('walk',{loop:true});
